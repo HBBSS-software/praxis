@@ -12,7 +12,8 @@
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "resolveJsonModule": true,
-    "types": ["node", "bun-types"]
+    "types": ["bun"],
+    "isolatedModules": true
   },
   "include": [
     "backend/src/**/*.ts",
