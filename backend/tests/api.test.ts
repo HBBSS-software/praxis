@@ -1,55 +1,69 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const http = require('http');
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hzw-backend-tests-'));
 process.env.DATABASE_FILE = path.join(tempDir, 'database.json');
 
-const { startServer } = require('../server');
+const { startServer } = await import('../src/server');
 
-function request(baseUrl, pathname, options = {}) {
+function request(
+  baseUrl: string,
+  pathname: string,
+  options: {
+    body?: string;
+    headers?: Record<string, string>;
+    method?: string;
+  } = {}
+): Promise<{ body: any; status?: number }> {
   return new Promise((resolve, reject) => {
     const url = new URL(pathname, baseUrl);
-    const req = http.request(
+    const requestInstance = http.request(
       {
         hostname: url.hostname,
         port: url.port,
         path: `${url.pathname}${url.search}`,
-        method: options.method || 'GET',
-        headers: options.headers || {}
+        method: options.method ?? 'GET',
+        headers: options.headers ?? {}
       },
-      (res) => {
+      (response) => {
         let raw = '';
-        res.setEncoding('utf8');
-        res.on('data', (chunk) => {
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => {
           raw += chunk;
         });
-        res.on('end', () => {
+        response.on('end', () => {
           resolve({
-            status: res.statusCode,
+            status: response.statusCode,
             body: raw ? JSON.parse(raw) : null
           });
         });
       }
     );
 
-    req.on('error', reject);
+    requestInstance.on('error', reject);
 
     if (options.body) {
-      req.write(options.body);
+      requestInstance.write(options.body);
     }
 
-    req.end();
+    requestInstance.end();
   });
 }
 
 test('backend API supports login, student records, and teacher review flow', async () => {
   const server = startServer(0);
   await new Promise((resolve) => server.once('listening', resolve));
-  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const address = server.address();
+
+  if (!address || typeof address === 'string') {
+    throw new Error('Failed to determine test server port.');
+  }
+
+  const baseUrl = `http://127.0.0.1:${address.port}`;
 
   try {
     const studentLogin = await request(baseUrl, '/api/auth/login', {
@@ -114,6 +128,17 @@ test('backend API supports login, student records, and teacher review flow', asy
     assert.equal(teacherRecords.body.records.length, 1);
     assert.equal(teacherRecords.body.records[0].student_username, 'student1');
 
+    const teacherRecord = await request(
+      baseUrl,
+      `/api/teacher/records/${createRecord.body.recordId}`,
+      {
+        headers: { Authorization: `Bearer ${teacherLogin.body.token}` }
+      }
+    );
+
+    assert.equal(teacherRecord.status, 200);
+    assert.equal(teacherRecord.body.record.id, createRecord.body.recordId);
+
     const review = await request(baseUrl, `/api/teacher/records/${createRecord.body.recordId}/review`, {
       method: 'PUT',
       headers: {
@@ -135,8 +160,47 @@ test('backend API supports login, student records, and teacher review flow', asy
     assert.equal(statistics.body.statistics.student_count, 2);
   } finally {
     await new Promise((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
+      server.close((error) => (error ? reject(error) : resolve(undefined)));
     });
+
+    delete process.env.DATABASE_FILE;
     fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('backend login is rate limited after repeated failures', async () => {
+  const server = startServer(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+  const address = server.address();
+
+  if (!address || typeof address === 'string') {
+    throw new Error('Failed to determine test server port.');
+  }
+
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const failedLogin = await request(baseUrl, '/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'security-check-user', password: 'wrong-password' })
+      });
+
+      assert.equal(failedLogin.status, 401);
+    }
+
+    const lockedLogin = await request(baseUrl, '/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'security-check-user', password: 'wrong-password' })
+    });
+
+    assert.equal(lockedLogin.status, 429);
+    assert.match(lockedLogin.body.error, /Too many login attempts/);
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve(undefined)));
+    });
   }
 });

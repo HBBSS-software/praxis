@@ -1,0 +1,183 @@
+import {
+  API_URL,
+  escapeHtml,
+  formatDate,
+  getApiOrigin,
+  logout,
+  populateUserSummary,
+  readJson,
+  requireElement,
+  requireRole,
+  type ApiError
+} from '../shared';
+
+type RecordStatus = 'approved' | 'pending' | 'rejected';
+
+interface StudentRecord {
+  id: number;
+  title: string;
+  content: string;
+  practice_date: string;
+  location: string | null;
+  duration: number | null;
+  image_path: string | null;
+  status: RecordStatus;
+  teacher_comment: string | null;
+}
+
+interface StudentRecordsResponse extends ApiError {
+  records: StudentRecord[];
+}
+
+const session = requireRole('student', '../login.html');
+
+if (session) {
+  const logoutButton = requireElement<HTMLButtonElement>('#logout-button');
+  const recordsContainer = requireElement<HTMLElement>('#records-container');
+  const totalCount = requireElement<HTMLElement>('#total-count');
+  const pendingCount = requireElement<HTMLElement>('#pending-count');
+  const approvedCount = requireElement<HTMLElement>('#approved-count');
+
+  populateUserSummary('#user-name', '#user-avatar', session.user);
+  logoutButton.addEventListener('click', () => logout('../login.html'));
+
+  recordsContainer.addEventListener('click', (event) => {
+    const target = event.target as Element | null;
+    const button = target?.closest<HTMLButtonElement>('[data-action="view-record"]');
+
+    if (!button) {
+      return;
+    }
+
+    const recordId = button.dataset.recordId;
+    window.alert(`Record ID: ${recordId ?? ''}`);
+  });
+
+  void loadRecords(session.token, recordsContainer, totalCount, pendingCount, approvedCount);
+}
+
+async function loadRecords(
+  token: string,
+  recordsContainer: HTMLElement,
+  totalCount: HTMLElement,
+  pendingCount: HTMLElement,
+  approvedCount: HTMLElement
+): Promise<void> {
+  try {
+    const response = await fetch(`${API_URL}/student/records`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (response.status === 401) {
+      logout('../login.html');
+      return;
+    }
+
+    const data = await readJson<StudentRecordsResponse>(response);
+
+    if (!response.ok || !data) {
+      throw new Error(data?.error ?? 'Unable to load records.');
+    }
+
+    renderRecords(recordsContainer, data.records);
+    updateStats(data.records, totalCount, pendingCount, approvedCount);
+  } catch (error) {
+    console.error('Failed to load student records.', error);
+    recordsContainer.innerHTML = `
+      <div class="empty-state">
+        <h3>Unable to load records</h3>
+        <p>Please refresh the page and try again.</p>
+      </div>
+    `;
+  }
+}
+
+function renderRecords(container: HTMLElement, records: StudentRecord[]): void {
+  if (records.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        <h3>No records yet</h3>
+        <p>Create your first social practice record from the upload page.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="records-grid">
+      ${records
+        .map(
+          (record) => `
+            <div class="record-card">
+              ${
+                record.image_path
+                  ? `<img src="${getApiOrigin()}${record.image_path}" class="record-image" alt="${escapeHtml(
+                      record.title
+                    )}">`
+                  : `<div class="record-image" style="display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                      <svg width="48" height="48" fill="white" viewBox="0 0 24 24">
+                        <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                      </svg>
+                    </div>`
+              }
+              <div class="record-content">
+                <h4 class="record-title">${escapeHtml(record.title)}</h4>
+                <div class="record-meta">
+                  <span>Date: ${formatDate(record.practice_date)}</span>
+                  ${record.location ? `<span>Location: ${escapeHtml(record.location)}</span>` : ''}
+                  ${record.duration ? `<span>Duration: ${record.duration} hours</span>` : ''}
+                </div>
+                <p class="record-description">${escapeHtml(record.content)}</p>
+                <div class="record-footer">
+                  <span class="status-badge status-${record.status}">${statusLabel(record.status)}</span>
+                  <button
+                    class="btn btn-sm"
+                    data-action="view-record"
+                    data-record-id="${record.id}"
+                    style="background: var(--gray-100); color: var(--gray-800);"
+                    type="button"
+                  >
+                    Details
+                  </button>
+                </div>
+                ${
+                  record.teacher_comment
+                    ? `<div style="margin-top: 12px; padding: 12px; background: #f3f4f6; border-radius: 8px; font-size: 13px;">
+                        <strong>Teacher comment:</strong> ${escapeHtml(record.teacher_comment)}
+                      </div>`
+                    : ''
+                }
+              </div>
+            </div>
+          `
+        )
+        .join('')}
+    </div>
+  `;
+}
+
+function updateStats(
+  records: StudentRecord[],
+  totalCount: HTMLElement,
+  pendingCount: HTMLElement,
+  approvedCount: HTMLElement
+): void {
+  totalCount.textContent = String(records.length);
+  pendingCount.textContent = String(records.filter((record) => record.status === 'pending').length);
+  approvedCount.textContent = String(records.filter((record) => record.status === 'approved').length);
+}
+
+function statusLabel(status: RecordStatus): string {
+  switch (status) {
+    case 'approved':
+      return 'Approved';
+    case 'rejected':
+      return 'Rejected';
+    default:
+      return 'Pending';
+  }
+}
