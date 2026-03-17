@@ -12,7 +12,7 @@
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "resolveJsonModule": true,
-    "types": ["bun-types"],
+    "types": ["bun"],
     "isolatedModules": true
   },
   "include": [
