@@ -53,11 +53,17 @@
 
 ## 如何使用
 
-安装依赖：
+### 准备
+
+1. 安装依赖：
 
 ```bash
 bun install
 ```
+
+1. 在 backend 新建 database.json，可以复制 database.template.json 的内容。如果你是开发者，注意不要改动 database.template.json。
+
+### 运行/开发
 
 启动：
 
