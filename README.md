@@ -51,7 +51,7 @@
 `-- tsconfig.json
 ```
 
-## 开发方式
+## 如何使用
 
 安装依赖：
 
@@ -59,27 +59,31 @@
 bun install
 ```
 
-启动后端：
+启动：
 
 ```bash
-bun run dev
+bun start
 ```
 
-构建前端浏览器模块：
+以开发模式启动：
 
 ```bash
-bun run build:frontend
+bun dev
+```
+
+编译前端 ts 文件：
+
+```bash
+bun build:frontend
 ```
 
 运行类型检查和测试：
 
 ```bash
-bun run test
+bun test
 ```
 
-后端默认监听 `http://localhost:3000`。
-
-前端构建完成后，可以直接在浏览器中打开 `frontend/login.html`。
+默认运行在 `http://localhost:3000`。
 
 ## 安全配置
 
