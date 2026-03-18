@@ -32,10 +32,6 @@ function getStoredUser() {
 function getToken() {
   return sessionStorage.getItem(tokenStorageKey);
 }
-function storeSession(token, user) {
-  sessionStorage.setItem(tokenStorageKey, token);
-  sessionStorage.setItem(userStorageKey, JSON.stringify(user));
-}
 function clearSession() {
   sessionStorage.removeItem(tokenStorageKey);
   sessionStorage.removeItem(userStorageKey);
@@ -43,9 +39,6 @@ function clearSession() {
 function logout(redirectPath) {
   clearSession();
   window.location.href = redirectPath;
-}
-function redirectByRole(role) {
-  window.location.href = role === "teacher" ? "teacher/dashboard.html" : "student/dashboard.html";
 }
 function requireRole(expectedRole, loginPath) {
   const token = getToken();
@@ -76,12 +69,6 @@ function formatDate(value, fallback = "") {
     return fallback;
   }
   return new Date(value).toLocaleDateString("zh-CN");
-}
-function formatDateTime(value, fallback = "-") {
-  if (!value) {
-    return fallback;
-  }
-  return new Date(value).toLocaleString("zh-CN");
 }
 function getApiOrigin() {
   return API_URL.replace(/\/api$/, "");
