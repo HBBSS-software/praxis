@@ -43,6 +43,7 @@
 |   |   |   `-- upload.ts
 |   |   `-- teacher/
 |   |       `-- dashboard.ts
+|   |-- builder.ts
 |   `-- login.html
 |-- tests/
 |   `-- frontend.test.ts
