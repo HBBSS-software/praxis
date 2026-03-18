@@ -163,6 +163,48 @@ test('后端 API 支持登录、学生记录提交和教师审核流程', async 
       (item: { student_username: string; total_duration: number }) => item.student_username === 'student1'
     );
     expect(student1Duration?.total_duration).toBe(3);
+
+    const rejectedRecord = await request(baseUrl, '/api/student/records', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${studentLogin.body.token}`
+      },
+      body: JSON.stringify({
+        title: '第二条待驳回记录',
+        content: '这条记录会被教师驳回。',
+        practice_date: '2026-03-17',
+        location: '教学楼',
+        duration: 5
+      })
+    });
+
+    expect(rejectedRecord.status).toBe(200);
+
+    const rejectReview = await request(baseUrl, `/api/teacher/records/${rejectedRecord.body.recordId}/review`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${teacherLogin.body.token}`
+      },
+      body: JSON.stringify({ status: 'rejected', comment: '时长不应计入统计。' })
+    });
+
+    expect(rejectReview.status).toBe(200);
+
+    const statisticsAfterReject = await request(baseUrl, '/api/teacher/statistics', {
+      headers: { Authorization: `Bearer ${teacherLogin.body.token}` }
+    });
+
+    expect(statisticsAfterReject.status).toBe(200);
+    expect(statisticsAfterReject.body.statistics.total_records).toBe(2);
+    expect(statisticsAfterReject.body.statistics.total_duration).toBe(3);
+    expect(statisticsAfterReject.body.statistics.approved_count).toBe(1);
+
+    const student1DurationAfterReject = statisticsAfterReject.body.statistics.student_durations.find(
+      (item: { student_username: string; total_duration: number }) => item.student_username === 'student1'
+    );
+    expect(student1DurationAfterReject?.total_duration).toBe(3);
   } finally {
     await new Promise((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve(undefined)));

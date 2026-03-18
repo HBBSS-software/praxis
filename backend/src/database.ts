@@ -310,7 +310,10 @@ function getStatistics(): {
   }>;
 } {
   const totalDuration = db.practice_records.reduce(
-    (sum, record) => sum + (typeof record.duration === 'number' ? record.duration : 0),
+    (sum, record) =>
+      record.status === 'approved' && typeof record.duration === 'number'
+        ? sum + record.duration
+        : sum,
     0
   );
   const studentDurations = db.users
@@ -321,7 +324,9 @@ function getStatistics(): {
       student_username: student.username,
       total_duration: db.practice_records.reduce(
         (sum, record) =>
-          record.student_id === student.id && typeof record.duration === 'number'
+          record.student_id === student.id &&
+          record.status === 'approved' &&
+          typeof record.duration === 'number'
             ? sum + record.duration
             : sum,
         0
