@@ -86,7 +86,7 @@ bun build:frontend
 运行类型检查和测试：
 
 ```bash
-bun test
+bun test:all
 ```
 
 默认运行在 `http://localhost:3000`。
