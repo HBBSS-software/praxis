@@ -62,7 +62,7 @@ if (session) {
     }
 
     if (selectedImage.size > 5 * 1024 * 1024) {
-      showError(errorMessage, successMessage, '图片大小不能超过 5MB。');
+      showError(errorMessage, successMessage, '图片大小不能超过 5 MiB。');
       input.value = '';
       selectedImage = null;
       resetImagePreview(imagePreview, uploadPlaceholder, imageUpload);
@@ -124,7 +124,7 @@ if (session) {
           content: contentInput.value.trim(),
           practice_date: practiceDateInput.value,
           location: locationInput.value.trim() || null,
-          duration: durationInput.value ? Number(durationInput.value) : null,
+          duration: durationInput.value.trim(),
           image_path: imagePath
         })
       });

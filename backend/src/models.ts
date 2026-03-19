@@ -30,7 +30,7 @@ export interface PracticeRecord {
   content: string;
   practice_date: string;
   location: string | null;
-  duration: number | null;
+  duration: number;
   image_path: string | null;
   status: RecordStatus;
   teacher_comment: string | null;
@@ -52,7 +52,7 @@ export interface CreateRecordInput {
   content: string;
   practice_date: string;
   location: string | null;
-  duration: number | null;
+  duration: number;
   image_path: string | null;
 }
 
@@ -61,7 +61,7 @@ export interface UpdateRecordInput {
   content?: string;
   practice_date?: string;
   location?: string | null;
-  duration?: number | null;
+  duration?: number;
   image_path?: string | null;
   status?: RecordStatus;
   teacher_comment?: string | null;

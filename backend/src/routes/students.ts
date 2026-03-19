@@ -24,13 +24,12 @@ function asOptionalString(value: unknown): string | null {
   return trimmed || null;
 }
 
-function asOptionalDuration(value: unknown): number | null {
-  if (value === null || value === undefined || value === '') {
-    return null;
-  }
+function checkDate(date: string): boolean {
+  return Date.parse(date) <= Date.now() + 14 * 60 * 60 * 1000;
+}
 
-  const duration = Number(value);
-  return Number.isFinite(duration) && duration > 0 ? duration : null;
+function checkDuration(duration: number) {
+  return duration >= 0.1;
 }
 
 router.get('/records', authMiddleware, studentOnly, (request, response) => {
@@ -47,14 +46,20 @@ router.post('/records', authMiddleware, studentOnly, (request, response) => {
   const title = asRequiredString(request.body.title);
   const content = asRequiredString(request.body.content);
   const practiceDate = asRequiredString(request.body.practice_date);
+  const duration: string = request.body.duration;
 
-  if (!title || !content || !practiceDate) {
-    response.status(400).json({ error: '标题、内容和实践日期不能为空。' });
+  if (!title || !content || !practiceDate || !duration) {
+    response.status(400).json({ error: '标题、内容、实践日期和时长不能为空。' });
     return;
   }
 
-  if (Date.parse(practiceDate) > Date.now() + 14 * 60 * 60 * 1000) {
+  if (!checkDate(practiceDate)) {
     response.status(400).json({ error: '不能记录未来的活动。' });
+    return;
+  }
+
+  if (!checkDuration(+duration)) {
+    response.status(400).json({ error: '时长过短。' });
     return;
   }
 
@@ -65,7 +70,7 @@ router.post('/records', authMiddleware, studentOnly, (request, response) => {
       content,
       practice_date: practiceDate,
       location: asOptionalString(request.body.location),
-      duration: asOptionalDuration(request.body.duration),
+      duration: +duration,
       image_path: asOptionalString(request.body.image_path)
     });
 
@@ -91,6 +96,7 @@ router.put('/records/:id', authMiddleware, studentOnly, (request, response) => {
   const title = asRequiredString(request.body.title);
   const content = asRequiredString(request.body.content);
   const practiceDate = asRequiredString(request.body.practice_date);
+  const duration = asRequiredString(request.body.duration);
 
   if (request.body.title !== undefined) {
     if (!title) {
@@ -106,7 +112,6 @@ router.put('/records/:id', authMiddleware, studentOnly, (request, response) => {
       response.status(400).json({ error: '内容不能为空。' });
       return;
     }
-
     updates.content = content;
   }
 
@@ -115,7 +120,10 @@ router.put('/records/:id', authMiddleware, studentOnly, (request, response) => {
       response.status(400).json({ error: '实践日期不能为空。' });
       return;
     }
-
+    if (!checkDate(practiceDate)) {
+      response.status(400).json({ error: '不能记录未来的活动。' });
+      return;
+    }
     updates.practice_date = practiceDate;
   }
 
@@ -124,7 +132,15 @@ router.put('/records/:id', authMiddleware, studentOnly, (request, response) => {
   }
 
   if (request.body.duration !== undefined) {
-    updates.duration = asOptionalDuration(request.body.duration);
+    if (!duration) {
+      response.status(400).json({ error: '时长不能为空。' });
+      return;
+    }
+    if (!checkDuration(+duration)) {
+      response.status(400).json({ error: '时长过短。' });
+      return;
+    }
+    updates.duration = +duration;
   }
 
   if (request.body.image_path !== undefined) {
