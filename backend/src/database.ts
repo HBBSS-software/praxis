@@ -73,7 +73,7 @@ function sanitizeRecord(value: unknown): PracticeRecord | null {
     typeof candidate.content !== 'string' ||
     typeof candidate.practice_date !== 'string' ||
     (candidate.location !== null && typeof candidate.location !== 'string' && candidate.location !== undefined) ||
-    (candidate.duration !== null && typeof candidate.duration !== 'number' && candidate.duration !== undefined) ||
+    typeof candidate.duration !== 'number' ||
     (candidate.image_path !== null && typeof candidate.image_path !== 'string' && candidate.image_path !== undefined) ||
     (candidate.teacher_comment !== null &&
       typeof candidate.teacher_comment !== 'string' &&
@@ -92,7 +92,7 @@ function sanitizeRecord(value: unknown): PracticeRecord | null {
     content: candidate.content,
     practice_date: candidate.practice_date,
     location: candidate.location ?? null,
-    duration: candidate.duration ?? null,
+    duration: candidate.duration,
     image_path: candidate.image_path ?? null,
     status: candidate.status as RecordStatus,
     teacher_comment: candidate.teacher_comment ?? null,
