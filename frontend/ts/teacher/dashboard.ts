@@ -86,7 +86,7 @@ if (session) {
   const modalContent = requireElement<HTMLElement>('#modal-content');
   const reviewComment = requireElement<HTMLTextAreaElement>('#review-comment');
   const closeModalButton = requireElement<HTMLButtonElement>('#close-review-modal');
-
+  const cancelReviewButton = requireElement<HTMLButtonElement>('#cancel-review-button');
   const rejectReviewButton = requireElement<HTMLButtonElement>('#reject-review-button');
   const approveReviewButton = requireElement<HTMLButtonElement>('#approve-review-button');
 
@@ -124,7 +124,9 @@ if (session) {
   closeModalButton.addEventListener('click', () => closeModal(reviewModal, reviewComment, () => {
     currentRecordId = null;
   }));
-
+  cancelReviewButton.addEventListener('click', () => closeModal(reviewModal, reviewComment, () => {
+    currentRecordId = null;
+  }));
   rejectReviewButton.addEventListener('click', () => {
     void submitReview('rejected');
   });
