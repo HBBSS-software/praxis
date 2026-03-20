@@ -23,7 +23,7 @@ function checkDate(date: string): boolean {
 }
 
 function checkDuration(duration: number) {
-  return duration >= 0.1;
+  return duration >= 0.1 && Number.isInteger(duration * 10);
 }
 
 router.get('/records', authMiddleware, teacherOnly, (request, response) => {
@@ -99,10 +99,10 @@ router.put('/records/:id/review', authMiddleware, teacherOnly, (request, respons
       return;
     }
 
-    const message = status === 'approved' 
-      ? `你的实践记录 "${updatedRecord.title}" 已被通过。` 
+    const message = status === 'approved'
+      ? `你的实践记录 "${updatedRecord.title}" 已被通过。`
       : `你的实践记录 "${updatedRecord.title}" 已被驳回。`;
-      
+
     database.createNotification(updatedRecord.student_id, status, message);
 
     response.json({ message: '审核结果保存成功。' });
@@ -123,7 +123,7 @@ router.put('/records/:id', authMiddleware, teacherOnly, (request, response) => {
   const updates: UpdateRecordInput = {
     updated_by_username: request.user!.username
   };
-  
+
   const title = asRequiredString(request.body.title);
   const content = asRequiredString(request.body.content);
   const practiceDate = asRequiredString(request.body.practice_date);
@@ -147,7 +147,7 @@ router.put('/records/:id', authMiddleware, teacherOnly, (request, response) => {
   }
   if (request.body.duration !== undefined) {
     if (!duration) { response.status(400).json({ error: '时长不能为空。' }); return; }
-    if (!checkDuration(+duration)) { response.status(400).json({ error: '时长过短。' }); return; }
+    if (!checkDuration(+duration)) { response.status(400).json({ error: '时长过短或不是 0.1 的倍数。' }); return; }
     updates.duration = +duration;
   }
   if (request.body.image_path !== undefined) {
