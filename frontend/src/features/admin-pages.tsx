@@ -41,12 +41,14 @@ export function AdminUsersPage() {
   const [teachers, setTeachers] = useState<UserSummary[]>([]);
   const [singleForm, setSingleForm] = useState({ name: '', role: 'student' as UserRole, teacher_uid: '' });
   const [singleResult, setSingleResult] = useState<CreatedUser | null>(null);
+  const [singleError, setSingleError] = useState('');
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvFileName, setCsvFileName] = useState('');
   const [csvResult, setCsvResult] = useState<CreatedUser[]>([]);
+  const [csvError, setCsvError] = useState('');
   const [batchEntries, setBatchEntries] = useState([{ name: '', role: 'student' as UserRole, teacher_uid: '' }]);
   const [batchResult, setBatchResult] = useState<CreatedUser[]>([]);
-  const [error, setError] = useState('');
+  const [batchError, setBatchError] = useState('');
 
   useEffect(() => {
     if (!token) return;
@@ -83,7 +85,7 @@ export function AdminUsersPage() {
                 <Button
                   onClick={async () => {
                     if (!token) return;
-                    setError('');
+                    setSingleError('');
                     try {
                       const data = await apiRequest<{ user: CreatedUser }>('/admin/users', { method: 'POST', body: JSON.stringify(singleForm) }, token);
                       setSingleResult(data.user);
@@ -92,7 +94,7 @@ export function AdminUsersPage() {
                         signOut();
                         return;
                       }
-                      setError(nextError instanceof Error ? nextError.message : '创建失败。');
+                      setSingleError(nextError instanceof Error ? nextError.message : '创建失败。');
                     }
                   }}
                 >
@@ -100,7 +102,7 @@ export function AdminUsersPage() {
                   创建账号
                 </Button>
               </div>
-              {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
+              {singleError ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{singleError}</p> : null}
               {singleResult ? <ResultTable users={[singleResult]} filename="created_user.csv" /> : null}
             </CardContent>
           </Card>
@@ -117,7 +119,7 @@ export function AdminUsersPage() {
                 type="file"
                 accept=".csv,text/csv"
                 onChange={async (event) => {
-                  setError('');
+                  setCsvError('');
                   setCsvResult([]);
                   const file = event.target.files?.[0];
                   if (!file) {
@@ -126,14 +128,14 @@ export function AdminUsersPage() {
                     return;
                   }
                   if (file.size > 50 * 1024 * 1024) {
-                    setError('CSV 文件不能超过 50 MiB。');
+                    setCsvError('CSV 文件不能超过 50 MiB。');
                     event.currentTarget.value = '';
                     setCsvFile(null);
                     setCsvFileName('');
                     return;
                   }
                   if (!file.name.toLowerCase().endsWith('.csv')) {
-                    setError('请上传 .csv 文件。');
+                    setCsvError('请上传 .csv 文件。');
                     event.currentTarget.value = '';
                     setCsvFile(null);
                     setCsvFileName('');
@@ -146,7 +148,7 @@ export function AdminUsersPage() {
                     setCsvFile(file);
                     setCsvFileName(file.name);
                   } catch (nextError) {
-                    setError(nextError instanceof Error ? nextError.message : 'CSV 文件无效。');
+                    setCsvError(nextError instanceof Error ? nextError.message : 'CSV 文件无效。');
                     event.currentTarget.value = '';
                     setCsvFile(null);
                     setCsvFileName('');
@@ -157,9 +159,9 @@ export function AdminUsersPage() {
               <Button
                 onClick={async () => {
                   if (!token) return;
-                  setError('');
+                  setCsvError('');
                   if (!csvFile) {
-                    setError('请先选择一个 CSV 文件。');
+                    setCsvError('请先选择一个 CSV 文件。');
                     return;
                   }
                   try {
@@ -172,14 +174,14 @@ export function AdminUsersPage() {
                       signOut();
                       return;
                     }
-                    setError(nextError instanceof Error ? nextError.message : '导入失败。');
+                    setCsvError(nextError instanceof Error ? nextError.message : '导入失败。');
                   }
                 }}
               >
                 <FileUp className="size-4" />
                 导入并生成账号
               </Button>
-              {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
+              {csvError ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{csvError}</p> : null}
               {csvResult.length ? <ResultTable users={csvResult} filename="imported_users.csv" /> : null}
             </CardContent>
           </Card>
@@ -220,7 +222,7 @@ export function AdminUsersPage() {
                 <Button
                   onClick={async () => {
                     if (!token) return;
-                    setError('');
+                    setBatchError('');
                     try {
                       const entries = batchEntries.filter((entry) => entry.name.trim());
                       const data = await apiRequest<{ users: CreatedUser[] }>('/admin/users/batch', { method: 'POST', body: JSON.stringify({ entries }) }, token);
@@ -230,14 +232,14 @@ export function AdminUsersPage() {
                         signOut();
                         return;
                       }
-                      setError(nextError instanceof Error ? nextError.message : '批量创建失败。');
+                      setBatchError(nextError instanceof Error ? nextError.message : '批量创建失败。');
                     }
                   }}
                 >
                   批量创建
                 </Button>
               </div>
-              {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
+              {batchError ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{batchError}</p> : null}
               {batchResult.length ? <ResultTable users={batchResult} filename="batch_created_users.csv" /> : null}
             </CardContent>
           </Card>

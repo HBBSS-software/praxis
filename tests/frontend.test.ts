@@ -90,6 +90,19 @@ test('学生端导航和卡片组件符合当前界面结构', () => {
   expect(card).toContain('flex items-center p-6 pt-0');
 });
 
+test('管理员用户创建页为不同创建方式拆分错误状态', () => {
+  const adminPagesSource = read('frontend/src/features/admin-pages.tsx');
+  const adminUsersPage = adminPagesSource.slice(
+    adminPagesSource.indexOf('export function AdminUsersPage()'),
+    adminPagesSource.indexOf('export function AdminAssignmentsPage()')
+  );
+
+  expect(adminUsersPage).toContain('const [singleError, setSingleError] = useState');
+  expect(adminUsersPage).toContain('const [csvError, setCsvError] = useState');
+  expect(adminUsersPage).toContain('const [batchError, setBatchError] = useState');
+  expect(adminUsersPage.includes("const [error, setError] = useState('');")).toBe(false);
+});
+
 test('前端构建产物会输出到 frontend/dist', () => {
   const outputs = ['frontend/dist/index.html'];
   for (const output of outputs) {
