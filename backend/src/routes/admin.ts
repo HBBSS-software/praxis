@@ -11,12 +11,24 @@ const router = Router();
 router.post('/users', authMiddleware, adminOnly, (request, response) => {
   const name = typeof request.body.name === 'string' ? request.body.name.trim() : '';
   const role = request.body.role;
+  const teacher_uid = typeof request.body.teacher_uid === 'string' ? request.body.teacher_uid.trim() : '';
 
   if (!name) { response.status(400).json({ error: '姓名不能为空。' }); return; }
   if (!database.isValidRole(role)) { response.status(400).json({ error: '角色无效。' }); return; }
 
+  let teacherId: number | null = null;
+  if (teacher_uid) {
+    if (role !== 'student') { response.status(400).json({ error: '非学生不能分配管理老师。' }); return; }
+    const teacher = database.findUserByUid(teacher_uid);
+    if (!teacher || teacher.role !== 'teacher') { response.status(400).json({ error: '指定的教师 UID 无效或不存在。' }); return; }
+    teacherId = teacher.id;
+  }
+
   try {
     const result = database.createUser(name, role);
+    if (teacherId && result.role === 'student') {
+      database.assignStudentsToTeacher(teacherId, [result.id]);
+    }
     response.json({ message: '用户创建成功。', user: result });
   } catch (error) {
     console.error('创建用户失败。', error);
@@ -34,18 +46,34 @@ router.post('/users/batch', authMiddleware, adminOnly, (request, response) => {
     return;
   }
 
-  const validated: Array<{ name: string; role: 'admin' | 'teacher' | 'student' }> = [];
+  const validated: Array<{ name: string; role: 'admin' | 'teacher' | 'student'; teacherId: number | null }> = [];
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     const name = typeof entry.name === 'string' ? entry.name.trim() : '';
     const role = entry.role;
+    const teacher_uid = typeof entry.teacher_uid === 'string' ? entry.teacher_uid.trim() : '';
+
     if (!name) { response.status(400).json({ error: `第 ${i + 1} 行姓名为空。` }); return; }
     if (!database.isValidRole(role)) { response.status(400).json({ error: `第 ${i + 1} 行角色无效。` }); return; }
-    validated.push({ name, role });
+
+    let teacherId: number | null = null;
+    if (teacher_uid) {
+      if (role !== 'student') { response.status(400).json({ error: `第 ${i + 1} 行错误：非学生不能分配管理老师。` }); return; }
+      const teacher = database.findUserByUid(teacher_uid);
+      if (!teacher || teacher.role !== 'teacher') { response.status(400).json({ error: `第 ${i + 1} 行错误：指定的教师 UID ${teacher_uid} 无效或不存在。` }); return; }
+      teacherId = teacher.id;
+    }
+
+    validated.push({ name, role, teacherId });
   }
 
   try {
-    const results = database.createUsers(validated);
+    const results = database.createUsers(validated.map(v => ({ name: v.name, role: v.role })));
+    for (let i = 0; i < results.length; i++) {
+      if (validated[i].teacherId && results[i].role === 'student') {
+        database.assignStudentsToTeacher(validated[i].teacherId!, [results[i].id]);
+      }
+    }
     response.json({ message: `成功创建 ${results.length} 个用户。`, users: results });
   } catch (error) {
     console.error('批量创建用户失败。', error);
@@ -70,17 +98,18 @@ router.post('/users/import', authMiddleware, adminOnly, (request, response) => {
     return;
   }
 
-  const validated: Array<{ name: string; role: 'admin' | 'teacher' | 'student' }> = [];
+  const validated: Array<{ name: string; role: 'admin' | 'teacher' | 'student'; teacherId: number | null }> = [];
 
   for (let i = 0; i < lines.length; i++) {
     const parts = lines[i].split(',').map((p: string) => p.trim());
-    if (parts.length < 2) {
-      response.status(400).json({ error: `第 ${i + 1} 行格式无效，需要 name,role。` });
+    if (parts.length < 3) {
+      response.status(400).json({ error: `第 ${i + 1} 行格式无效，即使是老师/管理员最后也应该有个逗号，格式应为 姓名,角色,[管理老师UID]。` });
       return;
     }
 
     const name = parts[0];
     const role = parts[1];
+    const teacher_uid = parts.length > 2 ? parts[2] : '';
 
     if (!name) {
       response.status(400).json({ error: `第 ${i + 1} 行姓名为空。` });
@@ -90,11 +119,31 @@ router.post('/users/import', authMiddleware, adminOnly, (request, response) => {
       response.status(400).json({ error: `第 ${i + 1} 行角色无效，只能是 student/teacher/admin。` });
       return;
     }
-    validated.push({ name, role });
+
+    let teacherId: number | null = null;
+    if (teacher_uid) {
+      if (role !== 'student') {
+        response.status(400).json({ error: `第 ${i + 1} 行错误：非学生该列（管理老师UID）必须留空。` });
+        return;
+      }
+      const teacher = database.findUserByUid(teacher_uid);
+      if (!teacher || teacher.role !== 'teacher') {
+        response.status(400).json({ error: `第 ${i + 1} 行错误：指定的教师 UID ${teacher_uid} 无效或不存在。` });
+        return;
+      }
+      teacherId = teacher.id;
+    }
+
+    validated.push({ name, role, teacherId });
   }
 
   try {
-    const results = database.createUsers(validated);
+    const results = database.createUsers(validated.map(v => ({ name: v.name, role: v.role })));
+    for (let i = 0; i < results.length; i++) {
+        if (validated[i].teacherId && results[i].role === 'student') {
+            database.assignStudentsToTeacher(validated[i].teacherId!, [results[i].id]);
+        }
+    }
     response.json({ message: `成功导入 ${results.length} 个用户。`, users: results });
   } catch (error) {
     console.error('CSV 导入失败。', error);

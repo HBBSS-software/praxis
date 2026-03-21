@@ -12,7 +12,7 @@ const s = session;
 const headers = () => ({ Authorization: `Bearer ${s.token}`, 'Content-Type': 'application/json' });
 const authOnly = () => ({ Authorization: `Bearer ${s.token}` });
 
-renderSidebar({ role: 'admin', activePath: 'assignments.html', user: s.user });
+renderSidebar({ role: 'admin', activePath: 'assign.html', user: s.user });
 
 const assignTeacher = requireElement<HTMLSelectElement>('#assign-teacher');
 const assignTable = requireElement<HTMLElement>('#assign-table');
@@ -25,6 +25,25 @@ assignSelectAll.addEventListener('change', () => {
     cb.checked = assignSelectAll.checked;
     if (assignSelectAll.checked) assignSelectedIds.add(Number(cb.dataset.id));
   });
+});
+
+let lastCheckedCb: HTMLInputElement | null = null;
+
+assignTable.addEventListener('click', (e) => {
+  const t = e.target as HTMLInputElement;
+  if (!t.classList.contains('assign-cb')) return;
+  
+  if (e.shiftKey && lastCheckedCb) {
+    const checkboxes = Array.from(assignTable.querySelectorAll<HTMLInputElement>('.assign-cb'));
+    const start = checkboxes.indexOf(lastCheckedCb);
+    const end = checkboxes.indexOf(t);
+    const [min, max] = start < end ? [start, end] : [end, start];
+    for (let i = min; i <= max; i++) {
+      checkboxes[i].checked = t.checked;
+      t.checked ? assignSelectedIds.add(Number(checkboxes[i].dataset.id)) : assignSelectedIds.delete(Number(checkboxes[i].dataset.id));
+    }
+  }
+  lastCheckedCb = t;
 });
 
 assignTable.addEventListener('change', (e) => {

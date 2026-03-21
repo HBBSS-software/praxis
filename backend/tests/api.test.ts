@@ -107,7 +107,7 @@ describe('Admin: User Management', () => {
 
   test('CSV import', async () => {
     const adminToken = await getToken('A00001', DEFAULT_PW);
-    const csv = '导入学生1,student\n导入学生2,student\n导入教师1,teacher';
+    const csv = '导入学生1,student,\n导入学生2,student,\n导入教师1,teacher,';
     const res = await fetch(`${serverUrl}/api/admin/users/import`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
@@ -125,7 +125,7 @@ describe('Admin: User Management', () => {
     const res = await fetch(`${serverUrl}/api/admin/users/import`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
-      body: JSON.stringify({ csv: '用户1,invalid_role' })
+      body: JSON.stringify({ csv: '用户1,invalid_role,' })
     });
     expect(res.status).toBe(400);
   });

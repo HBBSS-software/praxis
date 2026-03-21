@@ -20,16 +20,27 @@ createForm.addEventListener('submit', async (e) => {
   createError.classList.remove('show');
   createSuccess.style.display = 'none';
   const name = requireElement<HTMLInputElement>('#create-name').value.trim();
-  const role = requireElement<HTMLSelectElement>('#create-role').value;
+  const roleSelect = requireElement<HTMLSelectElement>('#create-role');
+  const role = roleSelect.value;
+  const teacherUidEl = requireElement<HTMLInputElement>('#create-teacher-uid');
+  const teacher_uid = teacherUidEl.value.trim();
+  
   try {
-    const res = await fetch(`${API_URL}/admin/users`, { method: 'POST', headers: headers(), body: JSON.stringify({ name, role }) });
+    const res = await fetch(`${API_URL}/admin/users`, { method: 'POST', headers: headers(), body: JSON.stringify({ name, role, teacher_uid }) });
     if (res.status === 401) { window.location.href = '../login.html'; return; }
     const data = await readJson<ApiError & { user?: { uid: string; password: string } }>(res);
     if (!res.ok) { createError.textContent = data?.error ?? '创建失败。'; createError.classList.add('show'); return; }
     createSuccess.innerHTML = `创建成功！UID: <strong>${escapeHtml(data?.user?.uid ?? '')}</strong> 密码: <strong>${escapeHtml(data?.user?.password ?? '')}</strong>`;
     createSuccess.style.display = 'block';
     createForm.reset();
+    requireElement<HTMLElement>('#teacher-uid-group').style.display = 'block';
   } catch { createError.textContent = '连接失败。'; createError.classList.add('show'); }
+});
+
+requireElement<HTMLSelectElement>('#create-role').addEventListener('change', (e) => {
+  const role = (e.target as HTMLSelectElement).value;
+  requireElement<HTMLElement>('#teacher-uid-group').style.display = role === 'student' ? 'block' : 'none';
+  if (role !== 'student') requireElement<HTMLInputElement>('#create-teacher-uid').value = '';
 });
 
 // CSV import
@@ -55,17 +66,18 @@ csvInput.addEventListener('change', () => {
   reader.onload = () => {
     csvContent = reader.result as string;
     const lines = csvContent.split('\n').map((l) => l.trim()).filter(Boolean);
-    if (!lines.length) { csvError.textContent = 'CSV无有效数据。'; csvError.classList.add('show'); return; }
+    if (!lines.length) { csvError.textContent = 'CSV 无有效数据。'; csvError.classList.add('show'); return; }
 
     // Validate
     for (let i = 0; i < lines.length; i++) {
       const parts = lines[i].split(',').map((p) => p.trim());
-      if (parts.length < 2 || !parts[0]) { csvError.textContent = `第 ${i + 1} 行格式无效。`; csvError.classList.add('show'); return; }
+      if (parts.length < 3) { csvError.textContent = `第 ${i + 1} 行格式无效。请确保即使不是学生也以逗号结尾。`; csvError.classList.add('show'); return; }
       if (!['student', 'teacher', 'admin'].includes(parts[1])) { csvError.textContent = `第 ${i + 1} 行角色无效。`; csvError.classList.add('show'); return; }
+      if (parts[1] !== 'student' && parts[2] !== '') { csvError.textContent = `第 ${i + 1} 行错误：非学生该列（管理老师 UID）必须留空。`; csvError.classList.add('show'); return; }
     }
 
-    csvPreview.innerHTML = `<table><thead><tr><th>#</th><th>姓名</th><th>角色</th></tr></thead><tbody>` +
-      lines.map((l, i) => { const p = l.split(','); return `<tr><td>${i + 1}</td><td>${escapeHtml(p[0])}</td><td>${escapeHtml(p[1])}</td></tr>`; }).join('') +
+    csvPreview.innerHTML = `<table><thead><tr><th>#</th><th>姓名</th><th>角色</th><th>管理老师 UID</th></tr></thead><tbody>` +
+      lines.map((l, i) => { const p = l.split(','); return `<tr><td>${i + 1}</td><td>${escapeHtml(p[0])}</td><td>${escapeHtml(p[1])}</td><td>${escapeHtml(p[2] || '-')}</td></tr>`; }).join('') +
       `</tbody></table><p style="margin-top:8px">共 ${lines.length} 条记录</p>`;
     csvImportBtn.style.display = 'inline-block';
   };
@@ -108,9 +120,10 @@ const batchCreateResult = requireElement<HTMLElement>('#batch-create-result');
 requireElement('#batch-add-row').addEventListener('click', () => {
   const div = document.createElement('div');
   div.className = 'batch-entry';
-  div.style.cssText = 'display:grid;grid-template-columns:1fr 1fr auto;gap:12px;margin-bottom:8px';
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;margin-bottom:8px';
   div.innerHTML = `<input type="text" placeholder="姓名" class="batch-name">
     <select class="batch-role"><option value="student">学生</option><option value="teacher">教师</option><option value="admin">管理员</option></select>
+    <input type="text" placeholder="管理老师 UID（选填）" class="batch-teacher-uid">
     <button class="btn btn-sm btn-danger batch-remove" type="button">×</button>`;
   batchContainer.appendChild(div);
 });
@@ -120,14 +133,27 @@ batchContainer.addEventListener('click', (e) => {
   if (btn && batchContainer.children.length > 1) btn.closest('.batch-entry')?.remove();
 });
 
+batchContainer.addEventListener('change', (e) => {
+  const select = (e.target as Element)?.closest<HTMLSelectElement>('.batch-role');
+  if (select) {
+    const entry = select.closest('.batch-entry');
+    const teacherInput = entry?.querySelector<HTMLInputElement>('.batch-teacher-uid');
+    if (teacherInput) {
+      teacherInput.style.visibility = select.value === 'student' ? 'visible' : 'hidden';
+      if (select.value !== 'student') teacherInput.value = '';
+    }
+  }
+});
+
 requireElement('#batch-create-btn').addEventListener('click', async () => {
   batchCreateError.classList.remove('show');
   batchCreateResult.innerHTML = '';
-  const entries: Array<{ name: string; role: string }> = [];
+  const entries: Array<{ name: string; role: string; teacher_uid: string }> = [];
   batchContainer.querySelectorAll('.batch-entry').forEach((entry) => {
     const name = entry.querySelector<HTMLInputElement>('.batch-name')?.value.trim() ?? '';
     const role = entry.querySelector<HTMLSelectElement>('.batch-role')?.value ?? 'student';
-    if (name) entries.push({ name, role });
+    const teacher_uid = entry.querySelector<HTMLInputElement>('.batch-teacher-uid')?.value.trim() ?? '';
+    if (name) entries.push({ name, role, teacher_uid });
   });
   if (!entries.length) { batchCreateError.textContent = '请至少填写一行。'; batchCreateError.classList.add('show'); return; }
 

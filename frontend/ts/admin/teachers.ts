@@ -68,7 +68,7 @@ editUserSave.addEventListener('click', async () => {
   if (!editUserId) return;
   const name = editUserName.value.trim();
   const password = editUserPassword.value;
-  if (password && password.length < 8) { editUserError.textContent = '密码至少需要8位。'; editUserError.classList.add('show'); return; }
+  if (password && password.length < 8) { editUserError.textContent = '密码至少需要 8 位。'; editUserError.classList.add('show'); return; }
   try {
     editUserSave.disabled = true; editUserSave.textContent = '保存中...';
     const body: Record<string, string> = {};

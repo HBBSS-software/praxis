@@ -43,7 +43,7 @@ if (session) {
     const password = passwordInput.value;
 
     if (password && password.length < 8) {
-      errorEl.textContent = '密码至少需要8位。';
+      errorEl.textContent = '密码至少需要 8 位。';
       errorEl.classList.add('show');
       return;
     }
