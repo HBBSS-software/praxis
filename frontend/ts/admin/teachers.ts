@@ -1,5 +1,5 @@
 import {
-  API_URL, escapeHtml, readJson, requireElement, requireRole, type ApiError
+  API_URL, escapeHtml, readJson, requireElement, requireRole, type ApiError, formatDateTime
 } from '../shared';
 import { renderSidebar } from '../components/sidebar';
 
@@ -26,6 +26,7 @@ async function loadUserList() {
     tchTable.innerHTML = data.users.map((u) => `<tr>
       <td>${escapeHtml(u.uid)}</td>
       <td>${escapeHtml(u.name)}</td>
+      <td>${escapeHtml(formatDateTime(u.created_at))}</td>
       <td><div style="display:flex;gap:6px">
         <button class="btn btn-sm btn-secondary" type="button" data-action="edit-user" data-user-id="${u.id}" data-user-name="${escapeHtml(u.name)}">编辑</button>
         <button class="btn btn-sm btn-danger" type="button" data-action="delete-user" data-user-id="${u.id}">删除</button>

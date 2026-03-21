@@ -1,10 +1,10 @@
 import { renderSidebar } from '../components/sidebar';
 import {
   API_URL, escapeHtml, logout,
-  readJson, requireElement, requireRole, type ApiError
+  readJson, requireElement, requireRole, type ApiError, formatDateTime
 } from '../shared';
 
-interface Student { id: number; uid: string; name: string; }
+interface Student { id: number; uid: string; name: string; created_at: string; }
 
 const session = requireRole('teacher', '../login.html');
 if (session) renderSidebar({ role: 'teacher', activePath: 'students.html', user: session.user });
@@ -93,6 +93,7 @@ if (session) {
         <tr>
           <td>${escapeHtml(s.uid)}</td>
           <td>${escapeHtml(s.name)}</td>
+          <td>${escapeHtml(formatDateTime(s.created_at))}</td>
           <td>
             <button class="btn btn-sm btn-secondary" type="button" data-action="edit-student" data-student-id="${s.id}" data-student-name="${escapeHtml(s.name)}">编辑</button>
           </td>

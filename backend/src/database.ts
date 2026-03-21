@@ -239,14 +239,14 @@ function getUsersByRole(role?: UserRole): Array<Pick<User, 'id' | 'uid' | 'name'
   if (role) users = users.filter((u) => u.role === role);
   return users
     .map(({ id, uid, name, role: r, created_at }) => ({ id, uid, name, role: r, created_at }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => b.id - a.id);
 }
 
 function getAllStudents(): Array<Pick<User, 'id' | 'uid' | 'name' | 'created_at'>> {
   return db.users
     .filter((u) => u.role === 'student')
     .map(({ id, uid, name, created_at }) => ({ id, uid, name, created_at }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => b.id - a.id);
 }
 
 // --- User CRUD ---
@@ -325,7 +325,7 @@ function getTeacherStudents(teacherId: number): Array<Pick<User, 'id' | 'uid' | 
   return db.users
     .filter((u) => studentIds.has(u.id))
     .map(({ id, uid, name, created_at }) => ({ id, uid, name, created_at }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => b.id - a.id);
 }
 
 function getStudentTeacherId(studentId: number): number | null {

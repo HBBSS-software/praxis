@@ -1,5 +1,5 @@
 import {
-  API_URL, escapeHtml, readJson, requireElement, requireRole
+  API_URL, escapeHtml, readJson, requireElement, requireRole, formatDateTime
 } from '../shared';
 import { renderSidebar } from '../components/sidebar';
 
@@ -82,6 +82,7 @@ async function loadAssignments() {
         <td><input type="checkbox" class="assign-cb" data-id="${st.id}"></td>
         <td>${escapeHtml(st.uid)}</td>
         <td>${escapeHtml(st.name)}</td>
+        <td>${escapeHtml(formatDateTime(st.created_at))}</td>
         <td>${teacher ? `${escapeHtml(teacher.name)}（${escapeHtml(teacher.uid)}）` : '<span style="color:var(--gray-400)">未分配</span>'}</td>
       </tr>`;
     }).join('');
