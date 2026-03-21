@@ -40,7 +40,10 @@ router.get('/records', authMiddleware, teacherOrAdmin, (request, response) => {
     const studentIds = getVisibleStudentIds(request.user!.id, request.user!.role);
     const filters: RecordFilters = {
       student_id: typeof request.query.student_id === 'string' ? request.query.student_id : null,
+      teacher_id: typeof request.query.teacher_id === 'string' ? request.query.teacher_id : null,
       status: typeof request.query.status === 'string' ? request.query.status : null,
+      practice_after: typeof request.query.practice_after === 'string' ? request.query.practice_after : null,
+      practice_before: typeof request.query.practice_before === 'string' ? request.query.practice_before : null,
       created_after: typeof request.query.created_after === 'string' ? request.query.created_after : null,
       created_before: typeof request.query.created_before === 'string' ? request.query.created_before : null,
       updated_after: typeof request.query.updated_after === 'string' ? request.query.updated_after : null,
@@ -107,7 +110,7 @@ router.post('/records/batch-review', authMiddleware, teacherOrAdmin, (request, r
     return;
   }
 
-  if (action !== 'approved' && action !== 'rejected' && action !== 'deleted') {
+  if (action !== 'approved' && action !== 'rejected' && action !== 'deleted' && action !== 'pending') {
     response.status(400).json({ error: '操作类型无效。' });
     return;
   }
@@ -128,8 +131,10 @@ router.post('/records/batch-review', authMiddleware, teacherOrAdmin, (request, r
         database.updateRecord(record.id, { status: action, teacher_comment: null });
         const msg = action === 'approved'
           ? `你的实践记录 "${record.title}" 已被通过。`
-          : `你的实践记录 "${record.title}" 已被驳回。`;
-        database.createNotification(record.student_id, action, msg);
+          : action === 'rejected'
+            ? `你的实践记录 "${record.title}" 已被驳回。`
+            : `你的实践记录 "${record.title}" 已被退回待审核。`;
+        database.createNotification(record.student_id, action === 'pending' ? 'other' : action, msg);
       }
       successCount++;
     }

@@ -375,10 +375,15 @@ function getAllRecords(filters: RecordFilters = {}, studentIds?: Set<number>): T
   if (filters.student_id != null && filters.student_id !== '') {
     records = records.filter((r) => r.student_id === Number(filters.student_id));
   }
+  if (filters.teacher_id != null && filters.teacher_id !== '') {
+    records = records.filter((r) => getStudentTeacherId(r.student_id) === Number(filters.teacher_id));
+  }
   if (isRecordStatus(filters.status)) {
     records = records.filter((r) => r.status === filters.status);
   }
   records = records.filter((r) =>
+    (!filters.practice_after || r.practice_date >= filters.practice_after) &&
+    (!filters.practice_before || r.practice_date <= filters.practice_before) &&
     dateRangeFilter(r.created_at, filters.created_after, filters.created_before) &&
     dateRangeFilter(r.updated_at, filters.updated_after, filters.updated_before)
   );

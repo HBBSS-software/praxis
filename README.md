@@ -4,9 +4,9 @@
 
 - 使用 Bun 进行依赖管理、脚本执行和后端运行
 - 使用 TypeScript 编写后端代码、前端页面逻辑和测试
+- 前端使用 React、Vite 与 shadcn/ui
 - 使用 Express 提供 API 服务
 - 使用 `backend/database.json` 作为 JSON 文件数据存储
-- 前端为静态 HTML + CSS 页面
 
 ## 如何使用
 
@@ -28,6 +28,8 @@ bun start
 bun dev
 ```
 
+开发模式下前端由 Vite 提供服务，默认地址为 `http://localhost:5173`，并通过代理转发 `/api` 与 `/uploads` 到后端；修改前端代码后会自动热更新。
+
 编译前端 ts 文件：
 
 ```bash
@@ -40,7 +42,7 @@ bun build:frontend
 bun test:all
 ```
 
-默认运行在 `http://localhost:3000`。
+生产模式默认运行在 `http://localhost:3000`。
 
 ## 安全配置
 

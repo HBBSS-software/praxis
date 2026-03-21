@@ -2,7 +2,7 @@ export type UserRole = 'admin' | 'teacher' | 'student';
 
 export type RecordStatus = 'approved' | 'pending' | 'rejected';
 
-export type NotificationType = 'approved' | 'rejected' | 'deleted';
+export type NotificationType = 'approved' | 'rejected' | 'deleted' | 'other';
 
 export interface AppNotification {
   id: number;
@@ -82,7 +82,10 @@ export interface UpdateRecordInput {
 
 export interface RecordFilters {
   student_id?: number | string | null;
+  teacher_id?: number | string | null;
   status?: RecordStatus | string | null;
+  practice_after?: string | null;
+  practice_before?: string | null;
   created_after?: string | null;
   created_before?: string | null;
   updated_after?: string | null;

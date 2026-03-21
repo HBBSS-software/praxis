@@ -15,9 +15,8 @@ beforeAll(async () => {
   // Dynamic import ensures process.env.DATABASE_FILE is set before database.ts initializes
   const mod = await import('../src/server');
   startServer = mod.startServer;
-  server = startServer(0);
-  const addr = server.address();
-  const port = addr && typeof addr !== 'string' ? addr.port : 3000;
+  const port = 3100 + Math.floor(Math.random() * 1000);
+  server = startServer(port);
   serverUrl = `http://localhost:${port}`;
 });
 

@@ -14,7 +14,7 @@ import studentRoutes from './routes/students';
 import teacherRoutes from './routes/teachers';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const frontendDir = path.join(currentDir, '..', '..', 'frontend');
+const frontendDir = path.join(currentDir, '..', '..', 'frontend', 'dist');
 const uploadDir = path.join(currentDir, '..', 'uploads');
 const defaultPort = Number(process.env.PORT) || 3000;
 
@@ -83,10 +83,19 @@ app.use('/api/student', studentRoutes);
 app.use('/api/teacher', teacherRoutes);
 
 app.get('/', (_request, response) => {
-  response.sendFile(path.join(frontendDir, 'login.html'));
+  response.sendFile(path.join(frontendDir, 'index.html'));
 });
 
 app.use(express.static(frontendDir));
+
+app.get('*', (request, response, next) => {
+  if (request.path.startsWith('/api') || request.path.startsWith('/uploads')) {
+    next();
+    return;
+  }
+
+  response.sendFile(path.join(frontendDir, 'index.html'));
+});
 
 app.post('/api/upload', authMiddleware, upload.single('image'), (request, response) => {
   if (!request.file) {
