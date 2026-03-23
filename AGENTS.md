@@ -1,6 +1,6 @@
 # 默认提示词
 
-本项目采用 bun 开发，各种操作的命令参见 package.json。修改代码后，请跑一遍 `test:all`；如果需要，请修改 package.json 和 README.md。
+本项目采用 bun 开发，各种操作的命令参见 package.json。如果你修改了后端，请跑一遍 `test:all`；如果需要，请修改 package.json 和 README.md。
 
 ## 前端
 

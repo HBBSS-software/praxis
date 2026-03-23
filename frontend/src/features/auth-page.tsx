@@ -1,4 +1,4 @@
-import { LoaderCircle, LockKeyhole, UserRound } from 'lucide-react';
+import { FileCheck2, LoaderCircle, LockKeyhole, ShieldCheck, UserRound, Zap } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -17,12 +17,32 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const highlights = [
+    {
+      title: '流程清晰',
+      description: '实践提交、审核流转、通知反馈集中在一处，状态变化随时可追踪。',
+      icon: FileCheck2,
+      iconWrapperClassName: 'bg-sky-50 text-sky-700'
+    },
+    {
+      title: '数据集中',
+      description: '学生实践记录、教师审核意见统一存储，减少分散查找与重复核对，敏感信息加密存储，全方位保障数据安全。',
+      icon: ShieldCheck,
+      iconWrapperClassName: 'bg-emerald-50 text-emerald-700'
+    },
+    {
+      title: '操作高效',
+      description: '支持批量审核、智能筛选、自动提醒、数据导出等功能，大幅减轻重复工作，提升效率。',
+      icon: Zap,
+      iconWrapperClassName: 'bg-amber-50 text-amber-700'
+    }
+  ] as const;
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-8">
-      <div className="grid w-full max-w-5xl gap-4 lg:grid-cols-[1fr_minmax(380px,460px)]">
-        <div className="hidden rounded-xl border bg-card p-8 shadow-sm lg:block">
-          <div className="flex h-full flex-col justify-between">
+      <div className="grid w-full max-w-6xl items-start gap-4 lg:gap-20 lg:grid-cols-[1fr_minmax(380px,460px)]">
+        <div className="hidden lg:block">
+          <div className="space-y-6">
             <div className="space-y-5">
               <div className="inline-flex rounded-full border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
                 社会实践系统
@@ -32,22 +52,25 @@ export function LoginPage() {
                 <p className="max-w-lg text-base text-muted-foreground">统一操作入口，让实践提交更便捷、审核更透明、管理更省心。</p>
               </div>
             </div>
-            <div className="grid gap-4 md:grid-cols-3">
-              {[
-                ['流程清晰', '实践提交、审核流转、通知反馈集中在一处，状态变化随时可追踪。'],
-                ['数据集中', '学生实践记录、教师审核意见统一存储，减少分散查找与重复核对，敏感信息加密存储，全方位保障数据安全。'],
-                ['操作高效', '支持批量审核、智能筛选、自动提醒、数据导出等功能，大幅减轻重复工作，提升效率。']
-              ].map(([title, description]) => (
-                <div key={title} className="rounded-lg border bg-muted/40 p-4">
-                  <p className="text-base font-semibold">{title}</p>
-                  <p className="mt-2 text-sm text-muted-foreground">{description}</p>
-                </div>
+            <div className="grid gap-3 pt-6">
+              {highlights.map(({ title, description, icon: Icon, iconWrapperClassName }) => (
+                <Card key={title} className="border-border/60 bg-background/80 shadow-none">
+                  <CardContent className="flex items-start gap-4 p-4">
+                    <div className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${iconWrapperClassName}`}>
+                      <Icon className="size-5" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-sm font-semibold tracking-tight">{title}</p>
+                      <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           </div>
         </div>
 
-        <Card className="border-border/70 shadow-sm">
+        <Card className="border-border/70 shadow-sm lg:self-center">
           <CardHeader className="space-y-3 pb-4">
             <div className="flex size-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <LockKeyhole className="size-6" />
