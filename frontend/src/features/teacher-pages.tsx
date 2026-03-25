@@ -1,10 +1,13 @@
-import { ArrowDown, ArrowUp, BarChart3, CheckCheck, FilePenLine, LoaderCircle, Search, UserRoundCog, Users } from 'lucide-react';
+import { ArrowDown, ArrowUp, CheckCircle2, Clock3, FilePenLine, RefreshCw, UserRoundCog, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import type { ColumnDef } from '@tanstack/react-table';
 
 import { useSession } from '@/lib/auth';
 import { DatePickerField } from '@/shared/date-picker-field';
 import { EmptyState } from '@/shared/empty-state';
 import { StatCard } from '@/shared/stat-card';
+import { ConfirmActionDialog } from '@/components/confirm-action-dialog';
+import { DataTable } from '@/components/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,11 +16,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
-import { apiRequest, ApiResponseError, getApiOrigin } from '@/lib/api';
+import { ApiResponseError, createApiClient, getApiOrigin, unwrapResponse } from '@/lib/api';
+import { toastError, toastSuccess } from '@/lib/feedback';
 import { formatDate, formatDateTime, formatDuration, statusLabel } from '@/lib/format';
-import type { StudentSummary, TeacherRecord, TeacherStatistics, UserSummary } from '@/lib/types';
+import { useShiftMultiSelect } from '@/lib/shift-selection';
+import type { CreatedUser, StudentSummary, TeacherRecord, TeacherStatistics, UserSummary } from '@/lib/types';
+import { UserCredentialsResult } from '@/shared/user-credentials-result';
 import { AccountCard } from './student-pages';
 
 function PageFrame({
@@ -57,6 +63,7 @@ const defaultFilters = {
 
 export function TeacherDashboardPage() {
   const { token, signOut, user } = useSession();
+  const { captureShiftKey, resetSelectionAnchor, updateSelection } = useShiftMultiSelect();
   const [students, setStudents] = useState<StudentSummary[]>([]);
   const [teachers, setTeachers] = useState<UserSummary[]>([]);
   const [filters, setFilters] = useState(defaultFilters);
@@ -76,6 +83,9 @@ export function TeacherDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<TeacherRecord | null>(null);
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const allSelected = records.length > 0 && selectedIds.length === records.length;
   const query = useMemo(() => {
@@ -97,7 +107,7 @@ export function TeacherDashboardPage() {
   async function loadStudents() {
     if (!token) return;
     try {
-      const data = await apiRequest<{ students: StudentSummary[] }>('/teacher/students', {}, token);
+      const data = await unwrapResponse<{ students: StudentSummary[] }>(createApiClient(token).teacher.students.get());
       setStudents(data.students);
     } catch (nextError) {
       if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
@@ -107,7 +117,7 @@ export function TeacherDashboardPage() {
   async function loadTeachers() {
     if (!token || user?.role !== 'admin') return;
     try {
-      const data = await apiRequest<{ users: UserSummary[] }>('/admin/users?role=teacher', {}, token);
+      const data = await unwrapResponse<{ users: UserSummary[] }>(createApiClient(token).admin.users.get({ query: { role: 'teacher' } }));
       setTeachers(data.users);
     } catch (nextError) {
       if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
@@ -119,9 +129,26 @@ export function TeacherDashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const data = await apiRequest<{ records: TeacherRecord[] }>(`/teacher/records${query ? `?${query}` : ''}`, {}, token);
+      const data = await unwrapResponse<{ records: TeacherRecord[] }>(
+        createApiClient(token).teacher.records.get({
+          query: {
+            student_id: filters.student_id || undefined,
+            teacher_id: filters.teacher_id || undefined,
+            status: filters.status ? (filters.status as 'approved' | 'pending' | 'rejected') : undefined,
+            practice_after: filters.practice_after || undefined,
+            practice_before: filters.practice_before || undefined,
+            created_after: filters.created_after ? new Date(filters.created_after).toISOString() : undefined,
+            created_before: filters.created_before ? (() => {
+              const end = new Date(filters.created_before);
+              end.setHours(23, 59, 59, 999);
+              return end.toISOString();
+            })() : undefined
+          }
+        })
+      );
       setRecords(data.records);
       setSelectedIds([]);
+      resetSelectionAnchor();
     } catch (nextError) {
       if (nextError instanceof ApiResponseError && nextError.status === 401) {
         signOut();
@@ -137,7 +164,7 @@ export function TeacherDashboardPage() {
     if (!token) return;
     setStatsLoading(true);
     try {
-      const data = await apiRequest<{ statistics: TeacherStatistics }>('/teacher/statistics', {}, token);
+      const data = await unwrapResponse<{ statistics: TeacherStatistics }>(createApiClient(token).teacher.statistics.get());
       setStatistics(data.statistics);
     } catch (nextError) {
       if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
@@ -162,17 +189,77 @@ export function TeacherDashboardPage() {
     void loadStatistics();
   }, [token]);
 
+  const columns = useMemo<Array<ColumnDef<TeacherRecord>>>(() => [
+    {
+      id: 'select',
+      header: () => <Checkbox checked={allSelected} onCheckedChange={(checked) => setSelectedIds(checked ? records.map((record) => record.id) : [])} />,
+      cell: ({ row }) => (
+        <Checkbox
+          checked={selectedIds.includes(row.original.id)}
+          onClick={captureShiftKey}
+          onCheckedChange={(checked) =>
+            setSelectedIds((current) =>
+              updateSelection(
+                records.map((item) => item.id),
+                current,
+                row.original.id,
+                checked === true
+              )
+            )
+          }
+        />
+      )
+    },
+    {
+      id: 'student',
+      header: '学生',
+      cell: ({ row }) => (
+        <div>
+          <p className="font-medium">{row.original.student_name}</p>
+          <p className="text-xs text-muted-foreground">{row.original.student_uid}</p>
+        </div>
+      )
+    },
+    { accessorKey: 'title', header: '标题' },
+    {
+      accessorKey: 'practice_date',
+      header: '实践日期',
+      cell: ({ row }) => formatDate(row.original.practice_date)
+    },
+    {
+      id: 'status',
+      header: '状态',
+      cell: ({ row }) => <StatusBadge status={row.original.status} />
+    },
+    {
+      accessorKey: 'created_at',
+      header: '上传日期',
+      cell: ({ row }) => <span className="text-muted-foreground">{formatDateTime(row.original.created_at)}</span>
+    },
+    {
+      id: 'actions',
+      header: '操作',
+      cell: ({ row }) => (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => void openReview(row.original.id)}>审核</Button>
+          <Button size="sm" variant="outline" onClick={() => void openEdit(row.original.id)}>编辑</Button>
+          <Button size="sm" variant="destructive" onClick={() => setDeleteTarget(row.original)}>删除</Button>
+        </div>
+      )
+    }
+  ], [allSelected, captureShiftKey, records, selectedIds, updateSelection]);
+
   return (
     <PageFrame
       title={user?.role === 'admin' ? '记录管理' : '审核中心'}
       description={user?.role === 'admin' ? '管理员可以查看并审核全部实践记录，支持按学生、实践日期、上传日期和状态筛选，以及批量处理。' : '保留原有审核、编辑、删除和批量处理逻辑，支持按学生、实践日期和上传日期筛选。'}
-      action={<Button variant="secondary" onClick={() => { void loadRecords(); void loadStatistics(); }}><Search className="size-4" />刷新数据</Button>}
+      action={<Button variant="secondary" onClick={() => { void loadRecords(); void loadStatistics(); }}><RefreshCw className="size-4" />刷新数据</Button>}
     >
       {statistics ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StatCard title="记录总数" value={String(statistics.total_records)} hint="当前可见范围内的全部记录" icon={FilePenLine} />
-          <StatCard title="待审核" value={String(statistics.pending_count)} hint="需要尽快处理" icon={CheckCheck} />
-          <StatCard title="已通过" value={String(statistics.approved_count)} hint="通过后计入时长" icon={BarChart3} />
+          <StatCard title="待审核" value={String(statistics.pending_count)} hint="需要尽快处理" icon={Clock3} />
+          <StatCard title="已通过" value={String(statistics.approved_count)} hint="通过后计入时长" icon={CheckCircle2} />
           <StatCard title="学生人数" value={String(statistics.student_count)} hint={statsLoading ? '统计中...' : '当前可见学生数量'} icon={Users} />
         </div>
       ) : null}
@@ -230,7 +317,7 @@ export function TeacherDashboardPage() {
                 <Button size="sm" onClick={() => void runBatchAction('approved')}>批量通过</Button>
                 <Button size="sm" variant="outline" onClick={() => void runBatchAction('rejected')}>批量驳回</Button>
                 <Button size="sm" variant="secondary" onClick={() => void runBatchAction('pending')}>撤回待审核</Button>
-                <Button size="sm" variant="destructive" onClick={() => { if (window.confirm(`确定删除 ${selectedIds.length} 条记录吗？`)) void runBatchAction('deleted'); }}>批量删除</Button>
+                <Button size="sm" variant="destructive" onClick={() => setBatchDeleteOpen(true)}>批量删除</Button>
               </div>
             ) : null}
 
@@ -241,61 +328,7 @@ export function TeacherDashboardPage() {
             ) : records.length === 0 ? (
               <EmptyState title="暂无记录" description="当前筛选条件下没有找到对应的实践记录。" />
             ) : (
-              <div className="overflow-hidden rounded-xl border border-border">
-                <Table>
-                  <TableHeader className="bg-muted/50">
-                    <TableRow>
-                      <TableHead className="w-12"><Checkbox checked={allSelected} onCheckedChange={(checked) => setSelectedIds(checked ? records.map((record) => record.id) : [])} /></TableHead>
-                      <TableHead>学生</TableHead>
-                      <TableHead>标题</TableHead>
-                      <TableHead>实践日期</TableHead>
-                      <TableHead>状态</TableHead>
-                      <TableHead>上传日期</TableHead>
-                      <TableHead>操作</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                      {records.map((record) => (
-                        <TableRow key={record.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedIds.includes(record.id)}
-                              onCheckedChange={(checked) =>
-                                setSelectedIds((current) =>
-                                  checked ? [...current, record.id] : current.filter((item) => item !== record.id)
-                                )
-                              }
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <p className="font-medium">{record.student_name}</p>
-                            <p className="text-xs text-muted-foreground">{record.student_uid}</p>
-                          </TableCell>
-                          <TableCell>{record.title}</TableCell>
-                          <TableCell>{formatDate(record.practice_date)}</TableCell>
-                          <TableCell><StatusBadge status={record.status} /></TableCell>
-                          <TableCell className="text-muted-foreground">{formatDateTime(record.created_at)}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-2">
-                              <Button size="sm" onClick={() => void openReview(record.id)}>审核</Button>
-                              <Button size="sm" variant="outline" onClick={() => void openEdit(record.id)}>编辑</Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => {
-                                  if (!window.confirm('确定删除这条记录吗？')) return;
-                                  void deleteRecord(record.id);
-                                }}
-                              >
-                                删除
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                  </TableBody>
-                </Table>
-              </div>
+              <DataTable batchSize={60} columns={columns} data={records} />
             )}
           </CardContent>
         </Card>
@@ -346,13 +379,44 @@ export function TeacherDashboardPage() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <ConfirmActionDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+          }
+        }}
+        title="确认删除记录"
+        description={deleteTarget ? `将删除《${deleteTarget.title}》，删除后不可恢复。` : ''}
+        confirmLabel="删除"
+        loading={deleteLoading}
+        variant="destructive"
+        onConfirm={async () => {
+          if (!deleteTarget) return;
+          await deleteRecord(deleteTarget.id);
+        }}
+      />
+
+      <ConfirmActionDialog
+        open={batchDeleteOpen}
+        onOpenChange={setBatchDeleteOpen}
+        title="确认批量删除记录"
+        description={`将删除当前选中的 ${selectedIds.length} 条记录，删除后不可恢复。`}
+        confirmLabel="批量删除"
+        loading={deleteLoading}
+        variant="destructive"
+        onConfirm={async () => {
+          await runBatchAction('deleted');
+        }}
+      />
     </PageFrame>
   );
 
   async function openReview(recordId: number) {
     if (!token) return;
     try {
-      const data = await apiRequest<{ record: TeacherRecord }>(`/teacher/records/${recordId}`, {}, token);
+      const data = await unwrapResponse<{ record: TeacherRecord }>(createApiClient(token).teacher.records({ id: recordId }).get());
       setReviewRecord(data.record);
       setReviewComment(data.record.teacher_comment ?? '');
     } catch (nextError) {
@@ -360,14 +424,14 @@ export function TeacherDashboardPage() {
         signOut();
         return;
       }
-      window.alert(nextError instanceof Error ? nextError.message : '加载记录详情失败。');
+      toastError(nextError, '加载记录详情失败。');
     }
   }
 
   async function openEdit(recordId: number) {
     if (!token) return;
     try {
-      const data = await apiRequest<{ record: TeacherRecord }>(`/teacher/records/${recordId}`, {}, token);
+      const data = await unwrapResponse<{ record: TeacherRecord }>(createApiClient(token).teacher.records({ id: recordId }).get());
       setEditRecord(data.record);
       setEditForm({
         title: data.record.title,
@@ -381,123 +445,134 @@ export function TeacherDashboardPage() {
         signOut();
         return;
       }
-      window.alert(nextError instanceof Error ? nextError.message : '加载记录详情失败。');
+      toastError(nextError, '加载记录详情失败。');
     }
   }
 
   async function submitReview(status: 'approved' | 'rejected' | 'pending') {
     if (!token || !reviewRecord) return;
     try {
-      await apiRequest(
-        `/teacher/records/${reviewRecord.id}/review`,
-        { method: 'PUT', body: JSON.stringify({ status, comment: reviewComment.trim() }) },
-        token
+      await unwrapResponse(
+        createApiClient(token).teacher.records({ id: reviewRecord.id }).review.put({
+          status,
+          comment: reviewComment.trim()
+        })
       );
       setReviewRecord(null);
       setReviewComment('');
+      toastSuccess('审核结果已保存。');
       await Promise.all([loadRecords(), loadStatistics()]);
     } catch (nextError) {
       if (nextError instanceof ApiResponseError && nextError.status === 401) {
         signOut();
         return;
       }
-      window.alert(nextError instanceof Error ? nextError.message : '保存审核结果失败。');
+      toastError(nextError, '保存审核结果失败。');
     }
   }
 
   async function runBatchAction(action: 'approved' | 'rejected' | 'pending' | 'deleted') {
     if (!token) return;
     try {
-      await apiRequest(
-        '/teacher/records/batch-review',
-        { method: 'POST', body: JSON.stringify({ ids: selectedIds, action }) },
-        token
-      );
+      await unwrapResponse(createApiClient(token).teacher.records['batch-review'].post({ ids: selectedIds, action }));
+      if (action === 'deleted') {
+        setBatchDeleteOpen(false);
+        toastSuccess(`已删除 ${selectedIds.length} 条记录。`);
+      } else {
+        toastSuccess(`已处理 ${selectedIds.length} 条记录。`);
+      }
       await Promise.all([loadRecords(), loadStatistics()]);
     } catch (nextError) {
       if (nextError instanceof ApiResponseError && nextError.status === 401) {
         signOut();
         return;
       }
-      window.alert(nextError instanceof Error ? nextError.message : '批量操作失败。');
+      toastError(nextError, '批量操作失败。');
     }
   }
 
   async function saveEdit() {
     if (!token || !editRecord) return;
     try {
-      await apiRequest(
-        `/teacher/records/${editRecord.id}`,
-        {
-          method: 'PUT',
-          body: JSON.stringify({
-            title: editForm.title.trim(),
-            content: editForm.content.trim(),
-            practice_date: editForm.practice_date,
-            duration: editForm.duration,
-            location: editForm.location.trim() || null
-          })
-        },
-        token
+      await unwrapResponse(
+        createApiClient(token).teacher.records({ id: editRecord.id }).put({
+          title: editForm.title.trim(),
+          content: editForm.content.trim(),
+          practice_date: editForm.practice_date,
+          duration: editForm.duration,
+          location: editForm.location.trim() || null
+        })
       );
       setEditRecord(null);
+      toastSuccess('记录修改已保存。');
       await loadRecords();
     } catch (nextError) {
       if (nextError instanceof ApiResponseError && nextError.status === 401) {
         signOut();
         return;
       }
-      window.alert(nextError instanceof Error ? nextError.message : '保存修改失败。');
+      toastError(nextError, '保存修改失败。');
     }
   }
 
   async function deleteRecord(recordId: number) {
     if (!token) return;
     try {
-      await apiRequest(`/teacher/records/${recordId}`, { method: 'DELETE' }, token);
+      setDeleteLoading(true);
+      await unwrapResponse(createApiClient(token).teacher.records({ id: recordId }).delete());
+      setDeleteTarget(null);
+      toastSuccess('记录已删除。');
       await Promise.all([loadRecords(), loadStatistics()]);
     } catch (nextError) {
       if (nextError instanceof ApiResponseError && nextError.status === 401) {
         signOut();
         return;
       }
-      window.alert(nextError instanceof Error ? nextError.message : '删除失败。');
+      toastError(nextError, '删除失败。');
+    } finally {
+      setDeleteLoading(false);
     }
   }
 }
 
 export function TeacherStudentsPage() {
   const { token, signOut } = useSession();
+  const { captureShiftKey, resetSelectionAnchor, updateSelection } = useShiftMultiSelect();
   const [students, setStudents] = useState<StudentSummary[]>([]);
   const [durations, setDurations] = useState<Record<number, number>>({});
   const [sortBy, setSortBy] = useState<'duration-desc' | 'duration-asc' | 'uid-asc' | 'uid-desc' | 'name-asc' | 'name-desc'>('duration-desc');
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editing, setEditing] = useState<StudentSummary | null>(null);
   const [form, setForm] = useState({ name: '', password: '' });
-  const [error, setError] = useState('');
+  const [batchResetOpen, setBatchResetOpen] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetResult, setResetResult] = useState<CreatedUser[]>([]);
 
-  async function loadStudents() {
+  async function loadData() {
     if (!token) return;
     try {
-      const data = await apiRequest<{ students: StudentSummary[] }>('/teacher/students', {}, token);
-      setStudents(data.students);
-    } catch (nextError) {
-      if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
-    }
-  }
+      const [studentsData, statisticsData] = await Promise.all([
+        unwrapResponse<{ students: StudentSummary[] }>(createApiClient(token).teacher.students.get()),
+        unwrapResponse<{ statistics: TeacherStatistics }>(createApiClient(token).teacher.statistics.get())
+      ]);
 
-  async function loadDurations() {
-    if (!token) return;
-    try {
-      const data = await apiRequest<{ statistics: TeacherStatistics }>('/teacher/statistics', {}, token);
-      setDurations(Object.fromEntries(data.statistics.student_durations.map((item) => [item.student_id, item.total_duration])));
+      setStudents(studentsData.students);
+      setDurations(Object.fromEntries(statisticsData.statistics.student_durations.map((item) => [item.student_id, item.total_duration])));
+      setSelectedIds([]);
+      resetSelectionAnchor();
     } catch (nextError) {
-      if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
+      if (nextError instanceof ApiResponseError && nextError.status === 401) {
+        signOut();
+        return;
+      }
+
+      toastError(nextError, '加载学生列表失败。');
     }
   }
 
   useEffect(() => {
-    void loadStudents();
-    void loadDurations();
+    if (!token) return;
+    void loadData();
   }, [token]);
 
   const sortedStudents = useMemo(() => {
@@ -513,15 +588,106 @@ export function TeacherStudentsPage() {
     });
   }, [durations, sortBy, students]);
 
+  const columns = useMemo<Array<ColumnDef<StudentSummary>>>(() => [
+    {
+      id: 'select',
+      header: () => (
+        <Checkbox
+          checked={sortedStudents.length > 0 && selectedIds.length === sortedStudents.length}
+          onCheckedChange={(checked) => setSelectedIds(checked ? sortedStudents.map((student) => student.id) : [])}
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          checked={selectedIds.includes(row.original.id)}
+          onClick={captureShiftKey}
+          onCheckedChange={(checked) =>
+            setSelectedIds((current) =>
+              updateSelection(
+                sortedStudents.map((item) => item.id),
+                current,
+                row.original.id,
+                checked === true
+              )
+            )
+          }
+        />
+      )
+    },
+    {
+      accessorKey: 'uid',
+      header: () => (
+        <SortButton
+          active={sortBy === 'uid-asc' || sortBy === 'uid-desc'}
+          descending={sortBy === 'uid-desc'}
+          label="UID"
+          onClick={() => setSortBy((current) => current === 'uid-asc' ? 'uid-desc' : 'uid-asc')}
+        />
+      )
+    },
+    {
+      accessorKey: 'name',
+      header: () => (
+        <SortButton
+          active={sortBy === 'name-asc' || sortBy === 'name-desc'}
+          descending={sortBy === 'name-desc'}
+          label="姓名"
+          onClick={() => setSortBy((current) => current === 'name-asc' ? 'name-desc' : 'name-asc')}
+        />
+      ),
+      cell: ({ row }) => <span className="font-medium">{row.original.name}</span>
+    },
+    {
+      id: 'duration',
+      header: () => (
+        <SortButton
+          active={sortBy === 'duration-desc' || sortBy === 'duration-asc'}
+          descending={sortBy === 'duration-desc'}
+          label="总时长"
+          onClick={() => setSortBy((current) => current === 'duration-desc' ? 'duration-asc' : 'duration-desc')}
+        />
+      ),
+      cell: ({ row }) => `${formatDuration(durations[row.original.id] ?? 0)} h`
+    },
+    {
+      accessorKey: 'created_at',
+      header: '创建时间',
+      cell: ({ row }) => <span className="text-muted-foreground">{formatDateTime(row.original.created_at)}</span>
+    },
+    {
+      id: 'actions',
+      header: '操作',
+      cell: ({ row }) => (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            setEditing(row.original);
+            setForm({ name: row.original.name, password: '' });
+          }}
+        >
+          <UserRoundCog className="size-4" />
+          编辑
+        </Button>
+      )
+    }
+  ], [captureShiftKey, durations, selectedIds, sortBy, sortedStudents, updateSelection]);
+
   return (
-    <PageFrame title="学生管理" description="教师可以查看学生总时长，并按总时长或姓名排序。">
+    <PageFrame title="学生列表" description="教师可以查看学生总时长，支持批量重置密码，并按总时长或姓名排序。">
       <Card>
         <CardHeader>
           <CardTitle>学生列表</CardTitle>
           <CardDescription>这里只展示已分配给当前教师的学生，总时长仅统计已通过记录。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {selectedIds.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-slate-100 p-3">
+                <p className="mr-2 text-sm text-muted-foreground">已选 {selectedIds.length} 人</p>
+                <Button size="sm" onClick={() => setBatchResetOpen(true)}>重置密码</Button>
+              </div>
+            ) : <div />}
             <FilterSelect
               label="排序"
               value={sortBy}
@@ -539,64 +705,16 @@ export function TeacherStudentsPage() {
           {sortedStudents.length === 0 ? (
             <EmptyState title="暂无学生" description="管理员分配学生后，这里会自动显示。" />
           ) : (
-            <div className="overflow-hidden rounded-xl border border-border">
-              <Table>
-                <TableHeader className="bg-muted/50">
-                  <TableRow>
-                    <TableHead>
-                      <SortButton
-                        active={sortBy === 'uid-asc' || sortBy === 'uid-desc'}
-                        descending={sortBy === 'uid-desc'}
-                        label="UID"
-                        onClick={() => setSortBy((current) => current === 'uid-asc' ? 'uid-desc' : 'uid-asc')}
-                      />
-                    </TableHead>
-                    <TableHead>
-                      <SortButton
-                        active={sortBy === 'name-asc' || sortBy === 'name-desc'}
-                        descending={sortBy === 'name-desc'}
-                        label="姓名"
-                        onClick={() => setSortBy((current) => current === 'name-asc' ? 'name-desc' : 'name-asc')}
-                      />
-                    </TableHead>
-                    <TableHead>
-                      <SortButton
-                        active={sortBy === 'duration-desc' || sortBy === 'duration-asc'}
-                        descending={sortBy === 'duration-desc'}
-                        label="总时长"
-                        onClick={() => setSortBy((current) => current === 'duration-desc' ? 'duration-asc' : 'duration-desc')}
-                      />
-                    </TableHead>
-                    <TableHead>创建时间</TableHead>
-                    <TableHead>操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {sortedStudents.map((student) => (
-                      <TableRow key={student.id}>
-                        <TableCell>{student.uid}</TableCell>
-                        <TableCell className="font-medium">{student.name}</TableCell>
-                        <TableCell>{formatDuration(durations[student.id] ?? 0)} h</TableCell>
-                        <TableCell className="text-muted-foreground">{formatDateTime(student.created_at)}</TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditing(student);
-                              setForm({ name: student.name, password: '' });
-                            }}
-                          >
-                            <UserRoundCog className="size-4" />
-                            编辑
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable batchSize={60} columns={columns} data={sortedStudents} />
           )}
+          {resetResult.length > 0 ? (
+            <UserCredentialsResult
+              autoDownload
+              users={resetResult}
+              filename="reset_teacher_students.csv"
+              summary={`成功重置 ${resetResult.length} 个学生的密码。`}
+            />
+          ) : null}
         </CardContent>
       </Card>
 
@@ -609,25 +727,25 @@ export function TeacherStudentsPage() {
           <div className="space-y-4">
             <Field label="姓名"><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></Field>
             <Field label="新密码"><Input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} /></Field>
-            {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
             <Button
               onClick={async () => {
                 if (!token || !editing) return;
-                setError('');
                 try {
-                  await apiRequest(
-                    `/teacher/students/${editing.id}`,
-                    { method: 'PUT', body: JSON.stringify({ name: form.name.trim(), password: form.password }) },
-                    token
+                  await unwrapResponse(
+                    createApiClient(token).teacher.students({ id: editing.id }).put({
+                      name: form.name.trim(),
+                      password: form.password
+                    })
                   );
                   setEditing(null);
-                  await loadStudents();
+                  toastSuccess('学生信息已保存。');
+                  await loadData();
                 } catch (nextError) {
                   if (nextError instanceof ApiResponseError && nextError.status === 401) {
                     signOut();
                     return;
                   }
-                  setError(nextError instanceof Error ? nextError.message : '更新失败。');
+                  toastError(nextError, '更新失败。');
                 }
               }}
             >
@@ -636,6 +754,36 @@ export function TeacherStudentsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmActionDialog
+        open={batchResetOpen}
+        onOpenChange={setBatchResetOpen}
+        title="确认重置密码"
+        description={`将重置当前选中的 ${selectedIds.length} 个学生密码，并下载包含新密码的 CSV 文件。`}
+        confirmLabel="重置密码"
+        loading={resetLoading}
+        onConfirm={async () => {
+          if (!token) return;
+
+          try {
+            setResetLoading(true);
+            const data = await unwrapResponse<{ message: string; users: CreatedUser[] }>(
+              createApiClient(token).teacher.students.password.patch({ ids: selectedIds })
+            );
+            setBatchResetOpen(false);
+            setResetResult(data.users);
+            toastSuccess(`已重置 ${data.users.length} 个学生的密码。`);
+          } catch (nextError) {
+            if (nextError instanceof ApiResponseError && nextError.status === 401) {
+              signOut();
+              return;
+            }
+            toastError(nextError, '重置失败。');
+          } finally {
+            setResetLoading(false);
+          }
+        }}
+      />
     </PageFrame>
   );
 }
@@ -657,7 +805,7 @@ function LoadingCard({ label }: { label: string }) {
   return (
     <Card>
       <CardContent className="flex min-h-52 items-center justify-center gap-3 p-6 text-sm text-[color:var(--muted-foreground)]">
-        <LoaderCircle className="size-4 animate-spin" />
+        <Spinner />
         {label}
       </CardContent>
     </Card>

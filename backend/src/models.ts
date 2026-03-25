@@ -29,6 +29,17 @@ export interface PublicUser {
   name: string;
 }
 
+export interface StudentSummary {
+  id: number;
+  uid: string;
+  name: string;
+  created_at: string;
+}
+
+export interface UserSummary extends StudentSummary {
+  role: UserRole;
+}
+
 export interface AuthTokenPayload extends PublicUser {
   exp?: number;
   iat?: number;
@@ -100,6 +111,16 @@ export interface RecordStatistics {
   total_duration: number;
 }
 
+export interface TeacherStatistics extends RecordStatistics {
+  student_count: number;
+  student_durations: Array<{
+    student_id: number;
+    student_name: string;
+    student_uid: string;
+    total_duration: number;
+  }>;
+}
+
 export interface TeacherStudentAssignment {
   teacher_id: number;
   student_id: number;
@@ -111,6 +132,27 @@ export interface CreateUserResult {
   name: string;
   role: UserRole;
   password: string; // plaintext, only returned on creation
+}
+
+export interface UploadResult {
+  message: string;
+  filename: string;
+  imageUrl: string;
+}
+
+export interface CsvImportEntry {
+  lineNumber: number;
+  name: string;
+  role: UserRole;
+  teacher_uid: string;
+}
+
+export interface CsvImportPreview {
+  message: string;
+  encoding: 'utf-8' | 'utf-16' | 'gbk';
+  totalCount: number;
+  studentCount: number;
+  entries: CsvImportEntry[];
 }
 
 export interface DatabaseState {

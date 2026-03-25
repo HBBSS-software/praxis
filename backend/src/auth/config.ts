@@ -1,5 +1,3 @@
-import type { SignOptions } from 'jsonwebtoken';
-
 const DEFAULT_JWT_SECRET = 'development-only-jwt-secret-change-me';
 const DEFAULT_JWT_AUDIENCE = 'social-practice-users';
 const DEFAULT_JWT_ISSUER = 'social-practice-system';
@@ -14,7 +12,7 @@ export const isProduction = process.env.NODE_ENV === 'production';
 export const jwtSecret = process.env.JWT_SECRET ?? DEFAULT_JWT_SECRET;
 export const jwtAudience = process.env.JWT_AUDIENCE ?? DEFAULT_JWT_AUDIENCE;
 export const jwtIssuer = process.env.JWT_ISSUER ?? DEFAULT_JWT_ISSUER;
-export const tokenLifetime = (process.env.JWT_EXPIRES_IN ?? '8h') as SignOptions['expiresIn'];
+export const tokenLifetime = process.env.JWT_EXPIRES_IN ?? '8h';
 export const loginMaxAttempts = parsePositiveInteger(process.env.LOGIN_MAX_ATTEMPTS, 5);
 export const loginLockoutMs = parsePositiveInteger(process.env.LOGIN_LOCKOUT_MS, 15 * 60 * 1000);
 

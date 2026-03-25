@@ -1,8 +1,9 @@
-import { CalendarDays, CheckCircle2, Clock3, Eye, ImagePlus, LoaderCircle, MapPin, Pencil, PlusCircle, Trash2 } from 'lucide-react';
+import { CalendarDays, CheckCircle2, Clock3, Eye, ImagePlus, MapPin, Pencil, PlusCircle, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useSession } from '@/lib/auth';
+import { ConfirmActionDialog } from '@/components/confirm-action-dialog';
 import { DatePickerField } from '@/shared/date-picker-field';
 import { EmptyState } from '@/shared/empty-state';
 import { StatCard } from '@/shared/stat-card';
@@ -12,8 +13,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
-import { apiRequest, ApiResponseError, getApiOrigin, uploadImage } from '@/lib/api';
+import { ApiResponseError, createApiClient, getApiOrigin, unwrapResponse, uploadImage } from '@/lib/api';
+import { toastError, toastSuccess } from '@/lib/feedback';
 import { formatDate, formatDateTime, formatDuration, notificationLabel, statusLabel } from '@/lib/format';
 import type { AppNotification, RecordStatistics, StudentRecord } from '@/lib/types';
 
@@ -49,6 +52,8 @@ export function StudentDashboardPage() {
   const [selectedRecord, setSelectedRecord] = useState<StudentRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<StudentRecord | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   async function load() {
     if (!token) return;
@@ -56,7 +61,7 @@ export function StudentDashboardPage() {
     setError('');
 
     try {
-      const data = await apiRequest<{ records: StudentRecord[]; statistics: RecordStatistics }>('/student/records', {}, token);
+      const data = await unwrapResponse<{ records: StudentRecord[]; statistics: RecordStatistics }>(createApiClient(token).student.records.get());
       setRecords(data.records);
       setStatistics(data.statistics);
     } catch (nextError) {
@@ -91,7 +96,7 @@ export function StudentDashboardPage() {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StatCard title="总记录数" value={String(statistics.total_records)} hint="包含待审核、已通过和已驳回" icon={CalendarDays} />
           <StatCard title="累计时长" value={`${formatDuration(statistics.total_duration)} h`} hint="仅统计已通过记录" icon={Clock3} />
-          <StatCard title="待审核" value={String(statistics.pending_count)} hint="可以继续删除或编辑" icon={Eye} />
+          <StatCard title="待审核" value={String(statistics.pending_count)} hint="可以继续删除或编辑" icon={Clock3} />
           <StatCard title="已通过" value={String(statistics.approved_count)} hint="通过后计入总时长" icon={CheckCircle2} />
         </div>
       ) : null}
@@ -153,19 +158,7 @@ export function StudentDashboardPage() {
                         <Button
                           variant="destructive"
                           size="sm"
-                          onClick={async () => {
-                            if (!token || !window.confirm('确定删除这条实践记录吗？')) return;
-                            try {
-                              await apiRequest(`/student/records/${record.id}`, { method: 'DELETE' }, token);
-                              await load();
-                            } catch (nextError) {
-                              if (nextError instanceof ApiResponseError && nextError.status === 401) {
-                                signOut();
-                                return;
-                              }
-                              window.alert(nextError instanceof Error ? nextError.message : '删除失败。');
-                            }
-                          }}
+                          onClick={() => setDeleteTarget(record)}
                         >
                           <Trash2 className="size-4" />
                           删除
@@ -211,6 +204,39 @@ export function StudentDashboardPage() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <ConfirmActionDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+          }
+        }}
+        title="确认删除记录"
+        description={deleteTarget ? `将删除《${deleteTarget.title}》，删除后不可恢复。` : ''}
+        confirmLabel="删除"
+        loading={deleteLoading}
+        variant="destructive"
+        onConfirm={async () => {
+          if (!token || !deleteTarget) return;
+
+          try {
+            setDeleteLoading(true);
+            await unwrapResponse(createApiClient(token).student.records({ id: deleteTarget.id }).delete());
+            setDeleteTarget(null);
+            toastSuccess('记录已删除。');
+            await load();
+          } catch (nextError) {
+            if (nextError instanceof ApiResponseError && nextError.status === 401) {
+              signOut();
+              return;
+            }
+            toastError(nextError, '删除失败。');
+          } finally {
+            setDeleteLoading(false);
+          }
+        }}
+      />
     </StudentPageFrame>
   );
 }
@@ -223,7 +249,6 @@ export function StudentUploadPage() {
   const [loading, setLoading] = useState(Boolean(editId));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState('');
   const [originalImagePath, setOriginalImagePath] = useState<string | null>(null);
@@ -238,11 +263,11 @@ export function StudentUploadPage() {
   useEffect(() => {
     if (!editId || !token) return;
 
-    apiRequest<{ records: StudentRecord[] }>('/student/records', {}, token)
+    unwrapResponse<{ records: StudentRecord[]; statistics: RecordStatistics }>(createApiClient(token).student.records.get())
       .then((data) => {
         const record = data.records.find((item) => String(item.id) === editId);
         if (!record || (record.status !== 'pending' && record.status !== 'rejected')) {
-          window.alert('无法编辑该记录或记录不存在。');
+          toastError(new Error('无法编辑该记录或记录不存在。'));
           navigate('/student/dashboard', { replace: true });
           return;
         }
@@ -281,6 +306,8 @@ export function StudentUploadPage() {
         <CardContent>
           {loading ? (
             <LoadingCard label="正在加载记录内容..." />
+          ) : error ? (
+            <ErrorCard message={error} onRetry={() => navigate('/student/dashboard', { replace: true })} />
           ) : (
             <form
               className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]"
@@ -288,7 +315,6 @@ export function StudentUploadPage() {
                 event.preventDefault();
                 if (!token) return;
                 setError('');
-                setSuccess('');
                 setSubmitting(true);
 
                 try {
@@ -298,30 +324,30 @@ export function StudentUploadPage() {
                     imagePath = uploadResult.imageUrl;
                   }
 
-                  await apiRequest(
-                    editId ? `/student/records/${editId}` : '/student/records',
-                    {
-                      method: editId ? 'PUT' : 'POST',
-                      body: JSON.stringify({
-                        ...form,
-                        title: form.title.trim(),
-                        content: form.content.trim(),
-                        location: form.location.trim() || null,
-                        duration: form.duration.trim(),
-                        image_path: imagePath
-                      })
-                    },
-                    token
-                  );
+                  const api = createApiClient(token);
+                  const payload = {
+                    ...form,
+                    title: form.title.trim(),
+                    content: form.content.trim(),
+                    location: form.location.trim() || null,
+                    duration: form.duration.trim(),
+                    image_path: imagePath
+                  };
 
-                  setSuccess(editId ? '记录更新成功。' : '记录提交成功。');
+                  if (editId) {
+                    await unwrapResponse(api.student.records({ id: Number(editId) }).put(payload));
+                  } else {
+                    await unwrapResponse(api.student.records.post(payload));
+                  }
+
+                  toastSuccess(editId ? '记录更新成功。' : '记录提交成功。');
                   navigate('/student/dashboard', { replace: true });
                 } catch (nextError) {
                   if (nextError instanceof ApiResponseError && nextError.status === 401) {
                     signOut();
                     return;
                   }
-                  setError(nextError instanceof Error ? nextError.message : '提交失败。');
+                  toastError(nextError, '提交失败。');
                 } finally {
                   setSubmitting(false);
                 }
@@ -345,11 +371,9 @@ export function StudentUploadPage() {
                 <Field label="地点">
                   <Input value={form.location} onChange={(event) => setForm((current) => ({ ...current, location: event.target.value }))} />
                 </Field>
-                {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
-                {success ? <p className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</p> : null}
                 <div className="flex flex-wrap gap-3">
                   <Button disabled={submitting} type="submit">
-                    {submitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                    {submitting ? <Spinner className="size-4 text-current" /> : null}
                     {submitting ? '提交中...' : editId ? '保存修改' : '提交记录'}
                   </Button>
                   <Button variant="ghost" asChild>
@@ -386,7 +410,7 @@ export function StudentUploadPage() {
                           return;
                         }
                         if (file.size > 5 * 1024 * 1024) {
-                          setError('图片大小不能超过 5 MiB。');
+                          toastError(new Error('图片大小不能超过 5 MiB。'));
                           return;
                         }
                         setImagePreview(URL.createObjectURL(file));
@@ -412,12 +436,12 @@ export function StudentNotificationsPage() {
   useEffect(() => {
     if (!token) return;
 
-    apiRequest<{ notifications: AppNotification[]; unreadCount: number }>('/student/notifications', {}, token)
+    unwrapResponse<{ notifications: AppNotification[]; unreadCount: number }>(createApiClient(token).student.notifications.get())
       .then(async (data) => {
         setNotifications(data.notifications);
         setNotificationCount(0);
         if (data.unreadCount > 0) {
-          await apiRequest('/student/notifications/read', { method: 'POST' }, token);
+          await unwrapResponse(createApiClient(token).student.notifications.read.post());
         }
       })
       .catch((nextError) => {
@@ -476,8 +500,6 @@ export function AccountCard({
   const { token, user, signOut } = useSession();
   const [nameForm, setNameForm] = useState({ name: user?.name ?? '', current_password: '' });
   const [passwordForm, setPasswordForm] = useState({ current_password: '', new_password: '', confirm_password: '' });
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState('');
 
   return (
@@ -509,19 +531,17 @@ export function AccountCard({
                   onSubmit={async (event) => {
                     event.preventDefault();
                     if (!token) return;
-                    setError('');
-                    setSuccess('');
                     setSubmitting('name');
                     try {
-                      await apiRequest('/auth/profile', { method: 'PUT', body: JSON.stringify(nameForm) }, token);
-                      setSuccess('姓名修改成功，重新登录后生效。');
+                      await unwrapResponse(createApiClient(token).auth.profile.put(nameForm));
+                      toastSuccess('姓名修改成功，重新登录后生效。');
                       setNameForm((current) => ({ ...current, current_password: '' }));
                     } catch (nextError) {
                       if (nextError instanceof ApiResponseError && nextError.status === 401) {
                         signOut();
                         return;
                       }
-                      setError(nextError instanceof Error ? nextError.message : '操作失败。');
+                      toastError(nextError, '操作失败。');
                     } finally {
                       setSubmitting('');
                     }
@@ -549,33 +569,26 @@ export function AccountCard({
                 onSubmit={async (event) => {
                   event.preventDefault();
                   if (!token) return;
-                  setError('');
-                  setSuccess('');
                   if (passwordForm.new_password !== passwordForm.confirm_password) {
-                    setError('两次输入的密码不一致。');
+                    toastError(new Error('两次输入的密码不一致。'));
                     return;
                   }
                   setSubmitting('password');
                   try {
-                    await apiRequest(
-                      '/auth/password',
-                      {
-                        method: 'PUT',
-                        body: JSON.stringify({
-                          current_password: passwordForm.current_password,
-                          new_password: passwordForm.new_password
-                        })
-                      },
-                      token
+                    await unwrapResponse(
+                      createApiClient(token).auth.password.put({
+                        current_password: passwordForm.current_password,
+                        new_password: passwordForm.new_password
+                      })
                     );
-                    setSuccess('密码修改成功。');
+                    toastSuccess('密码修改成功。');
                     setPasswordForm({ current_password: '', new_password: '', confirm_password: '' });
                   } catch (nextError) {
                     if (nextError instanceof ApiResponseError && nextError.status === 401) {
                       signOut();
                       return;
                     }
-                    setError(nextError instanceof Error ? nextError.message : '修改失败。');
+                    toastError(nextError, '修改失败。');
                   } finally {
                     setSubmitting('');
                   }
@@ -590,8 +603,6 @@ export function AccountCard({
                 <Field label="确认密码">
                   <Input type="password" value={passwordForm.confirm_password} onChange={(event) => setPasswordForm((current) => ({ ...current, confirm_password: event.target.value }))} required />
                 </Field>
-                {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
-                {success ? <p className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</p> : null}
                 <Button disabled={submitting === 'password'} type="submit">{submitting === 'password' ? '提交中...' : '修改密码'}</Button>
               </form>
             </CardContent>
@@ -615,7 +626,7 @@ function LoadingCard({ label }: { label: string }) {
   return (
     <Card>
       <CardContent className="flex min-h-52 items-center justify-center gap-3 p-6 text-sm text-[color:var(--muted-foreground)]">
-        <LoaderCircle className="size-4 animate-spin" />
+        <Spinner />
         {label}
       </CardContent>
     </Card>

@@ -10,7 +10,6 @@ process.env.LOGIN_LOCKOUT_MS = '60000';
 type DatabaseModule = typeof import('../src/database');
 type LoginAttemptsModule = typeof import('../src/auth/login-attempts');
 type CsvImportModule = typeof import('../src/csv/user-import');
-
 let database: DatabaseModule['default'];
 let getRemainingLockoutMs: LoginAttemptsModule['getRemainingLockoutMs'];
 let recordLoginFailure: LoginAttemptsModule['recordLoginFailure'];
@@ -46,9 +45,9 @@ describe('Database bootstrap and users', () => {
     expect(database.getUsersByRole('student')).toHaveLength(2);
   });
 
-  test('creates users and filters by role', () => {
-    const createdStudent = database.createUser('测试学生', 'student');
-    const createdBatch = database.createUsers([
+  test('creates users and filters by role', async () => {
+    const createdStudent = await database.createUser('测试学生', 'student');
+    const createdBatch = await database.createUsers([
       { name: '批量教师', role: 'teacher' },
       { name: '批量管理员', role: 'admin' }
     ]);
@@ -63,8 +62,8 @@ describe('Database bootstrap and users', () => {
     expect(database.isValidRole('invalid-role')).toBe(false);
   });
 
-  test('updates and deletes users', () => {
-    const createdUser = database.createUser('待修改用户', 'student');
+  test('updates and deletes users', async () => {
+    const createdUser = await database.createUser('待修改用户', 'student');
 
     expect(database.updateUserName(createdUser.id, '已修改用户')).toBe(true);
     expect(database.findUserById(createdUser.id)?.name).toBe('已修改用户');
@@ -74,6 +73,20 @@ describe('Database bootstrap and users', () => {
 
     expect(database.deleteUser(createdUser.id)).toBe(true);
     expect(database.findUserById(createdUser.id)).toBeUndefined();
+  });
+
+  test('resets user passwords and returns plaintext credentials', async () => {
+    const createdUser = await database.createUser('待重置用户', 'student');
+
+    const resetResults = await database.resetUserPasswords([createdUser.id]);
+
+    expect(resetResults).toHaveLength(1);
+    expect(resetResults[0]?.id).toBe(createdUser.id);
+    expect(resetResults[0]?.uid).toBe(createdUser.uid);
+    expect(resetResults[0]?.name).toBe(createdUser.name);
+    expect(resetResults[0]?.role).toBe(createdUser.role);
+    expect(resetResults[0]?.password).toHaveLength(8);
+    expect(resetResults[0]?.password).not.toBe(createdUser.password);
   });
 });
 

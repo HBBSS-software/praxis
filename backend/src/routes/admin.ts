@@ -1,121 +1,109 @@
-import bcrypt from 'bcryptjs';
-import multer from 'multer';
-import { Router } from 'express';
+import { Elysia, t } from 'elysia';
 
+import { hashPassword } from '../auth/password';
 import { parseUserImportCsvBuffer, parseUserImportCsvText, type CsvUserImportEntry } from '../csv/user-import';
 import database from '../database';
-import { authMiddleware, adminOnly } from '../middleware/auth';
+import {
+  apiError,
+  assignmentBodySchema,
+  asRequiredString,
+  batchDeleteUsersBodySchema,
+  batchResetPasswordBodySchema,
+  createUserResultSchema,
+  idParamSchema,
+  requireRole,
+  roleQuerySchema,
+  updateUserBodySchema,
+  userRoleSchema
+} from '../http';
+import { authPlugin } from '../plugins/auth';
 
-const router = Router();
-const csvUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }
+const createUserBodySchema = t.Object({
+  name: t.String(),
+  role: userRoleSchema,
+  teacher_uid: t.Optional(t.String())
 });
 
-// --- Single User Creation ---
+const batchCreateUsersBodySchema = t.Object({
+  entries: t.Array(createUserBodySchema, { minItems: 1 })
+});
 
-router.post('/users', authMiddleware, adminOnly, (request, response) => {
-  const name = typeof request.body.name === 'string' ? request.body.name.trim() : '';
-  const role = request.body.role;
-  const teacher_uid = typeof request.body.teacher_uid === 'string' ? request.body.teacher_uid.trim() : '';
+const csvFileBodySchema = t.Object({
+  file: t.File({
+    maxSize: '50m'
+  })
+});
 
-  if (!name) { response.status(400).json({ error: '姓名不能为空。' }); return; }
-  if (!database.isValidRole(role)) { response.status(400).json({ error: '角色无效。' }); return; }
+export const adminRoutes = new Elysia({ prefix: '/admin' })
+  .use(authPlugin)
+  .guard({
+    beforeHandle: ({ user, authError }) => requireRole(user, authError, ['admin'])
+  })
+  .post('/users', async ({ body }) => {
+    const name = asRequiredString(body.name);
+    const role = body.role;
+    const teacherUid = typeof body.teacher_uid === 'string' ? body.teacher_uid.trim() : '';
 
-  let teacherId: number | null = null;
-  if (teacher_uid) {
-    if (role !== 'student') { response.status(400).json({ error: '非学生不能分配管理老师。' }); return; }
-    const teacher = database.findUserByUid(teacher_uid);
-    if (!teacher || teacher.role !== 'teacher') { response.status(400).json({ error: '指定的教师 UID 无效或不存在。' }); return; }
-    teacherId = teacher.id;
-  }
-
-  try {
-    const result = database.createUser(name, role);
-    if (teacherId && result.role === 'student') {
-      database.assignStudentsToTeacher(teacherId, [result.id]);
+    if (!name) {
+      return apiError(400, '姓名不能为空。');
     }
-    response.json({ message: '用户创建成功。', user: result });
-  } catch (error) {
-    console.error('创建用户失败。', error);
-    response.status(500).json({ error: '创建用户失败。' });
-  }
-});
-
-// --- Batch User Creation (JSON) ---
-
-router.post('/users/batch', authMiddleware, adminOnly, (request, response) => {
-  const entries = request.body.entries;
-
-  if (!Array.isArray(entries) || entries.length === 0) {
-    response.status(400).json({ error: '用户列表不能为空。' });
-    return;
-  }
-
-  const validated: Array<{ name: string; role: 'admin' | 'teacher' | 'student'; teacherId: number | null }> = [];
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    const name = typeof entry.name === 'string' ? entry.name.trim() : '';
-    const role = entry.role;
-    const teacher_uid = typeof entry.teacher_uid === 'string' ? entry.teacher_uid.trim() : '';
-
-    if (!name) { response.status(400).json({ error: `第 ${i + 1} 行姓名为空。` }); return; }
-    if (!database.isValidRole(role)) { response.status(400).json({ error: `第 ${i + 1} 行角色无效。` }); return; }
 
     let teacherId: number | null = null;
-    if (teacher_uid) {
-      if (role !== 'student') { response.status(400).json({ error: `第 ${i + 1} 行错误：非学生不能分配管理老师。` }); return; }
-      const teacher = database.findUserByUid(teacher_uid);
-      if (!teacher || teacher.role !== 'teacher') { response.status(400).json({ error: `第 ${i + 1} 行错误：指定的教师 UID ${teacher_uid} 无效或不存在。` }); return; }
+    if (teacherUid) {
+      if (role !== 'student') {
+        return apiError(400, '非学生不能分配管理老师。');
+      }
+
+      const teacher = database.findUserByUid(teacherUid);
+      if (!teacher || teacher.role !== 'teacher') {
+        return apiError(400, '指定的教师 UID 无效或不存在。');
+      }
+
       teacherId = teacher.id;
     }
 
-    validated.push({ name, role, teacherId });
-  }
-
-  try {
-    const results = database.createUsers(validated.map(v => ({ name: v.name, role: v.role })));
-    for (let i = 0; i < results.length; i++) {
-      if (validated[i].teacherId && results[i].role === 'student') {
-        database.assignStudentsToTeacher(validated[i].teacherId!, [results[i].id]);
-      }
+    const result = await database.createUser(name, role);
+    if (teacherId && result.role === 'student') {
+      database.assignStudentsToTeacher(teacherId, [result.id]);
     }
-    response.json({ message: `成功创建 ${results.length} 个用户。`, users: results });
-  } catch (error) {
-    console.error('批量创建用户失败。', error);
-    response.status(500).json({ error: '批量创建用户失败。' });
-  }
-});
 
-// --- CSV Import ---
+    return {
+      message: '用户创建成功。',
+      user: result
+    };
+  }, {
+    body: createUserBodySchema
+  })
+  .post('/users/batch', async ({ body }) => {
+    const validated: Array<{ name: string; role: 'admin' | 'teacher' | 'student'; teacherId: number | null }> = [];
 
-router.post('/users/import/preview', authMiddleware, adminOnly, csvUpload.single('file'), (request, response) => {
-  try {
-    const parsed = readUserImportCsv(request);
-    const validatedEntries = validateCsvImportEntries(parsed.entries);
+    for (let index = 0; index < body.entries.length; index += 1) {
+      const entry = body.entries[index];
+      const name = asRequiredString(entry.name);
+      const teacherUid = typeof entry.teacher_uid === 'string' ? entry.teacher_uid.trim() : '';
 
-    response.json({
-      message: `成功识别 ${parsed.totalCount} 条导入记录。`,
-      encoding: parsed.encoding,
-      totalCount: parsed.totalCount,
-      studentCount: parsed.studentCount,
-      entries: validatedEntries.map((entry) => ({
-        lineNumber: entry.lineNumber,
-        name: entry.name,
-        role: entry.role,
-        teacher_uid: entry.teacher_uid
-      }))
-    });
-  } catch (error) {
-    response.status(400).json({ error: error instanceof Error ? error.message : 'CSV 文件无效。' });
-  }
-});
+      if (!name) {
+        return apiError(400, `第 ${index + 1} 行姓名为空。`);
+      }
 
-router.post('/users/import', authMiddleware, adminOnly, csvUpload.single('file'), (request, response) => {
-  try {
-    const parsed = readUserImportCsv(request);
-    const validated = validateCsvImportEntries(parsed.entries);
-    const results = database.createUsers(validated.map((entry) => ({ name: entry.name, role: entry.role })));
+      let teacherId: number | null = null;
+      if (teacherUid) {
+        if (entry.role !== 'student') {
+          return apiError(400, `第 ${index + 1} 行错误：非学生不能分配管理老师。`);
+        }
+
+        const teacher = database.findUserByUid(teacherUid);
+        if (!teacher || teacher.role !== 'teacher') {
+          return apiError(400, `第 ${index + 1} 行错误：指定的教师 UID ${teacherUid} 无效或不存在。`);
+        }
+
+        teacherId = teacher.id;
+      }
+
+      validated.push({ name, role: entry.role, teacherId });
+    }
+
+    const results = await database.createUsers(validated.map((item) => ({ name: item.name, role: item.role })));
 
     for (let index = 0; index < results.length; index += 1) {
       if (validated[index].teacherId && results[index].role === 'student') {
@@ -123,212 +111,215 @@ router.post('/users/import', authMiddleware, adminOnly, csvUpload.single('file')
       }
     }
 
-    response.json({
-      message: `成功导入 ${results.length} 个用户。`,
-      encoding: parsed.encoding,
+    return {
+      message: `成功创建 ${results.length} 个用户。`,
       users: results
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'CSV 导入失败。';
-    const statusCode = message.includes('失败') ? 500 : 400;
-    if (statusCode === 500) console.error('CSV 导入失败。', error);
-    response.status(statusCode).json({ error: message });
-  }
-});
+    };
+  }, {
+    body: batchCreateUsersBodySchema
+  })
+  .post('/users/import/preview', async ({ body }) => {
+    try {
+      const parsed = await readUserImportCsv(body.file);
+      const validatedEntries = validateCsvImportEntries(parsed.entries);
 
-// --- User Management ---
+      return {
+        message: `成功识别 ${parsed.totalCount} 条导入记录。`,
+        encoding: parsed.encoding,
+        totalCount: parsed.totalCount,
+        studentCount: parsed.studentCount,
+        entries: validatedEntries.map((entry) => ({
+          lineNumber: entry.lineNumber,
+          name: entry.name,
+          role: entry.role,
+          teacher_uid: entry.teacher_uid
+        }))
+      };
+    } catch (error) {
+      return apiError(400, error instanceof Error ? error.message : 'CSV 文件无效。');
+    }
+  }, {
+    body: csvFileBodySchema
+  })
+  .post('/users/import', async ({ body }) => {
+    try {
+      const parsed = await readUserImportCsv(body.file);
+      const validated = validateCsvImportEntries(parsed.entries);
+      const results = await database.createUsers(validated.map((entry) => ({ name: entry.name, role: entry.role })));
 
-router.get('/users', authMiddleware, adminOnly, (request, response) => {
-  try {
-    const role = typeof request.query.role === 'string' && database.isValidRole(request.query.role)
-      ? request.query.role : undefined;
-    const users = database.getUsersByRole(role as any);
-    response.json({ users });
-  } catch (error) {
-    console.error('加载用户列表失败。', error);
-    response.status(500).json({ error: '加载用户列表失败。' });
-  }
-});
+      for (let index = 0; index < results.length; index += 1) {
+        if (validated[index].teacherId && results[index].role === 'student') {
+          database.assignStudentsToTeacher(validated[index].teacherId!, [results[index].id]);
+        }
+      }
 
-router.put('/users/:id', authMiddleware, adminOnly, (request, response) => {
-  const userId = Number(request.params.id);
-  const user = database.findUserById(userId);
+      return {
+        message: `成功导入 ${results.length} 个用户。`,
+        encoding: parsed.encoding,
+        users: results
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'CSV 导入失败。';
+      const statusCode = message.includes('失败') ? 500 : 400;
+      return apiError(statusCode, message);
+    }
+  }, {
+    body: csvFileBodySchema
+  })
+  .get('/users', ({ query }) => {
+    const users = database.getUsersByRole(query.role);
+    return { users };
+  }, {
+    query: roleQuerySchema
+  })
+  .put('/users/:id', async ({ params, body }) => {
+    const userId = Number(params.id);
+    const user = database.findUserById(userId);
 
-  if (!user) {
-    response.status(404).json({ error: '用户不存在。' });
-    return;
-  }
+    if (!user) {
+      return apiError(404, '用户不存在。');
+    }
 
-  try {
-    const name = typeof request.body.name === 'string' ? request.body.name.trim() : '';
-    const newPassword = typeof request.body.password === 'string' ? request.body.password : '';
+    const name = body.name === undefined ? undefined : asRequiredString(body.name);
+    const newPassword = typeof body.password === 'string' ? body.password : '';
 
-    if (name) database.updateUserName(userId, name);
+    if (body.name !== undefined && !name) {
+      return apiError(400, '姓名不能为空。');
+    }
+
+    if (name) {
+      database.updateUserName(userId, name);
+    }
+
     if (newPassword) {
       if (newPassword.length < 8) {
-        response.status(400).json({ error: '密码至少需要 8 位。' });
-        return;
+        return apiError(400, '密码至少需要 8 位。');
       }
-      database.updateUserPassword(userId, bcrypt.hashSync(newPassword, 10));
+
+      database.updateUserPassword(userId, await hashPassword(newPassword));
     }
 
-    response.json({ message: '用户信息更新成功。' });
-  } catch (error) {
-    console.error('更新用户信息失败。', error);
-    response.status(500).json({ error: '更新用户信息失败。' });
-  }
-});
+    return { message: '用户信息更新成功。' };
+  }, {
+    body: updateUserBodySchema,
+    params: idParamSchema
+  })
+  .patch('/users/password', async ({ body }) => {
+    const users = await database.resetUserPasswords(body.ids);
 
-router.put('/users/batch', authMiddleware, adminOnly, (request, response) => {
-  const updates = request.body.updates;
+    return {
+      message: `成功重置 ${users.length} 个用户的密码。`,
+      users
+    };
+  }, {
+    body: batchResetPasswordBodySchema
+  })
+  .delete('/users', ({ body, user }) => {
+    if (body.ids.includes(user!.id)) {
+      return apiError(400, '不能删除自己的账号。');
+    }
 
-  if (!Array.isArray(updates) || updates.length === 0) {
-    response.status(400).json({ error: '更新列表不能为空。' });
-    return;
-  }
-
-  try {
     let successCount = 0;
-    for (const update of updates) {
-      const userId = Number(update.id);
-      const user = database.findUserById(userId);
-      if (!user) continue;
-
-      const name = typeof update.name === 'string' ? update.name.trim() : '';
-      const newPassword = typeof update.password === 'string' ? update.password : '';
-
-      if (name) database.updateUserName(userId, name);
-      if (newPassword) {
-        if (newPassword.length < 8) continue; // skip invalid password
-        database.updateUserPassword(userId, bcrypt.hashSync(newPassword, 10));
+    for (const id of body.ids) {
+      if (database.deleteUser(id)) {
+        successCount += 1;
       }
-      successCount++;
     }
 
-    response.json({ message: `成功更新 ${successCount} 个用户。` });
-  } catch (error) {
-    console.error('批量更新用户失败。', error);
-    response.status(500).json({ error: '批量更新用户失败。' });
-  }
-});
+    return { message: `成功删除 ${successCount} 个用户。` };
+  }, {
+    body: batchDeleteUsersBodySchema
+  })
+  .delete('/users/:id', ({ params, user }) => {
+    const userId = Number(params.id);
 
-router.delete('/users/:id', authMiddleware, adminOnly, (request, response) => {
-  const userId = Number(request.params.id);
+    if (userId === user!.id) {
+      return apiError(400, '不能删除自己的账号。');
+    }
 
-  if (userId === request.user!.id) {
-    response.status(400).json({ error: '不能删除自己的账号。' });
-    return;
-  }
-
-  try {
     if (!database.deleteUser(userId)) {
-      response.status(404).json({ error: '用户不存在。' });
-      return;
-    }
-    response.json({ message: '用户删除成功。' });
-  } catch (error) {
-    console.error('删除用户失败。', error);
-    response.status(500).json({ error: '删除用户失败。' });
-  }
-});
-
-// --- Teacher-Student Assignments ---
-
-router.get('/assignments', authMiddleware, adminOnly, (_request, response) => {
-  try {
-    const assignments = database.getAllAssignments();
-    const teachers = database.getUsersByRole('teacher');
-    const students = database.getAllStudents();
-    response.json({ assignments, teachers, students });
-  } catch (error) {
-    console.error('加载分配关系失败。', error);
-    response.status(500).json({ error: '加载分配关系失败。' });
-  }
-});
-
-router.post('/assignments', authMiddleware, adminOnly, (request, response) => {
-  const teacherId = Number(request.body.teacher_id);
-  const studentIds = request.body.student_ids;
-
-  if (!Number.isFinite(teacherId)) {
-    response.status(400).json({ error: '教师 ID 无效。' });
-    return;
-  }
-
-  const teacher = database.findUserById(teacherId);
-  if (!teacher || teacher.role !== 'teacher') {
-    response.status(404).json({ error: '教师不存在。' });
-    return;
-  }
-
-  if (!Array.isArray(studentIds) || studentIds.length === 0) {
-    response.status(400).json({ error: '学生列表不能为空。' });
-    return;
-  }
-
-  try {
-    database.assignStudentsToTeacher(teacherId, studentIds.map(Number));
-    response.json({ message: '分配关系更新成功。' });
-  } catch (error) {
-    console.error('更新分配关系失败。', error);
-    response.status(500).json({ error: '更新分配关系失败。' });
-  }
-});
-
-router.delete('/assignments', authMiddleware, adminOnly, (request, response) => {
-  const teacherId = Number(request.body.teacher_id);
-  const studentIds = request.body.student_ids;
-
-  if (!Number.isFinite(teacherId) || !Array.isArray(studentIds)) {
-    response.status(400).json({ error: '参数无效。' });
-    return;
-  }
-
-  try {
-    database.removeStudentsFromTeacher(teacherId, studentIds.map(Number));
-    response.json({ message: '分配关系删除成功。' });
-  } catch (error) {
-    console.error('删除分配关系失败。', error);
-    response.status(500).json({ error: '删除分配关系失败。' });
-  }
-});
-
-export default router;
-
-function readUserImportCsv(request: {
-  file?: Express.Multer.File;
-  body: { csv?: unknown };
-}) {
-  if (request.file) {
-    if (!request.file.originalname.toLowerCase().endsWith('.csv')) {
-      throw new Error('请上传 .csv 文件。');
+      return apiError(404, '用户不存在。');
     }
 
-    return parseUserImportCsvBuffer(request.file.buffer, { columnCount: 3 });
+    return { message: '用户删除成功。' };
+  }, {
+    params: idParamSchema
+  })
+  .get('/assignments', () => ({
+    assignments: database.getAllAssignments(),
+    teachers: database.getUsersByRole('teacher'),
+    students: database.getAllStudents()
+  }))
+  .post('/assignments', ({ body }) => {
+    const teacher = database.findUserById(body.teacher_id);
+    if (!teacher || teacher.role !== 'teacher') {
+      return apiError(404, '教师不存在。');
+    }
+
+    const invalidStudentIds = body.student_ids.filter((id) => {
+      const student = database.findUserById(id);
+      return !student || student.role !== 'student';
+    });
+
+    if (invalidStudentIds.length > 0) {
+      return apiError(400, '分配列表中存在无效学生。');
+    }
+
+    database.assignStudentsToTeacher(body.teacher_id, body.student_ids);
+    return { message: '分配关系更新成功。' };
+  }, {
+    body: assignmentBodySchema
+  })
+  .delete('/assignments', ({ body }) => {
+    const teacher = database.findUserById(body.teacher_id);
+    if (!teacher || teacher.role !== 'teacher') {
+      return apiError(404, '教师不存在。');
+    }
+
+    const invalidStudentIds = body.student_ids.filter((id) => {
+      const student = database.findUserById(id);
+      return !student || student.role !== 'student';
+    });
+
+    if (invalidStudentIds.length > 0) {
+      return apiError(400, '分配列表中存在无效学生。');
+    }
+
+    database.removeStudentsFromTeacher(body.teacher_id, body.student_ids);
+    return { message: '分配关系删除成功。' };
+  }, {
+    body: assignmentBodySchema
+  });
+
+async function readUserImportCsv(file: File) {
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    throw new Error('请上传 .csv 文件。');
   }
 
-  const csvContent = typeof request.body.csv === 'string' ? request.body.csv : '';
-  if (!csvContent.trim()) {
-    throw new Error('CSV 文件不能为空。');
-  }
-
-  return parseUserImportCsvText(csvContent, { columnCount: 3 });
+  return parseUserImportCsvBuffer(new Uint8Array(await file.arrayBuffer()), { columnCount: 3 });
 }
 
 function validateCsvImportEntries(entries: CsvUserImportEntry[]) {
   return entries.map((entry) => {
     let teacherId: number | null = null;
+    const teacherUid = entry.teacher_uid.trim();
 
-    if (entry.teacher_uid) {
-      const teacher = database.findUserByUid(entry.teacher_uid);
-      if (!teacher || teacher.role !== 'teacher') {
-        throw new Error(`第 ${entry.lineNumber} 行错误：指定的教师 UID ${entry.teacher_uid} 无效或不存在。`);
+    if (teacherUid) {
+      if (entry.role !== 'student') {
+        throw new Error(`第 ${entry.lineNumber} 行错误：非学生不能分配管理老师。`);
       }
+
+      const teacher = database.findUserByUid(teacherUid);
+      if (!teacher || teacher.role !== 'teacher') {
+        throw new Error(`第 ${entry.lineNumber} 行错误：指定的教师 UID ${teacherUid} 无效或不存在。`);
+      }
+
       teacherId = teacher.id;
     }
 
     return {
       ...entry,
+      teacher_uid: teacherUid,
       teacherId
     };
   });

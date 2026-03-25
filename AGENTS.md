@@ -14,6 +14,10 @@
 
 ## 后端
 
+后端采用 ElysiaJS 编写，请参考 <https://elysiajs.com/llms.txt> 以获得最佳实践。
+
+使用 Eden 实现和前端的类型互通。
+
 请遵循 RESTful API 规范。
 
 不要相信前端传回的内容，一定记得进行合法性判断。

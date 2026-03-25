@@ -5,7 +5,7 @@
 - 使用 Bun 进行依赖管理、脚本执行和后端运行
 - 使用 TypeScript 编写后端代码、前端页面逻辑和测试
 - 前端使用 React、Vite 与 shadcn/ui
-- 使用 Express 提供 API 服务
+- 后端使用 ElysiaJS 提供 API 服务，并通过 Eden 与前端共享接口类型
 - 使用 `backend/database.json` 作为 JSON 文件数据存储
 
 ## 如何使用
@@ -63,8 +63,6 @@ JWT_EXPIRES_IN=8h
 LOGIN_MAX_ATTEMPTS=5
 LOGIN_LOCKOUT_MS=900000
 ```
-
-前端认证状态现在存储在 `sessionStorage` 中，而不是 `localStorage`。后端增加了更严格的 JWT 校验、登录失败限流、认证响应 `Cache-Control` 防缓存，以及 `helmet` 安全响应头。
 
 ## 默认账号
 

@@ -1,4 +1,4 @@
-import { FileCheck2, LoaderCircle, LockKeyhole, ShieldCheck, UserRound, Zap } from 'lucide-react';
+import { FileCheck2, LockKeyhole, ShieldCheck, UserRound, Zap } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 import { login } from '@/lib/api';
+import { toastError } from '@/lib/feedback';
 import { getDefaultPathByRole } from '@/lib/session';
 import { useSession } from '@/lib/auth';
 
@@ -15,7 +17,6 @@ export function LoginPage() {
   const { signIn } = useSession();
   const [uid, setUid] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const highlights = [
     {
@@ -82,7 +83,6 @@ export function LoginPage() {
               className="space-y-5"
               onSubmit={async (event) => {
                 event.preventDefault();
-                setError('');
                 setLoading(true);
 
                 try {
@@ -90,7 +90,7 @@ export function LoginPage() {
                   signIn(data.token, data.user);
                   navigate(getDefaultPathByRole(data.user.role), { replace: true });
                 } catch (nextError) {
-                  setError(nextError instanceof Error ? nextError.message : '登录失败。');
+                  toastError(nextError, '登录失败。');
                 } finally {
                   setLoading(false);
                 }
@@ -110,9 +110,8 @@ export function LoginPage() {
                   <Input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="pl-10" />
                 </div>
               </div>
-              {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
               <Button className="h-11 w-full" disabled={loading} type="submit">
-                {loading ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                {loading ? <Spinner className="size-4 text-current" /> : null}
                 {loading ? '登录中...' : '登录'}
               </Button>
             </form>

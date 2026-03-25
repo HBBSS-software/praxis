@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 
 import { AppShell } from '@/layout/app-shell';
-import { apiRequest, ApiResponseError } from '@/lib/api';
+import { ApiResponseError, createApiClient, unwrapResponse } from '@/lib/api';
 import { SessionProvider, useSession } from '@/lib/auth';
 import { getDefaultPathByRole } from '@/lib/session';
 import type { AppNotification, StoredUser, UserRole } from '@/lib/types';
@@ -24,6 +24,7 @@ import {
   AdminUsersPage,
   AdminStudentsPage
 } from '@/features/admin-pages';
+import { Toaster } from '@/components/ui/sonner';
 
 function RootRedirect() {
   const { user } = useSession();
@@ -38,7 +39,7 @@ function RoleLayout({ role }: { role: UserRole }) {
     if (!token || !user) return;
     if (user.role !== 'student') return;
 
-    apiRequest<{ unreadCount: number; notifications: AppNotification[] }>('/student/notifications', {}, token)
+    unwrapResponse<{ unreadCount: number; notifications: AppNotification[] }>(createApiClient(token).student.notifications.get())
       .then((data) => setNotificationCount(data.unreadCount))
       .catch((error) => {
         if (error instanceof ApiResponseError && error.status === 401) signOut();
@@ -66,6 +67,7 @@ export function App() {
   return (
     <SessionProvider>
       <BrowserRouter>
+        <Toaster />
         <Routes>
           <Route path="/" element={<RootRedirect />} />
           <Route path="/login" element={<LoginGuard />} />

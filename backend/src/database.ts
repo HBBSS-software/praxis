@@ -1,9 +1,9 @@
-import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { hashPassword, hashPasswordSync } from './auth/password';
 import type {
   AppNotification,
   CreateRecordInput,
@@ -212,7 +212,7 @@ function initDefaultData(): void {
   if (db.users.length > 0) return;
 
   const createdAt = new Date().toISOString();
-  const defaultHash = bcrypt.hashSync('12345678', 10);
+  const defaultHash = hashPasswordSync('12345678');
 
   db.users.push(
     { id: db.nextId.users++, uid: generateUid('admin'), password: defaultHash, role: 'admin', name: '超级奶龙', created_at: createdAt },
@@ -251,9 +251,9 @@ function getAllStudents(): Array<Pick<User, 'id' | 'uid' | 'name' | 'created_at'
 
 // --- User CRUD ---
 
-function createUser(name: string, role: UserRole): CreateUserResult {
+async function createUser(name: string, role: UserRole): Promise<CreateUserResult> {
   const plainPassword = generatePassword();
-  const hashedPassword = bcrypt.hashSync(plainPassword, 10);
+  const hashedPassword = await hashPassword(plainPassword);
   const uid = generateUid(role);
   const user: User = {
     id: db.nextId.users++,
@@ -268,22 +268,23 @@ function createUser(name: string, role: UserRole): CreateUserResult {
   return { id: user.id, uid, name, role, password: plainPassword };
 }
 
-function createUsers(entries: Array<{ name: string; role: UserRole; }>): CreateUserResult[] {
+async function createUsers(entries: Array<{ name: string; role: UserRole; }>): Promise<CreateUserResult[]> {
+  const plainPasswords = entries.map(() => generatePassword());
+  const hashedPasswords = await Promise.all(plainPasswords.map((password) => hashPassword(password)));
   const results: CreateUserResult[] = [];
-  for (const entry of entries) {
-    const plainPassword = generatePassword();
-    const hashedPassword = bcrypt.hashSync(plainPassword, 10);
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
     const uid = generateUid(entry.role);
     const user: User = {
       id: db.nextId.users++,
       uid,
-      password: hashedPassword,
+      password: hashedPasswords[index],
       role: entry.role,
       name: entry.name,
       created_at: new Date().toISOString()
     };
     db.users.push(user);
-    results.push({ id: user.id, uid, name: entry.name, role: entry.role, password: plainPassword });
+    results.push({ id: user.id, uid, name: entry.name, role: entry.role, password: plainPasswords[index] });
   }
   saveData();
   return results;
@@ -314,6 +315,34 @@ function updateUserPassword(id: number, hashedPassword: string): boolean {
   user.password = hashedPassword;
   saveData();
   return true;
+}
+
+async function resetUserPasswords(ids: number[]): Promise<CreateUserResult[]> {
+  const users = ids
+    .map((id) => findUserById(id))
+    .filter((user): user is User => Boolean(user));
+
+  if (users.length === 0) {
+    return [];
+  }
+
+  const plainPasswords = users.map(() => generatePassword());
+  const hashedPasswords = await Promise.all(plainPasswords.map((password) => hashPassword(password)));
+
+  const results = users.map((user, index) => {
+    user.password = hashedPasswords[index];
+
+    return {
+      id: user.id,
+      uid: user.uid,
+      name: user.name,
+      role: user.role,
+      password: plainPasswords[index]
+    };
+  });
+
+  saveData();
+  return results;
 }
 
 // --- Teacher-Student Assignments ---
@@ -547,6 +576,7 @@ const database = {
   deleteUser,
   updateUserName,
   updateUserPassword,
+  resetUserPasswords,
   // Assignments
   getTeacherStudents,
   getStudentTeacherId,

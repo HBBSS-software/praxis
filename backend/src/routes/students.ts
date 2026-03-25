@@ -1,180 +1,172 @@
-import { Router } from 'express';
+import { Elysia } from 'elysia';
 
 import database from '../database';
-import { authMiddleware, studentOnly } from '../middleware/auth';
+import {
+  apiError,
+  asOptionalString,
+  asRequiredString,
+  checkDate,
+  checkStudentDuration,
+  createRecordBodySchema,
+  idParamSchema,
+  isValidUploadPath,
+  requireRole,
+  updateRecordBodySchema
+} from '../http';
+import { authPlugin } from '../plugins/auth';
 import type { UpdateRecordInput } from '../models';
 
-const router = Router();
+export const studentRoutes = new Elysia({ prefix: '/student' })
+  .use(authPlugin)
+  .guard({
+    beforeHandle: ({ user, authError }) => requireRole(user, authError, ['student'])
+  })
+  .get('/records', ({ user }) => ({
+    records: database.getRecordsByStudent(user!.id),
+    statistics: database.getStudentStatistics(user!.id)
+  }))
+  .post('/records', ({ body, user }) => {
+    const title = asRequiredString(body.title);
+    const content = asRequiredString(body.content);
+    const practiceDate = asRequiredString(body.practice_date);
+    const durationValue = typeof body.duration === 'number' ? body.duration : Number(body.duration);
 
-function asRequiredString(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed || null;
-}
+    if (!title || !content || !practiceDate || !Number.isFinite(durationValue)) {
+      return apiError(400, '标题、内容、实践日期和时长不能为空。');
+    }
 
-function asOptionalString(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  return value.trim() || null;
-}
+    if (!checkDate(practiceDate)) {
+      return apiError(400, '不能记录未来的活动。');
+    }
 
-function checkDate(date: string): boolean {
-  return Date.parse(date) <= Date.now() + 14 * 60 * 60 * 1000;
-}
+    if (!checkStudentDuration(durationValue)) {
+      return apiError(400, '时长过短。');
+    }
 
-function checkDuration(duration: number) {
-  return duration >= 0.1;
-}
+    const imagePath = asOptionalString(body.image_path);
+    if (imagePath && !isValidUploadPath(imagePath)) {
+      return apiError(400, '图片路径无效。');
+    }
 
-router.get('/records', authMiddleware, studentOnly, (request, response) => {
-  try {
-    const records = database.getRecordsByStudent(request.user!.id);
-    const statistics = database.getStudentStatistics(request.user!.id);
-    response.json({ records, statistics });
-  } catch (error) {
-    console.error('加载学生记录失败。', error);
-    response.status(500).json({ error: '加载记录失败。' });
-  }
-});
+    const todayCount = database.countStudentRecordsToday(user!.id);
+    if (todayCount >= database.MAX_DAILY_RECORDS) {
+      return apiError(429, `每天最多创建 ${database.MAX_DAILY_RECORDS} 条实践记录。`);
+    }
 
-router.post('/records', authMiddleware, studentOnly, (request, response) => {
-  const title = asRequiredString(request.body.title);
-  const content = asRequiredString(request.body.content);
-  const practiceDate = asRequiredString(request.body.practice_date);
-  const duration: string = request.body.duration;
-
-  if (!title || !content || !practiceDate || !duration) {
-    response.status(400).json({ error: '标题、内容、实践日期和时长不能为空。' });
-    return;
-  }
-
-  if (!checkDate(practiceDate)) {
-    response.status(400).json({ error: '不能记录未来的活动。' });
-    return;
-  }
-
-  if (!checkDuration(+duration)) {
-    response.status(400).json({ error: '时长过短。' });
-    return;
-  }
-
-  const todayCount = database.countStudentRecordsToday(request.user!.id);
-  if (todayCount >= database.MAX_DAILY_RECORDS) {
-    response.status(429).json({ error: `每天最多创建 ${database.MAX_DAILY_RECORDS} 条实践记录。` });
-    return;
-  }
-
-  try {
     const record = database.createRecord({
-      student_id: request.user!.id,
+      student_id: user!.id,
       title,
       content,
       practice_date: practiceDate,
-      location: asOptionalString(request.body.location),
-      duration: +duration,
-      image_path: asOptionalString(request.body.image_path)
+      location: asOptionalString(body.location),
+      duration: durationValue,
+      image_path: imagePath
     });
 
-    response.json({ message: '记录创建成功。', recordId: record.id });
-  } catch (error) {
-    console.error('创建学生记录失败。', error);
-    response.status(500).json({ error: '创建记录失败。' });
-  }
-});
+    return {
+      message: '记录创建成功。',
+      recordId: record.id
+    };
+  }, {
+    body: createRecordBodySchema
+  })
+  .put('/records/:id', ({ params, body, user }) => {
+    const existingRecord = database.getRecordById(Number(params.id));
 
-router.put('/records/:id', authMiddleware, studentOnly, (request, response) => {
-  const existingRecord = database.getRecordById(Number(request.params.id));
+    if (!existingRecord || existingRecord.student_id !== user!.id) {
+      return apiError(404, '记录不存在。');
+    }
 
-  if (!existingRecord || existingRecord.student_id !== request.user!.id) {
-    response.status(404).json({ error: '记录不存在。' });
-    return;
-  }
+    if (existingRecord.status !== 'pending' && existingRecord.status !== 'rejected') {
+      return apiError(403, '只能修改待审核或已驳回的记录。');
+    }
 
-  if (existingRecord.status !== 'pending' && existingRecord.status !== 'rejected') {
-    response.status(403).json({ error: '只能修改待审核或已驳回的记录。' });
-    return;
-  }
+    const updates: UpdateRecordInput = {
+      updated_by_uid: user!.uid
+    };
 
-  const updates: UpdateRecordInput = { updated_by_uid: request.user!.uid };
-  const title = asRequiredString(request.body.title);
-  const content = asRequiredString(request.body.content);
-  const practiceDate = asRequiredString(request.body.practice_date);
-  const duration = asRequiredString(request.body.duration);
+    if (body.title !== undefined) {
+      const title = asRequiredString(body.title);
+      if (!title) {
+        return apiError(400, '标题不能为空。');
+      }
+      updates.title = title;
+    }
 
-  if (request.body.title !== undefined) {
-    if (!title) { response.status(400).json({ error: '标题不能为空。' }); return; }
-    updates.title = title;
-  }
-  if (request.body.content !== undefined) {
-    if (!content) { response.status(400).json({ error: '内容不能为空。' }); return; }
-    updates.content = content;
-  }
-  if (request.body.practice_date !== undefined) {
-    if (!practiceDate) { response.status(400).json({ error: '实践日期不能为空。' }); return; }
-    if (!checkDate(practiceDate)) { response.status(400).json({ error: '不能记录未来的活动。' }); return; }
-    updates.practice_date = practiceDate;
-  }
-  if (request.body.location !== undefined) {
-    updates.location = asOptionalString(request.body.location);
-  }
-  if (request.body.duration !== undefined) {
-    if (!duration) { response.status(400).json({ error: '时长不能为空。' }); return; }
-    if (!checkDuration(+duration)) { response.status(400).json({ error: '时长过短。' }); return; }
-    updates.duration = +duration;
-  }
-  if (request.body.image_path !== undefined) {
-    updates.image_path = asOptionalString(request.body.image_path);
-  }
+    if (body.content !== undefined) {
+      const content = asRequiredString(body.content);
+      if (!content) {
+        return apiError(400, '内容不能为空。');
+      }
+      updates.content = content;
+    }
 
-  try {
+    if (body.practice_date !== undefined) {
+      const practiceDate = asRequiredString(body.practice_date);
+      if (!practiceDate) {
+        return apiError(400, '实践日期不能为空。');
+      }
+
+      if (!checkDate(practiceDate)) {
+        return apiError(400, '不能记录未来的活动。');
+      }
+
+      updates.practice_date = practiceDate;
+    }
+
+    if (body.location !== undefined) {
+      updates.location = asOptionalString(body.location);
+    }
+
+    if (body.duration !== undefined) {
+      const durationValue = typeof body.duration === 'number' ? body.duration : Number(body.duration);
+      if (!Number.isFinite(durationValue)) {
+        return apiError(400, '时长不能为空。');
+      }
+
+      if (!checkStudentDuration(durationValue)) {
+        return apiError(400, '时长过短。');
+      }
+
+      updates.duration = durationValue;
+    }
+
+    if (body.image_path !== undefined) {
+      const imagePath = asOptionalString(body.image_path);
+      if (imagePath && !isValidUploadPath(imagePath)) {
+        return apiError(400, '图片路径无效。');
+      }
+
+      updates.image_path = imagePath;
+    }
+
     database.updateRecord(existingRecord.id, updates);
-    response.json({ message: '记录更新成功。' });
-  } catch (error) {
-    console.error('更新学生记录失败。', error);
-    response.status(500).json({ error: '更新记录失败。' });
-  }
-});
+    return { message: '记录更新成功。' };
+  }, {
+    body: updateRecordBodySchema,
+    params: idParamSchema
+  })
+  .delete('/records/:id', ({ params, user }) => {
+    const existingRecord = database.getRecordById(Number(params.id));
 
-router.delete('/records/:id', authMiddleware, studentOnly, (request, response) => {
-  const existingRecord = database.getRecordById(Number(request.params.id));
+    if (!existingRecord || existingRecord.student_id !== user!.id) {
+      return apiError(404, '记录不存在。');
+    }
 
-  if (!existingRecord || existingRecord.student_id !== request.user!.id) {
-    response.status(404).json({ error: '记录不存在。' });
-    return;
-  }
+    if (existingRecord.status !== 'pending') {
+      return apiError(403, '只能删除待审核的记录。');
+    }
 
-  if (existingRecord.status !== 'pending') {
-    response.status(403).json({ error: '只能删除待审核的记录。' });
-    return;
-  }
-
-  try {
     database.deleteRecord(existingRecord.id);
-    response.json({ message: '记录删除成功。' });
-  } catch (error) {
-    console.error('删除学生记录失败。', error);
-    response.status(500).json({ error: '删除记录失败。' });
-  }
-});
-
-router.get('/notifications', authMiddleware, studentOnly, (request, response) => {
-  try {
-    const notifications = database.getNotificationsByStudent(request.user!.id);
-    const unreadCount = database.getUnreadNotificationCount(request.user!.id);
-    response.json({ notifications, unreadCount });
-  } catch (error) {
-    console.error('加载通知失败。', error);
-    response.status(500).json({ error: '加载通知失败。' });
-  }
-});
-
-router.post('/notifications/read', authMiddleware, studentOnly, (request, response) => {
-  try {
-    database.markNotificationsAsRead(request.user!.id);
-    response.json({ message: '通知已标记为已读。' });
-  } catch (error) {
-    console.error('标记通知已读失败。', error);
-    response.status(500).json({ error: '操作失败。' });
-  }
-});
-
-export default router;
+    return { message: '记录删除成功。' };
+  }, {
+    params: idParamSchema
+  })
+  .get('/notifications', ({ user }) => ({
+    notifications: database.getNotificationsByStudent(user!.id),
+    unreadCount: database.getUnreadNotificationCount(user!.id)
+  }))
+  .post('/notifications/read', ({ user }) => {
+    database.markNotificationsAsRead(user!.id);
+    return { message: '通知已标记为已读。' };
+  });

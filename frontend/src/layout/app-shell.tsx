@@ -1,4 +1,4 @@
-import { Bell, BookCopy, ClipboardList, FolderKanban, GraduationCap, LayoutDashboard, LogOut, Settings, ShieldCheck, Upload, Users } from 'lucide-react';
+import { ClipboardList, LogOut } from 'lucide-react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { Badge } from '@/components/ui/badge';
@@ -8,25 +8,25 @@ import { useSession } from '@/lib/auth';
 import type { StoredUser, UserRole } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
-const navMap: Record<UserRole, Array<{ to: string; label: string; icon: typeof LayoutDashboard }>> = {
+const navMap: Record<UserRole, Array<{ to: string; label: string }>> = {
   student: [
-    { to: '/student/dashboard', label: '实践概览', icon: LayoutDashboard },
-    { to: '/student/upload', label: '上传记录', icon: Upload },
-    { to: '/student/notifications', label: '消息通知', icon: Bell },
-    { to: '/student/account', label: '账号设置', icon: Settings }
+    { to: '/student/dashboard', label: '实践概览' },
+    { to: '/student/upload', label: '上传记录' },
+    { to: '/student/notifications', label: '消息通知' },
+    { to: '/student/account', label: '账号设置' }
   ],
   teacher: [
-    { to: '/teacher/dashboard', label: '审核中心', icon: ClipboardList },
-    { to: '/teacher/students', label: '学生管理', icon: GraduationCap },
-    { to: '/teacher/account', label: '账号设置', icon: Settings }
+    { to: '/teacher/dashboard', label: '审核中心' },
+    { to: '/teacher/students', label: '学生列表' },
+    { to: '/teacher/account', label: '账号设置' }
   ],
   admin: [
-    { to: '/admin/records', label: '记录管理', icon: FolderKanban },
-    { to: '/admin/users', label: '用户创建', icon: Users },
-    { to: '/admin/assign', label: '关系分配', icon: BookCopy },
-    { to: '/admin/students', label: '学生列表', icon: GraduationCap },
-    { to: '/admin/teachers', label: '教师列表', icon: ShieldCheck },
-    { to: '/admin/account', label: '账号设置', icon: Settings }
+    { to: '/admin/records', label: '记录管理' },
+    { to: '/admin/users', label: '用户创建' },
+    { to: '/admin/assign', label: '关系分配' },
+    { to: '/admin/students', label: '学生列表' },
+    { to: '/admin/teachers', label: '教师列表' },
+    { to: '/admin/account', label: '账号设置' }
   ]
 };
 
@@ -83,7 +83,7 @@ export function AppShell({
 
           <Card className="border-border/70 bg-card/95 py-0 shadow-sm">
             <nav className="flex gap-2 overflow-x-auto p-2">
-              {items.map(({ to, label, icon: Icon }) => (
+              {items.map(({ to, label }) => (
                 <NavLink
                   key={to}
                   to={to}
@@ -96,13 +96,10 @@ export function AppShell({
                     )
                   }
                 >
-                  <span className="relative inline-flex shrink-0">
-                    <Icon className="size-4" />
-                    {user.role === 'student' && to === '/student/notifications' ? (
-                      <NotificationBadge count={notificationCount} />
-                    ) : null}
-                  </span>
                   {label}
+                  {user.role === 'student' && to === '/student/notifications' ? (
+                    <NotificationBadgeInline count={notificationCount} />
+                  ) : null}
                 </NavLink>
               ))}
             </nav>
@@ -130,7 +127,7 @@ export function AppShell({
             </div>
 
             <nav className="flex flex-col gap-2">
-              {items.map(({ to, label, icon: Icon }) => (
+              {items.map(({ to, label }) => (
                 <NavLink
                   key={to}
                   to={to}
@@ -143,13 +140,10 @@ export function AppShell({
                     )
                   }
                 >
-                  <span className="relative inline-flex shrink-0">
-                    <Icon className="size-4" />
-                    {user.role === 'student' && to === '/student/notifications' ? (
-                      <NotificationBadge count={notificationCount} />
-                    ) : null}
-                  </span>
                   {label}
+                  {user.role === 'student' && to === '/student/notifications' ? (
+                    <NotificationBadgeInline count={notificationCount} />
+                  ) : null}
                 </NavLink>
               ))}
             </nav>
@@ -173,14 +167,11 @@ export function AppShell({
   );
 }
 
-function NotificationBadge({ count }: { count: number }) {
+function NotificationBadgeInline({ count }: { count: number }) {
   if (count <= 0) return null;
 
   return (
-    <Badge
-      variant="destructive"
-      className="pointer-events-none absolute -top-2 -right-2 h-5 min-w-5 justify-center rounded-full px-1 text-[10px] leading-none shadow-sm"
-    >
+    <Badge variant="destructive" className="ml-1 h-5 min-w-5 justify-center rounded-full px-1 text-[10px] leading-none shadow-sm">
       {count > 99 ? '99+' : count}
     </Badge>
   );

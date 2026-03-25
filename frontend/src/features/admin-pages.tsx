@@ -1,21 +1,26 @@
-import { ArrowDown, ArrowUp, Download, FileUp, LoaderCircle, Plus, Trash2, UserPlus } from 'lucide-react';
+import { ArrowDown, ArrowUp, FileUp, Plus, Trash2, UserPlus } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ColumnDef } from '@tanstack/react-table';
 
-import { useSession } from '@/lib/auth';
-import { EmptyState } from '@/shared/empty-state';
+import { ConfirmActionDialog } from '@/components/confirm-action-dialog';
+import { DataTable } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Spinner } from '@/components/ui/spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { apiRequest, ApiResponseError, previewUserImportCsv } from '@/lib/api';
+import { useSession } from '@/lib/auth';
+import { ApiResponseError, createApiClient, importUserCsv, unwrapResponse } from '@/lib/api';
+import { toastError, toastSuccess } from '@/lib/feedback';
 import { formatDateTime, formatDuration } from '@/lib/format';
+import { useShiftMultiSelect } from '@/lib/shift-selection';
 import type { Assignment, CreatedUser, CsvImportEntry, CsvImportPreview, StudentSummary, TeacherStatistics, UserRole, UserSummary } from '@/lib/types';
+import { EmptyState } from '@/shared/empty-state';
+import { UserCredentialsResult } from '@/shared/user-credentials-result';
 
 function AdminPageFrame({
   title,
@@ -43,30 +48,27 @@ export function AdminUsersPage() {
   const [teachers, setTeachers] = useState<UserSummary[]>([]);
   const [singleForm, setSingleForm] = useState({ name: '', role: 'student' as UserRole, teacher_uid: '' });
   const [singleResult, setSingleResult] = useState<CreatedUser | null>(null);
-  const [singleError, setSingleError] = useState('');
   const [csvFileName, setCsvFileName] = useState('');
   const [csvEncoding, setCsvEncoding] = useState<CsvImportPreview['encoding'] | null>(null);
   const [csvResult, setCsvResult] = useState<CreatedUser[]>([]);
-  const [csvError, setCsvError] = useState('');
   const [csvImporting, setCsvImporting] = useState(false);
-  const [csvProgressCurrent, setCsvProgressCurrent] = useState(0);
-  const [csvProgressTotal, setCsvProgressTotal] = useState(0);
-  const [csvProgressStudentCount, setCsvProgressStudentCount] = useState(0);
   const [batchEntries, setBatchEntries] = useState([{ name: '', role: 'student' as UserRole, teacher_uid: '' }]);
   const [batchResult, setBatchResult] = useState<CreatedUser[]>([]);
-  const [batchError, setBatchError] = useState('');
 
   useEffect(() => {
     if (!token) return;
-    apiRequest<{ users: UserSummary[] }>('/admin/users?role=teacher', {}, token)
-      .then((data) => setTeachers(data.users))
-      .catch((nextError) => {
-        if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
-      });
-  }, [token]);
 
-  const showCsvProgress = csvImporting && csvProgressStudentCount > 10 && csvProgressTotal > 0;
-  const csvProgressValue = csvProgressTotal > 0 ? Math.round((csvProgressCurrent / csvProgressTotal) * 100) : 0;
+    unwrapResponse<{ users: UserSummary[] }>(createApiClient(token).admin.users.get({ query: { role: 'teacher' } }))
+      .then((data) => setTeachers(data.users))
+      .catch((error) => {
+        if (error instanceof ApiResponseError && error.status === 401) {
+          signOut();
+          return;
+        }
+
+        toastError(error, '加载教师列表失败。');
+      });
+  }, [signOut, token]);
 
   return (
     <AdminPageFrame title="用户创建" description="管理员可以单个创建、批量填写或导入 CSV 创建账号，并下载生成结果。">
@@ -84,26 +86,35 @@ export function AdminUsersPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-3">
-                <Field label="姓名"><Input value={singleForm.name} onChange={(event) => setSingleForm((current) => ({ ...current, name: event.target.value }))} /></Field>
+                <Field label="姓名">
+                  <Input value={singleForm.name} onChange={(event) => setSingleForm((current) => ({ ...current, name: event.target.value }))} />
+                </Field>
                 <SelectRole value={singleForm.role} onChange={(role) => setSingleForm((current) => ({ ...current, role }))} />
                 <Field label="管理老师 UID">
-                  <Input value={singleForm.teacher_uid} disabled={singleForm.role !== 'student'} onChange={(event) => setSingleForm((current) => ({ ...current, teacher_uid: event.target.value }))} placeholder="仅学生可填写" />
+                  <Input
+                    value={singleForm.teacher_uid}
+                    disabled={singleForm.role !== 'student'}
+                    onChange={(event) => setSingleForm((current) => ({ ...current, teacher_uid: event.target.value }))}
+                    placeholder="仅学生可填写"
+                  />
                 </Field>
               </div>
               <div className="flex gap-3">
                 <Button
                   onClick={async () => {
                     if (!token) return;
-                    setSingleError('');
+
                     try {
-                      const data = await apiRequest<{ user: CreatedUser }>('/admin/users', { method: 'POST', body: JSON.stringify(singleForm) }, token);
+                      const data = await unwrapResponse<{ message: string; user: CreatedUser }>(createApiClient(token).admin.users.post(singleForm));
                       setSingleResult(data.user);
-                    } catch (nextError) {
-                      if (nextError instanceof ApiResponseError && nextError.status === 401) {
+                      toastSuccess('账号创建成功。');
+                    } catch (error) {
+                      if (error instanceof ApiResponseError && error.status === 401) {
                         signOut();
                         return;
                       }
-                      setSingleError(nextError instanceof Error ? nextError.message : '创建失败。');
+
+                      toastError(error, '创建失败。');
                     }
                   }}
                 >
@@ -111,8 +122,7 @@ export function AdminUsersPage() {
                   创建账号
                 </Button>
               </div>
-              {singleError ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{singleError}</p> : null}
-              {singleResult ? <ResultTable users={[singleResult]} filename="created_user.csv" /> : null}
+              {singleResult ? <UserCredentialsResult users={[singleResult]} filename="created_user.csv" summary="成功生成 1 个账号。" /> : null}
             </CardContent>
           </Card>
         </TabsContent>
@@ -123,7 +133,7 @@ export function AdminUsersPage() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="space-y-1.5">
                   <CardTitle>CSV 导入</CardTitle>
-                  <CardDescription>不包含表头，格式参见<CsvImportExampleDialog />。支持 UTF-8、UTF-16 和 GBK 编码。</CardDescription>
+                  <CardDescription>不包含表头，格式参见 <CsvImportExampleDialog />。支持 UTF-8、UTF-16 和 GBK 编码。</CardDescription>
                 </div>
                 <CsvImportExampleDialog />
               </div>
@@ -140,40 +150,36 @@ export function AdminUsersPage() {
                   const file = event.target.files?.[0];
                   if (!file) return;
 
-                  setCsvError('');
                   setCsvResult([]);
                   setCsvFileName('');
                   setCsvEncoding(null);
-                  setCsvProgressCurrent(0);
-                  setCsvProgressTotal(0);
-                  setCsvProgressStudentCount(0);
 
                   if (file.size > 50 * 1024 * 1024) {
-                    setCsvError('CSV 文件不能超过 50 MiB。');
+                    toastError(new Error('CSV 文件不能超过 50 MiB。'));
                     event.currentTarget.value = '';
                     return;
                   }
 
                   if (!file.name.toLowerCase().endsWith('.csv')) {
-                    setCsvError('请上传 .csv 文件。');
+                    toastError(new Error('请上传 .csv 文件。'));
                     event.currentTarget.value = '';
                     return;
                   }
 
                   try {
                     setCsvImporting(true);
-                    const preview = await previewUserImportCsv(file, token);
-                    setCsvProgressTotal(preview.totalCount);
-                    setCsvProgressStudentCount(preview.studentCount);
-                    await importCsvEntries(preview.entries, preview, file.name, token, signOut, setCsvProgressCurrent, setCsvResult);
+                    const data = await importUserCsv(file, token);
+                    setCsvResult(data.users);
                     setCsvFileName(file.name);
-                    setCsvEncoding(preview.encoding);
-                  } catch (nextError) {
-                    if (nextError instanceof ApiResponseError && nextError.status === 401) {
+                    setCsvEncoding(data.encoding);
+                    toastSuccess(`成功导入 ${data.users.length} 个账号。`);
+                  } catch (error) {
+                    if (error instanceof ApiResponseError && error.status === 401) {
                       signOut();
                       return;
                     }
-                    setCsvError(nextError instanceof Error ? nextError.message : '导入失败。');
+
+                    toastError(error, '导入失败。');
                   } finally {
                     setCsvImporting(false);
                     event.currentTarget.value = '';
@@ -182,7 +188,7 @@ export function AdminUsersPage() {
               />
               <div className="flex flex-wrap items-center gap-3">
                 <Button disabled={csvImporting} onClick={() => csvInputRef.current?.click()}>
-                  {csvImporting ? <LoaderCircle className="size-4 animate-spin" /> : <FileUp className="size-4" />}
+                  {csvImporting ? <Spinner className="size-4 text-current" /> : <FileUp className="size-4" />}
                   {csvImporting ? '导入中...' : '选择 CSV 并导入'}
                 </Button>
                 {csvFileName ? (
@@ -191,17 +197,7 @@ export function AdminUsersPage() {
                   </p>
                 ) : null}
               </div>
-              {showCsvProgress ? (
-                <div className="space-y-2 rounded-xl border border-border/70 bg-muted/30 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium">导入中 ({csvProgressCurrent}/{csvProgressTotal})</p>
-                    <p className="text-xs text-muted-foreground">{csvProgressValue}%</p>
-                  </div>
-                  <Progress value={csvProgressValue} />
-                </div>
-              ) : null}
-              {csvError ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{csvError}</p> : null}
-              {csvResult.length ? <ResultTable users={csvResult} filename="imported_users.csv" /> : null}
+              {csvResult.length ? <UserCredentialsResult users={csvResult} filename="imported_users.csv" summary={`成功生成 ${csvResult.length} 个账号。`} /> : null}
             </CardContent>
           </Card>
         </TabsContent>
@@ -215,8 +211,27 @@ export function AdminUsersPage() {
               <div className="space-y-3">
                 {batchEntries.map((entry, index) => (
                   <div key={`${index}-${entry.role}`} className="grid gap-3 rounded-xl bg-muted/40 p-4 md:grid-cols-[1.2fr_1fr_1fr_auto]">
-                    <Input value={entry.name} onChange={(event) => setBatchEntries((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} placeholder="姓名" />
-                    <Select value={entry.role} onValueChange={(value) => setBatchEntries((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, role: value as UserRole, teacher_uid: value === 'student' ? item.teacher_uid : '' } : item))}>
+                    <Input
+                      value={entry.name}
+                      onChange={(event) =>
+                        setBatchEntries((current) =>
+                          current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item)
+                        )
+                      }
+                      placeholder="姓名"
+                    />
+                    <Select
+                      value={entry.role}
+                      onValueChange={(value) =>
+                        setBatchEntries((current) =>
+                          current.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? { ...item, role: value as UserRole, teacher_uid: value === 'student' ? item.teacher_uid : '' }
+                              : item
+                          )
+                        )
+                      }
+                    >
                       <SelectTrigger className="w-full">
                         <SelectValue />
                       </SelectTrigger>
@@ -226,8 +241,21 @@ export function AdminUsersPage() {
                         <SelectItem value="admin">管理员</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Input value={entry.teacher_uid} disabled={entry.role !== 'student'} onChange={(event) => setBatchEntries((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, teacher_uid: event.target.value } : item))} placeholder="管理老师 UID" />
-                    <Button variant="ghost" size="icon" onClick={() => setBatchEntries((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index))}>
+                    <Input
+                      value={entry.teacher_uid}
+                      disabled={entry.role !== 'student'}
+                      onChange={(event) =>
+                        setBatchEntries((current) =>
+                          current.map((item, itemIndex) => itemIndex === index ? { ...item, teacher_uid: event.target.value } : item)
+                        )
+                      }
+                      placeholder="管理老师 UID"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setBatchEntries((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index))}
+                    >
                       <Trash2 className="size-4" />
                     </Button>
                   </div>
@@ -241,25 +269,31 @@ export function AdminUsersPage() {
                 <Button
                   onClick={async () => {
                     if (!token) return;
-                    setBatchError('');
+
+                    const entries = batchEntries.filter((entry) => entry.name.trim());
+                    if (entries.length === 0) {
+                      toastError(new Error('请至少填写一条有效记录。'));
+                      return;
+                    }
+
                     try {
-                      const entries = batchEntries.filter((entry) => entry.name.trim());
-                      const data = await apiRequest<{ users: CreatedUser[] }>('/admin/users/batch', { method: 'POST', body: JSON.stringify({ entries }) }, token);
+                      const data = await unwrapResponse<{ message: string; users: CreatedUser[] }>(createApiClient(token).admin.users.batch.post({ entries }));
                       setBatchResult(data.users);
-                    } catch (nextError) {
-                      if (nextError instanceof ApiResponseError && nextError.status === 401) {
+                      toastSuccess(`成功创建 ${data.users.length} 个账号。`);
+                    } catch (error) {
+                      if (error instanceof ApiResponseError && error.status === 401) {
                         signOut();
                         return;
                       }
-                      setBatchError(nextError instanceof Error ? nextError.message : '批量创建失败。');
+
+                      toastError(error, '批量创建失败。');
                     }
                   }}
                 >
                   批量创建
                 </Button>
               </div>
-              {batchError ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{batchError}</p> : null}
-              {batchResult.length ? <ResultTable users={batchResult} filename="batch_created_users.csv" /> : null}
+              {batchResult.length ? <UserCredentialsResult users={batchResult} filename="batch_created_users.csv" summary={`成功生成 ${batchResult.length} 个账号。`} /> : null}
             </CardContent>
           </Card>
         </TabsContent>
@@ -270,22 +304,31 @@ export function AdminUsersPage() {
 
 export function AdminAssignmentsPage() {
   const { token, signOut } = useSession();
+  const { captureShiftKey, resetSelectionAnchor, updateSelection } = useShiftMultiSelect();
   const [teachers, setTeachers] = useState<UserSummary[]>([]);
   const [students, setStudents] = useState<StudentSummary[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [teacherId, setTeacherId] = useState('');
+  const [targetTeacherId, setTargetTeacherId] = useState('');
+  const [filterTeacherId, setFilterTeacherId] = useState('__all__');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   async function loadData() {
     if (!token) return;
+
     try {
-      const data = await apiRequest<{ assignments: Assignment[]; teachers: UserSummary[]; students: StudentSummary[] }>('/admin/assignments', {}, token);
+      const data = await unwrapResponse<{ assignments: Assignment[]; teachers: UserSummary[]; students: StudentSummary[] }>(createApiClient(token).admin.assignments.get());
       setAssignments(data.assignments);
       setTeachers(data.teachers);
       setStudents(data.students);
       setSelectedIds([]);
-    } catch (nextError) {
-      if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
+      resetSelectionAnchor();
+    } catch (error) {
+      if (error instanceof ApiResponseError && error.status === 401) {
+        signOut();
+        return;
+      }
+
+      toastError(error, '加载分配关系失败。');
     }
   }
 
@@ -295,6 +338,81 @@ export function AdminAssignmentsPage() {
 
   const teacherMap = useMemo(() => new Map(teachers.map((teacher) => [teacher.id, teacher])), [teachers]);
   const assignmentMap = useMemo(() => new Map(assignments.map((assignment) => [assignment.student_id, assignment.teacher_id])), [assignments]);
+  const filteredStudents = useMemo(() => {
+    if (filterTeacherId === '__all__') {
+      return students;
+    }
+
+    if (filterTeacherId === '__unassigned__') {
+      return students.filter((student) => !assignmentMap.has(student.id));
+    }
+
+    return students.filter((student) => assignmentMap.get(student.id) === Number(filterTeacherId));
+  }, [assignmentMap, filterTeacherId, students]);
+
+  const tableStudentIds = filteredStudents.map((student) => student.id);
+  const allSelected = filteredStudents.length > 0 && filteredStudents.every((student) => selectedIds.includes(student.id));
+
+  const columns = useMemo<Array<ColumnDef<StudentSummary>>>(() => [
+    {
+      id: 'select',
+      header: () => (
+        <Checkbox
+          checked={allSelected}
+          onCheckedChange={(checked) => {
+            setSelectedIds((current) => {
+              if (checked !== true) {
+                return current.filter((id) => !tableStudentIds.includes(id));
+              }
+
+              return Array.from(new Set([...current, ...tableStudentIds]));
+            });
+          }}
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          checked={selectedIds.includes(row.original.id)}
+          onClick={captureShiftKey}
+          onCheckedChange={(checked) =>
+            setSelectedIds((current) => {
+              const currentVisible = current.filter((id) => tableStudentIds.includes(id));
+              const nextVisible = updateSelection(
+                tableStudentIds,
+                currentVisible,
+                row.original.id,
+                checked === true
+              );
+
+              return [...current.filter((id) => !tableStudentIds.includes(id)), ...nextVisible];
+            })
+          }
+        />
+      )
+    },
+    {
+      accessorKey: 'uid',
+      header: 'UID'
+    },
+    {
+      accessorKey: 'name',
+      header: '姓名',
+      cell: ({ row }) => <span className="font-medium">{row.original.name}</span>
+    },
+    {
+      accessorKey: 'created_at',
+      header: '创建时间',
+      cell: ({ row }) => <span className="text-muted-foreground">{formatDateTime(row.original.created_at)}</span>
+    },
+    {
+      id: 'teacher',
+      header: '当前教师',
+      cell: ({ row }) => {
+        const assignedTeacher = teacherMap.get(assignmentMap.get(row.original.id) ?? -1);
+        return assignedTeacher ? `${assignedTeacher.name} (${assignedTeacher.uid})` : <span className="text-muted-foreground">未分配</span>;
+      }
+    }
+  ], [allSelected, assignmentMap, captureShiftKey, selectedIds, tableStudentIds, teacherMap, updateSelection]);
 
   return (
     <AdminPageFrame title="关系分配" description="管理员可以把学生批量分配给教师，或者撤销现有分配关系。">
@@ -304,55 +422,48 @@ export function AdminAssignmentsPage() {
           <CardDescription>每个学生同一时间只属于一个教师。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <Field label="教师">
-              <Select value={teacherId} onValueChange={setTeacherId}>
-                <SelectTrigger className="min-w-64">
-                  <SelectValue placeholder="选择教师" />
+          <div className="grid gap-4 xl:grid-cols-[minmax(240px,320px)_minmax(240px,320px)_auto_auto] xl:items-end">
+            <Field label="按老师筛选">
+              <Select value={filterTeacherId} onValueChange={setFilterTeacherId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="选择筛选范围" />
                 </SelectTrigger>
                 <SelectContent>
-                  {teachers.map((teacher) => <SelectItem key={teacher.id} value={String(teacher.id)}>{teacher.name} ({teacher.uid})</SelectItem>)}
+                  <SelectItem value="__all__">全部老师</SelectItem>
+                  <SelectItem value="__unassigned__">未分配</SelectItem>
+                  {teachers.map((teacher) => (
+                    <SelectItem key={teacher.id} value={String(teacher.id)}>
+                      {teacher.name} ({teacher.uid})
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </Field>
+
+            <Field label="操作教师">
+              <Select value={targetTeacherId || '__none__'} onValueChange={(value) => setTargetTeacherId(value === '__none__' ? '' : value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="选择目标教师" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">请选择教师</SelectItem>
+                  {teachers.map((teacher) => (
+                    <SelectItem key={teacher.id} value={String(teacher.id)}>
+                      {teacher.name} ({teacher.uid})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
             <Button onClick={() => void updateAssignments('POST')}>分配给教师</Button>
             <Button variant="outline" onClick={() => void updateAssignments('DELETE')}>取消分配</Button>
           </div>
 
-          {students.length === 0 ? (
-            <EmptyState title="暂无学生" description="创建学生后即可在这里配置所属教师。" />
+          {filteredStudents.length === 0 ? (
+            <EmptyState title="暂无学生" description="当前筛选条件下没有可显示的学生。" />
           ) : (
-            <div className="overflow-hidden rounded-xl border border-border">
-              <Table>
-                <TableHeader className="bg-muted/50">
-                  <TableRow>
-                    <TableHead className="w-12">
-                      <Checkbox checked={students.length > 0 && selectedIds.length === students.length} onCheckedChange={(checked) => setSelectedIds(checked ? students.map((student) => student.id) : [])} />
-                    </TableHead>
-                    <TableHead>UID</TableHead>
-                    <TableHead>姓名</TableHead>
-                    <TableHead>创建时间</TableHead>
-                    <TableHead>当前教师</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {students.map((student) => {
-                      const assignedTeacher = teacherMap.get(assignmentMap.get(student.id) ?? -1);
-                      return (
-                        <TableRow key={student.id}>
-                          <TableCell>
-                            <Checkbox checked={selectedIds.includes(student.id)} onCheckedChange={(checked) => setSelectedIds((current) => checked ? [...current, student.id] : current.filter((item) => item !== student.id))} />
-                          </TableCell>
-                          <TableCell>{student.uid}</TableCell>
-                          <TableCell className="font-medium">{student.name}</TableCell>
-                          <TableCell className="text-muted-foreground">{formatDateTime(student.created_at)}</TableCell>
-                          <TableCell>{assignedTeacher ? `${assignedTeacher.name} (${assignedTeacher.uid})` : <span className="text-muted-foreground">未分配</span>}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable batchSize={60} columns={columns} data={filteredStudents} />
           )}
         </CardContent>
       </Card>
@@ -360,20 +471,37 @@ export function AdminAssignmentsPage() {
   );
 
   async function updateAssignments(method: 'POST' | 'DELETE') {
-    if (!token || !teacherId || selectedIds.length === 0) {
-      window.alert('请选择教师和至少一个学生。');
+    if (!token) return;
+
+    if (!targetTeacherId) {
+      toastError(new Error('请选择操作教师。'));
+      return;
+    }
+
+    if (selectedIds.length === 0) {
+      toastError(new Error('请至少选择一个学生。'));
       return;
     }
 
     try {
-      await apiRequest('/admin/assignments', { method, body: JSON.stringify({ teacher_id: Number(teacherId), student_ids: selectedIds }) }, token);
+      const api = createApiClient(token);
+
+      if (method === 'POST') {
+        await unwrapResponse(api.admin.assignments.post({ teacher_id: Number(targetTeacherId), student_ids: selectedIds }));
+        toastSuccess('分配关系已更新。');
+      } else {
+        await unwrapResponse(api.admin.assignments.delete({ teacher_id: Number(targetTeacherId), student_ids: selectedIds }));
+        toastSuccess('已取消选中学生的分配关系。');
+      }
+
       await loadData();
-    } catch (nextError) {
-      if (nextError instanceof ApiResponseError && nextError.status === 401) {
+    } catch (error) {
+      if (error instanceof ApiResponseError && error.status === 401) {
         signOut();
         return;
       }
-      window.alert(nextError instanceof Error ? nextError.message : '操作失败。');
+
+      toastError(error, '操作失败。');
     }
   }
 }
@@ -396,19 +524,34 @@ function UserListPage({
   description: string;
 }) {
   const { token, signOut } = useSession();
+  const { captureShiftKey, resetSelectionAnchor, updateSelection } = useShiftMultiSelect();
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [sortBy, setSortBy] = useState<'uid-asc' | 'uid-desc' | 'name-asc' | 'name-desc'>('uid-asc');
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editing, setEditing] = useState<UserSummary | null>(null);
   const [form, setForm] = useState({ name: '', password: '' });
-  const [error, setError] = useState('');
+  const [batchResetOpen, setBatchResetOpen] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetResult, setResetResult] = useState<CreatedUser[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<UserSummary | null>(null);
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   async function loadUsers() {
     if (!token) return;
+
     try {
-      const data = await apiRequest<{ users: UserSummary[] }>(`/admin/users?role=${role}`, {}, token);
+      const data = await unwrapResponse<{ users: UserSummary[] }>(createApiClient(token).admin.users.get({ query: { role } }));
       setUsers(data.users);
-    } catch (nextError) {
-      if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
+      setSelectedIds([]);
+      resetSelectionAnchor();
+    } catch (error) {
+      if (error instanceof ApiResponseError && error.status === 401) {
+        signOut();
+        return;
+      }
+
+      toastError(error, '加载账号列表失败。');
     }
   }
 
@@ -425,6 +568,81 @@ function UserListPage({
     });
   }, [sortBy, users]);
 
+  const userIds = sortedUsers.map((user) => user.id);
+  const allSelected = sortedUsers.length > 0 && selectedIds.length === sortedUsers.length;
+
+  const columns = useMemo<Array<ColumnDef<UserSummary>>>(() => [
+    {
+      id: 'select',
+      header: () => (
+        <Checkbox
+          checked={allSelected}
+          onCheckedChange={(checked) => setSelectedIds(checked ? userIds : [])}
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          checked={selectedIds.includes(row.original.id)}
+          onClick={captureShiftKey}
+          onCheckedChange={(checked) =>
+            setSelectedIds((current) =>
+              updateSelection(userIds, current, row.original.id, checked === true)
+            )
+          }
+        />
+      )
+    },
+    {
+      accessorKey: 'uid',
+      header: () => (
+        <SortButton
+          active={sortBy === 'uid-asc' || sortBy === 'uid-desc'}
+          descending={sortBy === 'uid-desc'}
+          label="UID"
+          onClick={() => setSortBy((current) => current === 'uid-asc' ? 'uid-desc' : 'uid-asc')}
+        />
+      )
+    },
+    {
+      accessorKey: 'name',
+      header: () => (
+        <SortButton
+          active={sortBy === 'name-asc' || sortBy === 'name-desc'}
+          descending={sortBy === 'name-desc'}
+          label="姓名"
+          onClick={() => setSortBy((current) => current === 'name-asc' ? 'name-desc' : 'name-asc')}
+        />
+      ),
+      cell: ({ row }) => <span className="font-medium">{row.original.name}</span>
+    },
+    {
+      accessorKey: 'created_at',
+      header: '创建时间',
+      cell: ({ row }) => <span className="text-muted-foreground">{formatDateTime(row.original.created_at)}</span>
+    },
+    {
+      id: 'actions',
+      header: '操作',
+      cell: ({ row }) => (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setEditing(row.original);
+              setForm({ name: row.original.name, password: '' });
+            }}
+          >
+            编辑
+          </Button>
+          <Button size="sm" variant="destructive" onClick={() => setDeleteTarget(row.original)}>
+            删除
+          </Button>
+        </div>
+      )
+    }
+  ], [allSelected, captureShiftKey, selectedIds, sortBy, updateSelection, userIds]);
+
   return (
     <AdminPageFrame title={title} description={description}>
       <Card>
@@ -432,7 +650,14 @@ function UserListPage({
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {selectedIds.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-slate-100 p-3">
+                <p className="mr-2 text-sm text-muted-foreground">已选 {selectedIds.length} 人</p>
+                <Button size="sm" onClick={() => setBatchResetOpen(true)}>重置密码</Button>
+                <Button size="sm" variant="destructive" onClick={() => setBatchDeleteOpen(true)}>删除</Button>
+              </div>
+            ) : <div />}
             <Select value={sortBy} onValueChange={(value) => setSortBy(value as typeof sortBy)}>
               <SelectTrigger className="w-52">
                 <SelectValue />
@@ -448,75 +673,16 @@ function UserListPage({
           {sortedUsers.length === 0 ? (
             <EmptyState title="暂无账号" description="在用户创建页添加账号后，这里会同步显示。" />
           ) : (
-            <div className="overflow-hidden rounded-xl border border-border">
-              <Table>
-                <TableHeader className="bg-muted/50">
-                  <TableRow>
-                    <TableHead>
-                      <SortButton
-                        active={sortBy === 'uid-asc' || sortBy === 'uid-desc'}
-                        descending={sortBy === 'uid-desc'}
-                        label="UID"
-                        onClick={() => setSortBy((current) => current === 'uid-asc' ? 'uid-desc' : 'uid-asc')}
-                      />
-                    </TableHead>
-                    <TableHead>
-                      <SortButton
-                        active={sortBy === 'name-asc' || sortBy === 'name-desc'}
-                        descending={sortBy === 'name-desc'}
-                        label="姓名"
-                        onClick={() => setSortBy((current) => current === 'name-asc' ? 'name-desc' : 'name-asc')}
-                      />
-                    </TableHead>
-                    <TableHead>创建时间</TableHead>
-                    <TableHead>操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {sortedUsers.map((user) => (
-                      <TableRow key={user.id}>
-                        <TableCell>{user.uid}</TableCell>
-                        <TableCell className="font-medium">{user.name}</TableCell>
-                        <TableCell className="text-muted-foreground">{formatDateTime(user.created_at)}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setEditing(user);
-                                setForm({ name: user.name, password: '' });
-                              }}
-                            >
-                              编辑
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={async () => {
-                                if (!token || !window.confirm('确定删除该账号吗？')) return;
-                                try {
-                                  await apiRequest(`/admin/users/${user.id}`, { method: 'DELETE' }, token);
-                                  await loadUsers();
-                                } catch (nextError) {
-                                  if (nextError instanceof ApiResponseError && nextError.status === 401) {
-                                    signOut();
-                                    return;
-                                  }
-                                  window.alert(nextError instanceof Error ? nextError.message : '删除失败。');
-                                }
-                              }}
-                            >
-                              删除
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable columns={columns} data={sortedUsers} />
           )}
+          {resetResult.length > 0 ? (
+            <UserCredentialsResult
+              autoDownload
+              users={resetResult}
+              filename="reset_teachers.csv"
+              summary={`成功重置 ${resetResult.length} 个教师的密码。`}
+            />
+          ) : null}
         </CardContent>
       </Card>
 
@@ -527,23 +693,31 @@ function UserListPage({
             <DialogDescription>密码留空表示不修改。</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <Field label="姓名"><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></Field>
-            <Field label="新密码"><Input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} /></Field>
-            {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
+            <Field label="姓名">
+              <Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
+            </Field>
+            <Field label="新密码">
+              <Input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} />
+            </Field>
             <Button
               onClick={async () => {
                 if (!token || !editing) return;
-                setError('');
+
                 try {
-                  await apiRequest(`/admin/users/${editing.id}`, { method: 'PUT', body: JSON.stringify({ name: form.name.trim(), password: form.password }) }, token);
+                  await unwrapResponse(createApiClient(token).admin.users({ id: editing.id }).put({
+                    name: form.name.trim(),
+                    password: form.password
+                  }));
                   setEditing(null);
+                  toastSuccess('账号信息已保存。');
                   await loadUsers();
-                } catch (nextError) {
-                  if (nextError instanceof ApiResponseError && nextError.status === 401) {
+                } catch (error) {
+                  if (error instanceof ApiResponseError && error.status === 401) {
                     signOut();
                     return;
                   }
-                  setError(nextError instanceof Error ? nextError.message : '更新失败。');
+
+                  toastError(error, '更新失败。');
                 }
               }}
             >
@@ -552,46 +726,102 @@ function UserListPage({
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmActionDialog
+        open={batchResetOpen}
+        onOpenChange={setBatchResetOpen}
+        title="确认重置密码"
+        description={`将重置当前选中的 ${selectedIds.length} 个教师密码，并下载包含新密码的 CSV 文件。`}
+        confirmLabel="重置密码"
+        loading={resetLoading}
+        onConfirm={async () => {
+          if (!token) return;
+
+          try {
+            setResetLoading(true);
+            const data = await unwrapResponse<{ message: string; users: CreatedUser[] }>(
+              createApiClient(token).admin.users.password.patch({ ids: selectedIds })
+            );
+            setBatchResetOpen(false);
+            setResetResult(data.users);
+            toastSuccess(`已重置 ${data.users.length} 个教师的密码。`);
+          } catch (error) {
+            if (error instanceof ApiResponseError && error.status === 401) {
+              signOut();
+              return;
+            }
+
+            toastError(error, '重置失败。');
+          } finally {
+            setResetLoading(false);
+          }
+        }}
+      />
+
+      <ConfirmActionDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+          }
+        }}
+        title="确认删除账号"
+        description={deleteTarget ? `将删除 ${deleteTarget.name}（${deleteTarget.uid}）账号，删除后不可恢复。` : ''}
+        confirmLabel="删除"
+        loading={deleteLoading}
+        variant="destructive"
+        onConfirm={async () => {
+          if (!token || !deleteTarget) return;
+
+          try {
+            setDeleteLoading(true);
+            await unwrapResponse(createApiClient(token).admin.users({ id: deleteTarget.id }).delete());
+            setDeleteTarget(null);
+            toastSuccess('账号已删除。');
+            await loadUsers();
+          } catch (error) {
+            if (error instanceof ApiResponseError && error.status === 401) {
+              signOut();
+              return;
+            }
+
+            toastError(error, '删除失败。');
+          } finally {
+            setDeleteLoading(false);
+          }
+        }}
+      />
+
+      <ConfirmActionDialog
+        open={batchDeleteOpen}
+        onOpenChange={setBatchDeleteOpen}
+        title="确认批量删除教师账号"
+        description={`将删除当前选中的 ${selectedIds.length} 个教师账号，删除后不可恢复。`}
+        confirmLabel="删除"
+        loading={deleteLoading}
+        variant="destructive"
+        onConfirm={async () => {
+          if (!token) return;
+
+          try {
+            setDeleteLoading(true);
+            await unwrapResponse(createApiClient(token).admin.users.delete({ ids: selectedIds }));
+            setBatchDeleteOpen(false);
+            toastSuccess(`已删除 ${selectedIds.length} 个教师账号。`);
+            await loadUsers();
+          } catch (error) {
+            if (error instanceof ApiResponseError && error.status === 401) {
+              signOut();
+              return;
+            }
+
+            toastError(error, '删除失败。');
+          } finally {
+            setDeleteLoading(false);
+          }
+        }}
+      />
     </AdminPageFrame>
-  );
-}
-
-function ResultTable({ users, filename }: { users: CreatedUser[]; filename: string }) {
-  const csvData = `name,uid,role,password\n${users.map((user) => `${user.name},${user.uid},${user.role},${user.password}`).join('\n')}`;
-  const downloadUrl = URL.createObjectURL(new Blob([csvData], { type: 'text/csv' }));
-
-  return (
-    <div className="space-y-4 rounded-xl bg-muted/40 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">成功生成 {users.length} 个账号。</p>
-        <Button variant="secondary" asChild>
-          <a href={downloadUrl} download={filename}>
-            <Download className="size-4" />
-            下载 CSV
-          </a>
-        </Button>
-      </div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>姓名</TableHead>
-            <TableHead>UID</TableHead>
-            <TableHead>角色</TableHead>
-            <TableHead>密码</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-            {users.map((user) => (
-              <TableRow key={user.uid}>
-                <TableCell>{user.name}</TableCell>
-                <TableCell>{user.uid}</TableCell>
-                <TableCell>{user.role}</TableCell>
-                <TableCell className="font-mono text-xs">{user.password}</TableCell>
-              </TableRow>
-            ))}
-        </TableBody>
-      </Table>
-    </div>
   );
 }
 
@@ -623,27 +853,46 @@ function SelectRole({ value, onChange }: { value: UserRole; onChange: (role: Use
 
 function AdminStudentListPage() {
   const { token, signOut } = useSession();
+  const { captureShiftKey, resetSelectionAnchor, updateSelection } = useShiftMultiSelect();
   const [students, setStudents] = useState<UserSummary[]>([]);
   const [durations, setDurations] = useState<Record<number, number>>({});
   const [sortBy, setSortBy] = useState<'duration-desc' | 'duration-asc' | 'uid-asc' | 'uid-desc' | 'name-asc' | 'name-desc'>('duration-desc');
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editing, setEditing] = useState<UserSummary | null>(null);
   const [form, setForm] = useState({ name: '', password: '' });
-  const [error, setError] = useState('');
+  const [batchResetOpen, setBatchResetOpen] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetResult, setResetResult] = useState<CreatedUser[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<UserSummary | null>(null);
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  async function reload() {
+    if (!token) return;
+
+    try {
+      const [usersData, statisticsData] = await Promise.all([
+        unwrapResponse<{ users: UserSummary[] }>(createApiClient(token).admin.users.get({ query: { role: 'student' } })),
+        unwrapResponse<{ statistics: TeacherStatistics }>(createApiClient(token).teacher.statistics.get())
+      ]);
+
+      setStudents(usersData.users);
+      setDurations(Object.fromEntries(statisticsData.statistics.student_durations.map((item) => [item.student_id, item.total_duration])));
+      setSelectedIds([]);
+      resetSelectionAnchor();
+    } catch (error) {
+      if (error instanceof ApiResponseError && error.status === 401) {
+        signOut();
+        return;
+      }
+
+      toastError(error, '加载学生列表失败。');
+    }
+  }
 
   useEffect(() => {
     if (!token) return;
-
-    void Promise.all([
-      apiRequest<{ users: UserSummary[] }>('/admin/users?role=student', {}, token),
-      apiRequest<{ statistics: TeacherStatistics }>('/teacher/statistics', {}, token)
-    ])
-      .then(([usersData, statisticsData]) => {
-        setStudents(usersData.users);
-        setDurations(Object.fromEntries(statisticsData.statistics.student_durations.map((item) => [item.student_id, item.total_duration])));
-      })
-      .catch((nextError) => {
-        if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
-      });
+    void reload();
   }, [token]);
 
   const sortedStudents = useMemo(() => {
@@ -659,21 +908,110 @@ function AdminStudentListPage() {
     });
   }, [durations, sortBy, students]);
 
-  async function reload() {
-    if (!token) return;
-    const usersData = await apiRequest<{ users: UserSummary[] }>('/admin/users?role=student', {}, token);
-    setStudents(usersData.users);
-  }
+  const studentIds = sortedStudents.map((student) => student.id);
+  const allSelected = sortedStudents.length > 0 && selectedIds.length === sortedStudents.length;
+
+  const columns = useMemo<Array<ColumnDef<UserSummary>>>(() => [
+    {
+      id: 'select',
+      header: () => (
+        <Checkbox
+          checked={allSelected}
+          onCheckedChange={(checked) => setSelectedIds(checked ? studentIds : [])}
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          checked={selectedIds.includes(row.original.id)}
+          onClick={captureShiftKey}
+          onCheckedChange={(checked) =>
+            setSelectedIds((current) =>
+              updateSelection(studentIds, current, row.original.id, checked === true)
+            )
+          }
+        />
+      )
+    },
+    {
+      accessorKey: 'uid',
+      header: () => (
+        <SortButton
+          active={sortBy === 'uid-asc' || sortBy === 'uid-desc'}
+          descending={sortBy === 'uid-desc'}
+          label="UID"
+          onClick={() => setSortBy((current) => current === 'uid-asc' ? 'uid-desc' : 'uid-asc')}
+        />
+      )
+    },
+    {
+      accessorKey: 'name',
+      header: () => (
+        <SortButton
+          active={sortBy === 'name-asc' || sortBy === 'name-desc'}
+          descending={sortBy === 'name-desc'}
+          label="姓名"
+          onClick={() => setSortBy((current) => current === 'name-asc' ? 'name-desc' : 'name-asc')}
+        />
+      ),
+      cell: ({ row }) => <span className="font-medium">{row.original.name}</span>
+    },
+    {
+      id: 'duration',
+      header: () => (
+        <SortButton
+          active={sortBy === 'duration-desc' || sortBy === 'duration-asc'}
+          descending={sortBy === 'duration-desc'}
+          label="总时长"
+          onClick={() => setSortBy((current) => current === 'duration-desc' ? 'duration-asc' : 'duration-desc')}
+        />
+      ),
+      cell: ({ row }) => `${formatDuration(durations[row.original.id] ?? 0)} h`
+    },
+    {
+      accessorKey: 'created_at',
+      header: '创建时间',
+      cell: ({ row }) => <span className="text-muted-foreground">{formatDateTime(row.original.created_at)}</span>
+    },
+    {
+      id: 'actions',
+      header: '操作',
+      cell: ({ row }) => (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setEditing(row.original);
+              setForm({ name: row.original.name, password: '' });
+            }}
+          >
+            编辑
+          </Button>
+          <Button size="sm" variant="destructive" onClick={() => setDeleteTarget(row.original)}>
+            删除
+          </Button>
+        </div>
+      )
+    }
+  ], [allSelected, captureShiftKey, durations, selectedIds, sortBy, studentIds, updateSelection]);
 
   return (
-    <AdminPageFrame title="学生列表" description="管理员可以维护学生姓名和密码，并按总时长查看排序。">
+    <AdminPageFrame title="学生列表" description="管理员可以维护学生姓名和密码，支持批量重置密码、批量删除，并按总时长查看排序。">
       <Card>
         <CardHeader>
           <CardTitle>学生列表</CardTitle>
           <CardDescription>总时长仅统计已通过记录。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {selectedIds.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-slate-100 p-3">
+                <p className="mr-2 text-sm text-muted-foreground">已选 {selectedIds.length} 人</p>
+                <Button size="sm" onClick={() => setBatchResetOpen(true)}>重置密码</Button>
+                <Button size="sm" variant="destructive" onClick={() => setBatchDeleteOpen(true)}>删除</Button>
+              </div>
+            ) : <div />}
+
             <Select value={sortBy} onValueChange={(value) => setSortBy(value as typeof sortBy)}>
               <SelectTrigger className="w-52">
                 <SelectValue />
@@ -688,80 +1026,20 @@ function AdminStudentListPage() {
               </SelectContent>
             </Select>
           </div>
+
           {sortedStudents.length === 0 ? (
             <EmptyState title="暂无账号" description="在用户创建页添加学生账号后，这里会同步显示。" />
           ) : (
-            <div className="overflow-hidden rounded-xl border border-border">
-              <Table>
-                <TableHeader className="bg-muted/50">
-                  <TableRow>
-                    <TableHead>
-                      <SortButton
-                        active={sortBy === 'uid-asc' || sortBy === 'uid-desc'}
-                        descending={sortBy === 'uid-desc'}
-                        label="UID"
-                        onClick={() => setSortBy((current) => current === 'uid-asc' ? 'uid-desc' : 'uid-asc')}
-                      />
-                    </TableHead>
-                    <TableHead>
-                      <SortButton
-                        active={sortBy === 'name-asc' || sortBy === 'name-desc'}
-                        descending={sortBy === 'name-desc'}
-                        label="姓名"
-                        onClick={() => setSortBy((current) => current === 'name-asc' ? 'name-desc' : 'name-asc')}
-                      />
-                    </TableHead>
-                    <TableHead>
-                      <SortButton
-                        active={sortBy === 'duration-desc' || sortBy === 'duration-asc'}
-                        descending={sortBy === 'duration-desc'}
-                        label="总时长"
-                        onClick={() => setSortBy((current) => current === 'duration-desc' ? 'duration-asc' : 'duration-desc')}
-                      />
-                    </TableHead>
-                    <TableHead>创建时间</TableHead>
-                    <TableHead>操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedStudents.map((student) => (
-                    <TableRow key={student.id}>
-                      <TableCell>{student.uid}</TableCell>
-                      <TableCell className="font-medium">{student.name}</TableCell>
-                      <TableCell>{formatDuration(durations[student.id] ?? 0)} h</TableCell>
-                      <TableCell className="text-muted-foreground">{formatDateTime(student.created_at)}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-2">
-                          <Button size="sm" variant="outline" onClick={() => { setEditing(student); setForm({ name: student.name, password: '' }); }}>
-                            编辑
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={async () => {
-                              if (!token || !window.confirm('确定删除该账号吗？')) return;
-                              try {
-                                await apiRequest(`/admin/users/${student.id}`, { method: 'DELETE' }, token);
-                                await reload();
-                              } catch (nextError) {
-                                if (nextError instanceof ApiResponseError && nextError.status === 401) {
-                                  signOut();
-                                  return;
-                                }
-                                window.alert(nextError instanceof Error ? nextError.message : '删除失败。');
-                              }
-                            }}
-                          >
-                            删除
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable batchSize={60} columns={columns} data={sortedStudents} />
           )}
+          {resetResult.length > 0 ? (
+            <UserCredentialsResult
+              autoDownload
+              users={resetResult}
+              filename="reset_students.csv"
+              summary={`成功重置 ${resetResult.length} 个学生的密码。`}
+            />
+          ) : null}
         </CardContent>
       </Card>
 
@@ -772,23 +1050,31 @@ function AdminStudentListPage() {
             <DialogDescription>密码留空表示不修改。</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <Field label="姓名"><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></Field>
-            <Field label="新密码"><Input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} /></Field>
-            {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
+            <Field label="姓名">
+              <Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
+            </Field>
+            <Field label="新密码">
+              <Input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} />
+            </Field>
             <Button
               onClick={async () => {
                 if (!token || !editing) return;
-                setError('');
+
                 try {
-                  await apiRequest(`/admin/users/${editing.id}`, { method: 'PUT', body: JSON.stringify({ name: form.name.trim(), password: form.password }) }, token);
+                  await unwrapResponse(createApiClient(token).admin.users({ id: editing.id }).put({
+                    name: form.name.trim(),
+                    password: form.password
+                  }));
                   setEditing(null);
+                  toastSuccess('学生信息已保存。');
                   await reload();
-                } catch (nextError) {
-                  if (nextError instanceof ApiResponseError && nextError.status === 401) {
+                } catch (error) {
+                  if (error instanceof ApiResponseError && error.status === 401) {
                     signOut();
                     return;
                   }
-                  setError(nextError instanceof Error ? nextError.message : '更新失败。');
+
+                  toastError(error, '更新失败。');
                 }
               }}
             >
@@ -797,6 +1083,101 @@ function AdminStudentListPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmActionDialog
+        open={batchResetOpen}
+        onOpenChange={setBatchResetOpen}
+        title="确认重置密码"
+        description={`将重置当前选中的 ${selectedIds.length} 个学生密码，并下载包含新密码的 CSV 文件。`}
+        confirmLabel="重置密码"
+        loading={resetLoading}
+        onConfirm={async () => {
+          if (!token) return;
+
+          try {
+            setResetLoading(true);
+            const data = await unwrapResponse<{ message: string; users: CreatedUser[] }>(
+              createApiClient(token).admin.users.password.patch({ ids: selectedIds })
+            );
+            setBatchResetOpen(false);
+            setResetResult(data.users);
+            toastSuccess(`已重置 ${data.users.length} 个学生的密码。`);
+          } catch (error) {
+            if (error instanceof ApiResponseError && error.status === 401) {
+              signOut();
+              return;
+            }
+
+            toastError(error, '重置失败。');
+          } finally {
+            setResetLoading(false);
+          }
+        }}
+      />
+
+      <ConfirmActionDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+          }
+        }}
+        title="确认删除学生账号"
+        description={deleteTarget ? `将删除 ${deleteTarget.name}（${deleteTarget.uid}）账号，删除后不可恢复。` : ''}
+        confirmLabel="删除"
+        loading={deleteLoading}
+        variant="destructive"
+        onConfirm={async () => {
+          if (!token || !deleteTarget) return;
+
+          try {
+            setDeleteLoading(true);
+            await unwrapResponse(createApiClient(token).admin.users({ id: deleteTarget.id }).delete());
+            setDeleteTarget(null);
+            toastSuccess('学生账号已删除。');
+            await reload();
+          } catch (error) {
+            if (error instanceof ApiResponseError && error.status === 401) {
+              signOut();
+              return;
+            }
+
+            toastError(error, '删除失败。');
+          } finally {
+            setDeleteLoading(false);
+          }
+        }}
+      />
+
+      <ConfirmActionDialog
+        open={batchDeleteOpen}
+        onOpenChange={setBatchDeleteOpen}
+        title="确认批量删除学生账号"
+        description={`将删除当前选中的 ${selectedIds.length} 个学生账号，删除后不可恢复。`}
+        confirmLabel="批量删除"
+        loading={deleteLoading}
+        variant="destructive"
+        onConfirm={async () => {
+          if (!token) return;
+
+          try {
+            setDeleteLoading(true);
+            await unwrapResponse(createApiClient(token).admin.users.delete({ ids: selectedIds }));
+            setBatchDeleteOpen(false);
+            toastSuccess(`已删除 ${selectedIds.length} 个学生账号。`);
+            await reload();
+          } catch (error) {
+            if (error instanceof ApiResponseError && error.status === 401) {
+              signOut();
+              return;
+            }
+
+            toastError(error, '批量删除失败。');
+          } finally {
+            setDeleteLoading(false);
+          }
+        }}
+      />
     </AdminPageFrame>
   );
 }
@@ -827,6 +1208,16 @@ const CSV_IMPORT_EXAMPLE_ROWS: CsvImportEntry[] = [
 ];
 
 function CsvImportExampleDialog() {
+  const columns = useMemo<Array<ColumnDef<CsvImportEntry>>>(() => [
+    { accessorKey: 'name', header: '姓名' },
+    { accessorKey: 'role', header: '角色' },
+    {
+      accessorKey: 'teacher_uid',
+      header: '管理老师 UID',
+      cell: ({ row }) => row.original.teacher_uid || <span className="text-muted-foreground">留空</span>
+    }
+  ], []);
+
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -843,82 +1234,17 @@ function CsvImportExampleDialog() {
             <TabsTrigger value="table">表格</TabsTrigger>
           </TabsList>
           <TabsContent value="source" className="mt-4">
-            <pre className="overflow-x-auto rounded-xl border border-border/70 bg-muted/30 p-4 text-sm leading-6">{CSV_IMPORT_EXAMPLE_ROWS.map((row) => `${row.name},${row.role},${row.teacher_uid}`).join('\n')}</pre>
+            <pre className="overflow-x-auto rounded-xl border border-border/70 bg-muted/30 p-4 text-sm leading-6">
+              {CSV_IMPORT_EXAMPLE_ROWS.map((row) => `${row.name},${row.role},${row.teacher_uid}`).join('\n')}
+            </pre>
           </TabsContent>
           <TabsContent value="table" className="mt-4">
-            <div className="overflow-hidden rounded-xl border border-border/70">
-              <Table>
-                {/* <TableHeader className="bg-muted/50">
-                  <TableRow>
-                    <TableHead>姓名</TableHead>
-                    <TableHead>角色</TableHead>
-                    <TableHead>管理老师 UID</TableHead>
-                  </TableRow>
-                </TableHeader> */}
-                <TableBody>
-                  {CSV_IMPORT_EXAMPLE_ROWS.map((row) => (
-                    <TableRow key={row.lineNumber}>
-                      <TableCell>{row.name}</TableCell>
-                      <TableCell>{row.role}</TableCell>
-                      <TableCell>{row.teacher_uid || <span className="text-muted-foreground">留空</span>}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable batchSize={10} columns={columns} data={CSV_IMPORT_EXAMPLE_ROWS} />
           </TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>
   );
-}
-
-async function importCsvEntries(
-  entries: CsvImportEntry[],
-  preview: CsvImportPreview,
-  fileName: string,
-  token: string,
-  signOut: () => void,
-  setCsvProgressCurrent: React.Dispatch<React.SetStateAction<number>>,
-  setCsvResult: React.Dispatch<React.SetStateAction<CreatedUser[]>>
-) {
-  const createdUsers: CreatedUser[] = [];
-
-  setCsvProgressCurrent(0);
-  setCsvResult([]);
-
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-
-    try {
-      const data = await apiRequest<{ user: CreatedUser }>(
-        '/admin/users',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            name: entry.name,
-            role: entry.role,
-            teacher_uid: entry.teacher_uid
-          })
-        },
-        token
-      );
-
-      createdUsers.push(data.user);
-      setCsvResult([...createdUsers]);
-      setCsvProgressCurrent(index + 1);
-    } catch (nextError) {
-      if (nextError instanceof ApiResponseError && nextError.status === 401) {
-        signOut();
-        throw nextError;
-      }
-
-      const message = nextError instanceof Error ? nextError.message : '导入失败。';
-      throw new Error(`文件 ${fileName} 第 ${entry.lineNumber} 行导入失败：${message}`);
-    }
-  }
-
-  setCsvProgressCurrent(preview.totalCount);
 }
 
 function formatCsvEncoding(encoding: CsvImportPreview['encoding']) {
