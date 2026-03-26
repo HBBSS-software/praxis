@@ -1,30 +1,36 @@
-import { Elysia, t } from 'elysia';
+import { Elysia } from 'elysia';
 
 import { hashPassword } from '../auth/password';
 import database from '../database';
 import {
   apiError,
-  asOptionalString,
-  asRequiredString,
   batchResetPasswordBodySchema,
   batchReviewBodySchema,
-  checkDate,
-  checkTeacherDuration,
+  buildReviewNotificationMessage,
   idParamSchema,
   isValidUploadPath,
+  normalizeOptionalString,
   normalizeRecordFilters,
+  parseDuration,
   recordQuerySchema,
   requireRole,
   reviewRecordBodySchema,
-  teacherRecordSchema,
   updateRecordBodySchema,
   updateUserBodySchema,
-  validateRecordFilters
+  validateComment,
+  validateContent,
+  validateDuration,
+  validateLocation,
+  validateName,
+  validatePassword,
+  validatePracticeDate,
+  validateRecordFilters,
+  validateTitle
 } from '../http';
 import { authPlugin } from '../plugins/auth';
 import type { RecordFilters, UpdateRecordInput, UserRole } from '../models';
 
-function getVisibleStudentIds(userId: number, role: UserRole): Set<number> | undefined {
+function getVisibleStudentIds(userId: number, role: UserRole) {
   if (role === 'admin') {
     return undefined;
   }
@@ -37,7 +43,21 @@ function canManageStudent(studentId: number, userId: number, role: UserRole) {
     return true;
   }
 
-  return database.getTeacherStudents(userId).some((student) => student.id === studentId);
+  return database.getTeacherStudentIds(userId).includes(studentId);
+}
+
+function parseRecordFilters(query: Record<string, unknown>): RecordFilters {
+  return normalizeRecordFilters({
+    student_id: typeof query.student_id === 'string' ? Number(query.student_id) : null,
+    teacher_id: typeof query.teacher_id === 'string' ? Number(query.teacher_id) : null,
+    status: typeof query.status === 'string' ? query.status as RecordFilters['status'] : null,
+    practice_after: typeof query.practice_after === 'string' && query.practice_after ? query.practice_after : null,
+    practice_before: typeof query.practice_before === 'string' && query.practice_before ? query.practice_before : null,
+    created_after: typeof query.created_after === 'string' && query.created_after ? query.created_after : null,
+    created_before: typeof query.created_before === 'string' && query.created_before ? query.created_before : null,
+    updated_after: typeof query.updated_after === 'string' && query.updated_after ? query.updated_after : null,
+    updated_before: typeof query.updated_before === 'string' && query.updated_before ? query.updated_before : null
+  });
 }
 
 export const teacherRoutes = new Elysia({ prefix: '/teacher' })
@@ -46,22 +66,20 @@ export const teacherRoutes = new Elysia({ prefix: '/teacher' })
     beforeHandle: ({ user, authError }) => requireRole(user, authError, ['teacher', 'admin'])
   })
   .get('/records', ({ query, user }) => {
-    const validationMessage = validateRecordFilters(query);
-    if (validationMessage) {
-      return apiError(400, validationMessage);
+    const filterError = validateRecordFilters(query as Record<string, unknown>);
+
+    if (filterError) {
+      return apiError(400, filterError);
     }
 
-    const filters: RecordFilters = normalizeRecordFilters(query);
-    const studentIds = getVisibleStudentIds(user!.id, user!.role);
     return {
-      records: database.getAllRecords(filters, studentIds)
+      records: database.getAllRecords(parseRecordFilters(query as Record<string, unknown>), getVisibleStudentIds(user!.id, user!.role))
     };
   }, {
     query: recordQuerySchema
   })
   .get('/records/:id', ({ params, user }) => {
-    const studentIds = getVisibleStudentIds(user!.id, user!.role);
-    const record = database.getTeacherRecordById(Number(params.id), studentIds);
+    const record = database.getTeacherRecordById(Number(params.id), getVisibleStudentIds(user!.id, user!.role));
 
     if (!record) {
       return apiError(404, '记录不存在。');
@@ -72,30 +90,34 @@ export const teacherRoutes = new Elysia({ prefix: '/teacher' })
     params: idParamSchema
   })
   .put('/records/:id/review', ({ params, body, user }) => {
-    const comment = typeof body.comment === 'string' && body.comment.trim() ? body.comment.trim() : null;
-    const studentIds = getVisibleStudentIds(user!.id, user!.role);
-    const existing = database.getTeacherRecordById(Number(params.id), studentIds);
+    const record = database.getTeacherRecordById(Number(params.id), getVisibleStudentIds(user!.id, user!.role));
 
-    if (!existing) {
+    if (!record) {
       return apiError(404, '记录不存在。');
     }
 
-    const updated = database.updateRecord(existing.id, {
+    const comment = normalizeOptionalString(body.comment);
+    const commentError = validateComment(comment);
+
+    if (commentError) {
+      return apiError(400, commentError);
+    }
+
+    const updated = database.updateRecord(record.id, {
       status: body.status,
-      teacher_comment: comment
+      teacher_comment: comment,
+      updated_by_uid: user!.uid
     });
 
     if (!updated) {
       return apiError(404, '记录不存在。');
     }
 
-    const message = body.status === 'approved'
-      ? `你的实践记录 "${updated.title}" 已被通过。`
-      : body.status === 'rejected'
-        ? `你的实践记录 "${updated.title}" 已被驳回。`
-        : `你的实践记录 "${updated.title}" 已被退回待审核。`;
-
-    database.createNotification(updated.student_id, body.status === 'pending' ? 'other' : body.status, message);
+    database.createNotification(
+      updated.student_id,
+      body.status === 'pending' ? 'other' : body.status,
+      buildReviewNotificationMessage(updated.title, body.status)
+    );
 
     return { message: '审核结果保存成功。' };
   }, {
@@ -103,11 +125,12 @@ export const teacherRoutes = new Elysia({ prefix: '/teacher' })
     params: idParamSchema
   })
   .post('/records/batch-review', ({ body, user }) => {
-    const studentIds = getVisibleStudentIds(user!.id, user!.role);
+    const visibleStudentIds = getVisibleStudentIds(user!.id, user!.role);
     let successCount = 0;
 
     for (const id of body.ids) {
-      const record = database.getTeacherRecordById(id, studentIds);
+      const record = database.getTeacherRecordById(id, visibleStudentIds);
+
       if (!record) {
         continue;
       }
@@ -116,14 +139,16 @@ export const teacherRoutes = new Elysia({ prefix: '/teacher' })
         database.deleteRecord(record.id);
         database.createNotification(record.student_id, 'deleted', `你的实践记录 "${record.title}" 已被删除。`);
       } else {
-        database.updateRecord(record.id, { status: body.action, teacher_comment: null });
-        const message = body.action === 'approved'
-          ? `你的实践记录 "${record.title}" 已被通过。`
-          : body.action === 'rejected'
-            ? `你的实践记录 "${record.title}" 已被驳回。`
-            : `你的实践记录 "${record.title}" 已被退回待审核。`;
-
-        database.createNotification(record.student_id, body.action === 'pending' ? 'other' : body.action, message);
+        database.updateRecord(record.id, {
+          status: body.action,
+          teacher_comment: null,
+          updated_by_uid: user!.uid
+        });
+        database.createNotification(
+          record.student_id,
+          body.action === 'pending' ? 'other' : body.action,
+          buildReviewNotificationMessage(record.title, body.action)
+        );
       }
 
       successCount += 1;
@@ -134,10 +159,9 @@ export const teacherRoutes = new Elysia({ prefix: '/teacher' })
     body: batchReviewBodySchema
   })
   .put('/records/:id', ({ params, body, user }) => {
-    const studentIds = getVisibleStudentIds(user!.id, user!.role);
-    const existingRecord = database.getTeacherRecordById(Number(params.id), studentIds);
+    const record = database.getTeacherRecordById(Number(params.id), getVisibleStudentIds(user!.id, user!.role));
 
-    if (!existingRecord) {
+    if (!record) {
       return apiError(404, '记录不存在。');
     }
 
@@ -146,76 +170,65 @@ export const teacherRoutes = new Elysia({ prefix: '/teacher' })
     };
 
     if (body.title !== undefined) {
-      const title = asRequiredString(body.title);
-      if (!title) {
-        return apiError(400, '标题不能为空。');
-      }
-      updates.title = title;
+      const value = body.title.trim();
+      const error = validateTitle(value);
+      if (error) return apiError(400, error);
+      updates.title = value;
     }
 
     if (body.content !== undefined) {
-      const content = asRequiredString(body.content);
-      if (!content) {
-        return apiError(400, '内容不能为空。');
-      }
-      updates.content = content;
+      const value = body.content.trim();
+      const error = validateContent(value);
+      if (error) return apiError(400, error);
+      updates.content = value;
     }
 
     if (body.practice_date !== undefined) {
-      const practiceDate = asRequiredString(body.practice_date);
-      if (!practiceDate) {
-        return apiError(400, '实践日期不能为空。');
-      }
-
-      if (!checkDate(practiceDate)) {
-        return apiError(400, '不能记录未来的活动。');
-      }
-
-      updates.practice_date = practiceDate;
+      const value = body.practice_date.trim();
+      const error = validatePracticeDate(value);
+      if (error) return apiError(400, error);
+      updates.practice_date = value;
     }
 
     if (body.location !== undefined) {
-      updates.location = asOptionalString(body.location);
+      const value = normalizeOptionalString(body.location);
+      const error = validateLocation(value);
+      if (error) return apiError(400, error);
+      updates.location = value;
     }
 
     if (body.duration !== undefined) {
-      const durationValue = typeof body.duration === 'number' ? body.duration : Number(body.duration);
-      if (!Number.isFinite(durationValue)) {
-        return apiError(400, '时长不能为空。');
-      }
-
-      if (!checkTeacherDuration(durationValue)) {
-        return apiError(400, '时长过短或不是 0.1 的倍数。');
-      }
-
-      updates.duration = durationValue;
+      const value = parseDuration(body.duration);
+      const error = validateDuration(value);
+      if (error) return apiError(400, error);
+      updates.duration = value;
     }
 
     if (body.image_path !== undefined) {
-      const imagePath = asOptionalString(body.image_path);
-      if (imagePath && !isValidUploadPath(imagePath)) {
+      const value = normalizeOptionalString(body.image_path);
+
+      if (value && !isValidUploadPath(value)) {
         return apiError(400, '图片路径无效。');
       }
 
-      updates.image_path = imagePath;
+      updates.image_path = value;
     }
 
-    database.updateRecord(existingRecord.id, updates);
+    database.updateRecord(record.id, updates);
     return { message: '记录更新成功。' };
   }, {
     body: updateRecordBodySchema,
     params: idParamSchema
   })
   .delete('/records/:id', ({ params, user }) => {
-    const studentIds = getVisibleStudentIds(user!.id, user!.role);
-    const existingRecord = database.getTeacherRecordById(Number(params.id), studentIds);
+    const record = database.getTeacherRecordById(Number(params.id), getVisibleStudentIds(user!.id, user!.role));
 
-    if (!existingRecord) {
+    if (!record) {
       return apiError(404, '记录不存在。');
     }
 
-    database.deleteRecord(existingRecord.id);
-    database.createNotification(existingRecord.student_id, 'deleted', `你的实践记录 "${existingRecord.title}" 已被删除。`);
+    database.deleteRecord(record.id);
+    database.createNotification(record.student_id, 'deleted', `你的实践记录 "${record.title}" 已被删除。`);
     return { message: '记录删除成功。' };
   }, {
     params: idParamSchema
@@ -227,6 +240,7 @@ export const teacherRoutes = new Elysia({ prefix: '/teacher' })
   }))
   .get('/students/:id/records', ({ params, user }) => {
     const studentId = Number(params.id);
+
     if (!canManageStudent(studentId, user!.id, user!.role)) {
       return apiError(403, '无权查看该学生。');
     }
@@ -249,23 +263,16 @@ export const teacherRoutes = new Elysia({ prefix: '/teacher' })
       return apiError(403, '无权管理该学生。');
     }
 
-    const name = body.name === undefined ? undefined : asRequiredString(body.name);
-    const newPassword = typeof body.password === 'string' ? body.password : '';
-
-    if (body.name !== undefined && !name) {
-      return apiError(400, '姓名不能为空。');
+    if (body.name !== undefined) {
+      const error = validateName(body.name);
+      if (error) return apiError(400, error);
+      database.updateUserName(studentId, body.name.trim());
     }
 
-    if (name) {
-      database.updateUserName(studentId, name);
-    }
-
-    if (newPassword) {
-      if (newPassword.length < 8) {
-        return apiError(400, '密码至少需要 8 位。');
-      }
-
-      database.updateUserPassword(studentId, await hashPassword(newPassword));
+    if (body.password !== undefined && body.password !== '') {
+      const error = validatePassword(body.password);
+      if (error) return apiError(400, error);
+      database.updateUserPassword(studentId, await hashPassword(body.password));
     }
 
     return { message: '学生信息更新成功。' };
@@ -291,9 +298,6 @@ export const teacherRoutes = new Elysia({ prefix: '/teacher' })
   }, {
     body: batchResetPasswordBodySchema
   })
-  .get('/statistics', ({ user }) => {
-    const studentIds = getVisibleStudentIds(user!.id, user!.role);
-    return {
-      statistics: database.getStatistics(studentIds)
-    };
-  });
+  .get('/statistics', ({ user }) => ({
+    statistics: database.getStatistics(getVisibleStudentIds(user!.id, user!.role))
+  }));

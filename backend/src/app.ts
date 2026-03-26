@@ -1,17 +1,17 @@
 import { cors } from '@elysiajs/cors';
 import staticPlugin from '@elysiajs/static';
-import { Elysia, t } from 'elysia';
-import { randomUUID } from 'node:crypto';
+import { Elysia } from 'elysia';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { apiError, requireAuthenticatedUser } from './http';
+import { apiError } from './http';
 import { authPlugin } from './plugins/auth';
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { studentRoutes } from './routes/students';
 import { teacherRoutes } from './routes/teachers';
+import { uploadRoutes } from './routes/upload';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const frontendDir = path.join(currentDir, '..', '..', 'frontend', 'dist');
@@ -21,12 +21,6 @@ const uploadDir = path.join(currentDir, '..', 'uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
-
-const uploadExtensionByType: Record<string, string> = {
-  'image/jpeg': '.jpg',
-  'image/png': '.png',
-  'image/gif': '.gif'
-};
 
 const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
   .split(',')
@@ -42,6 +36,29 @@ const uploadsPlugin = await staticPlugin({
   alwaysStatic: false,
   silent: true
 });
+
+function resolveFrontendIndex() {
+  if (!fs.existsSync(frontendIndexPath)) {
+    return null;
+  }
+
+  return Bun.file(frontendIndexPath);
+}
+
+function resolveFrontendAsset(requestPath: string) {
+  const safePath = path.normalize(requestPath).replace(/^[/\\]+/, '').replace(/^(\.\.(\/|\\|$))+/, '');
+  const filePath = path.join(frontendDir, safePath);
+
+  if (!filePath.startsWith(frontendDir)) {
+    return null;
+  }
+
+  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+    return null;
+  }
+
+  return Bun.file(filePath);
+}
 
 export const api = new Elysia({ prefix: '/api' })
   .use(
@@ -60,43 +77,14 @@ export const api = new Elysia({ prefix: '/api' })
   )
   .use(authPlugin)
   .use(authRoutes)
-  .use(adminRoutes)
   .use(studentRoutes)
   .use(teacherRoutes)
-  .post('/upload', async ({ body, user, authError }) => {
-    const authFailure = requireAuthenticatedUser(user, authError);
-    if (authFailure) {
-      return authFailure;
-    }
-
-    const image = body.image;
-    const extension = uploadExtensionByType[image.type];
-
-    if (!extension) {
-      return apiError(400, '图片格式不受支持。');
-    }
-
-    const fileName = `${randomUUID()}${extension}`;
-
-    await Bun.write(path.join(uploadDir, fileName), image);
-
-    return {
-      message: '上传成功。',
-      imageUrl: `/uploads/${fileName}`,
-      filename: fileName
-    };
-  }, {
-    body: t.Object({
-      image: t.File({
-        type: ['image/jpeg', 'image/png', 'image/gif'],
-        maxSize: '5m'
-      })
-    })
-  })
+  .use(adminRoutes)
+  .use(uploadRoutes)
   .all('*', () => apiError(404, '资源不存在。'))
   .onError(({ code, error }) => {
     if (code === 'VALIDATION' || code === 'PARSE') {
-      return apiError(400, error instanceof Error ? error.message : '请求参数无效。');
+      return apiError(400, error instanceof Error && error.message ? error.message : '请求参数无效。');
     }
 
     console.error(error);
@@ -105,42 +93,20 @@ export const api = new Elysia({ prefix: '/api' })
 
 export type Api = typeof api;
 
-function resolveFrontendFile() {
-  if (!fs.existsSync(frontendIndexPath)) {
-    return null;
-  }
-
-  return Bun.file(frontendIndexPath);
-}
-
-function resolveFrontendAsset(requestPath: string) {
-  const safePath = path.normalize(requestPath).replace(/^[/\\]+/, '').replace(/^(\.\.(\/|\\|$))+/, '');
-  const filePath = path.join(frontendDir, safePath);
-
-  if (!filePath.startsWith(frontendDir) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
-    return null;
-  }
-
-  return Bun.file(filePath);
-}
-
 export const app = new Elysia()
   .use(uploadsPlugin)
   .use(api)
   .get('/assets/*', ({ path: requestPath, set }) => {
-    const file = resolveFrontendAsset(requestPath);
+    const asset = resolveFrontendAsset(requestPath);
 
-    if (!file) {
+    if (!asset) {
       set.status = 404;
       return '资源不存在。';
     }
 
-    return file;
+    return asset;
   })
-  .get('/', () => {
-    const file = resolveFrontendFile();
-    return file ?? '前端尚未构建，请先运行 bun build:frontend。';
-  })
+  .get('/', () => resolveFrontendIndex() ?? '前端尚未构建，请先运行 bun build:frontend。')
   .get('/health', () => ({ ok: true }))
   .all('*', ({ path: requestPath, set }) => {
     if (requestPath.startsWith('/api') || requestPath.startsWith('/uploads')) {
@@ -148,11 +114,13 @@ export const app = new Elysia()
     }
 
     const asset = resolveFrontendAsset(requestPath.slice(1));
+
     if (asset) {
       return asset;
     }
 
-    const file = resolveFrontendFile();
+    const file = resolveFrontendIndex();
+
     if (!file) {
       set.status = 404;
       return '前端尚未构建，请先运行 bun build:frontend。';

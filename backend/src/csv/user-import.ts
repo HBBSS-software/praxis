@@ -35,20 +35,20 @@ export function parseUserImportCsvText(
   forcedEncoding: CsvEncoding = 'utf-8'
 ): ParsedCsvUserImport {
   const rows = parseCsvRows(text, requirement);
-  const entries = rows.map(({ columns, lineNumber }) => {
+  const entries = rows.map(({ lineNumber, columns }) => {
     const name = columns[0].trim();
     const role = columns[1].trim();
-    const teacher_uid = columns[2].trim();
+    const teacherUid = columns[2].trim();
 
     if (!name) {
       throw new Error(`第 ${lineNumber} 行姓名为空。`);
     }
 
-    if (role !== 'student' && role !== 'teacher' && role !== 'admin') {
+    if (role !== 'admin' && role !== 'teacher' && role !== 'student') {
       throw new Error(`第 ${lineNumber} 行角色无效，只能是 student/teacher/admin。`);
     }
 
-    if (role !== 'student' && teacher_uid) {
+    if (role !== 'student' && teacherUid) {
       throw new Error(`第 ${lineNumber} 行错误：非学生该列（管理老师 UID）必须留空。`);
     }
 
@@ -56,7 +56,7 @@ export function parseUserImportCsvText(
       lineNumber,
       name,
       role: role as UserRole,
-      teacher_uid
+      teacher_uid: teacherUid
     };
   });
 
@@ -95,16 +95,18 @@ function decodeCsvBuffer(buffer: Uint8Array): { encoding: CsvEncoding; text: str
 
   try {
     return { encoding: 'utf-8', text: decodeText(buffer, 'utf-8') };
-  } catch { }
+  } catch {
+  }
 
   try {
     return { encoding: 'gbk', text: decodeText(buffer, 'gb18030') };
-  } catch { }
+  } catch {
+  }
 
   throw new Error('无法识别 CSV 文件编码，仅支持 UTF-8、UTF-16 和 GBK。');
 }
 
-function decodeText(buffer: Uint8Array, encoding: string): string {
+function decodeText(buffer: Uint8Array, encoding: string) {
   const text = new TextDecoder(encoding, { fatal: true }).decode(buffer).replace(/^\uFEFF/, '');
 
   if (!text.trim()) {
@@ -127,8 +129,8 @@ function looksLikeUtf16(buffer: Uint8Array, endianness: 'le' | 'be') {
     return false;
   }
 
-  let zeroOnExpectedSide = 0;
-  let zeroOnUnexpectedSide = 0;
+  let expectedZeroCount = 0;
+  let unexpectedZeroCount = 0;
   let pairs = 0;
 
   for (let index = 0; index < buffer.length; index += 2) {
@@ -137,15 +139,15 @@ function looksLikeUtf16(buffer: Uint8Array, endianness: 'le' | 'be') {
     pairs += 1;
 
     if (endianness === 'le') {
-      if (second === 0) zeroOnExpectedSide += 1;
-      if (first === 0) zeroOnUnexpectedSide += 1;
+      if (second === 0) expectedZeroCount += 1;
+      if (first === 0) unexpectedZeroCount += 1;
     } else {
-      if (first === 0) zeroOnExpectedSide += 1;
-      if (second === 0) zeroOnUnexpectedSide += 1;
+      if (first === 0) expectedZeroCount += 1;
+      if (second === 0) unexpectedZeroCount += 1;
     }
   }
 
-  return zeroOnExpectedSide / pairs > 0.3 && zeroOnUnexpectedSide / pairs < 0.1;
+  return expectedZeroCount / pairs > 0.3 && unexpectedZeroCount / pairs < 0.1;
 }
 
 function parseCsvRows(text: string, requirement: CsvFormatRequirement) {
@@ -159,23 +161,21 @@ function parseCsvRows(text: string, requirement: CsvFormatRequirement) {
 
   const pushRow = () => {
     currentRow.push(currentField);
-    const trimmedColumns = currentRow.map((column) => column.trim());
-    const isBlankRow = trimmedColumns.every((column) => column.length === 0);
+    const trimmed = currentRow.map((column) => column.trim());
 
-    if (!isBlankRow) {
-      if (trimmedColumns.length !== requirement.columnCount) {
+    if (!trimmed.every((column) => column.length === 0)) {
+      if (trimmed.length !== requirement.columnCount) {
         throw new Error(`第 ${rowStartLineNumber} 行格式无效，必须包含 ${requirement.columnCount} 列。`);
       }
 
       rows.push({
         lineNumber: rowStartLineNumber,
-        columns: trimmedColumns
+        columns: trimmed
       });
     }
 
     currentField = '';
     currentRow = [];
-    rowStartLineNumber = lineNumber;
   };
 
   for (let index = 0; index < normalized.length; index += 1) {
@@ -183,6 +183,7 @@ function parseCsvRows(text: string, requirement: CsvFormatRequirement) {
 
     if (char === '"') {
       const next = normalized[index + 1];
+
       if (inQuotes && next === '"') {
         currentField += '"';
         index += 1;

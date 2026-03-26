@@ -1,18 +1,11 @@
 import { app } from './app';
 
-const defaultPort = Number(process.env.PORT) || 3000;
+const port = Number(process.env.PORT ?? 3000);
+const hostname = process.env.HOST ?? '0.0.0.0';
 
-export function startServer(port = defaultPort) {
-  app.listen(port, () => {
-    const resolvedPort = app.server?.port ?? port;
-    console.log(`服务已启动：http://localhost:${resolvedPort}`);
-  });
+app.listen({
+  port,
+  hostname
+});
 
-  return app;
-}
-
-if (import.meta.main) {
-  startServer();
-}
-
-export { app };
+console.log(`Server listening on http://${hostname}:${port}`);

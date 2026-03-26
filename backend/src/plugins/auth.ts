@@ -2,19 +2,29 @@ import { jwt } from '@elysiajs/jwt';
 import { Elysia } from 'elysia';
 
 import { jwtAudience, jwtIssuer, jwtSecret, tokenLifetime } from '../auth/config';
-import { authUserSchema } from '../http';
-import type { AuthTokenPayload } from '../models';
+import database from '../database';
+import { authUserSchema, toPublicUser } from '../http';
+import type { AuthTokenPayload, PublicUser } from '../models';
 
-function readToken(authorization: string | undefined) {
+function readBearerToken(authorization: string | undefined) {
   if (!authorization) {
-    return { token: null, error: '缺少认证令牌。' } as const;
+    return {
+      token: null,
+      error: '缺少认证令牌。'
+    } as const;
   }
 
   if (!authorization.startsWith('Bearer ')) {
-    return { token: null, error: '认证令牌无效。' } as const;
+    return {
+      token: null,
+      error: '认证令牌无效。'
+    } as const;
   }
 
-  return { token: authorization.slice('Bearer '.length), error: null } as const;
+  return {
+    token: authorization.slice('Bearer '.length),
+    error: null
+  } as const;
 }
 
 export const authPlugin = new Elysia({ name: 'auth-plugin' })
@@ -29,12 +39,12 @@ export const authPlugin = new Elysia({ name: 'auth-plugin' })
     })
   )
   .derive({ as: 'global' }, async ({ headers, accessJwt }) => {
-    const { token, error } = readToken(headers.authorization);
+    const { token, error } = readBearerToken(headers.authorization);
 
     if (!token) {
       return {
         authError: error,
-        user: null as AuthTokenPayload | null
+        user: null as PublicUser | null
       };
     }
 
@@ -43,12 +53,21 @@ export const authPlugin = new Elysia({ name: 'auth-plugin' })
     if (!payload) {
       return {
         authError: '认证令牌无效或已过期。',
-        user: null as AuthTokenPayload | null
+        user: null as PublicUser | null
+      };
+    }
+
+    const currentUser = database.findUserById((payload as AuthTokenPayload).id);
+
+    if (!currentUser || currentUser.uid !== (payload as AuthTokenPayload).uid || currentUser.role !== (payload as AuthTokenPayload).role) {
+      return {
+        authError: '认证用户不存在或已失效。',
+        user: null as PublicUser | null
       };
     }
 
     return {
       authError: null,
-      user: payload as AuthTokenPayload
+      user: toPublicUser(currentUser)
     };
   });

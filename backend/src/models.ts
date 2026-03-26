@@ -29,6 +29,11 @@ export interface PublicUser {
   name: string;
 }
 
+export interface AuthTokenPayload extends PublicUser {
+  exp?: number;
+  iat?: number;
+}
+
 export interface StudentSummary {
   id: number;
   uid: string;
@@ -38,11 +43,6 @@ export interface StudentSummary {
 
 export interface UserSummary extends StudentSummary {
   role: UserRole;
-}
-
-export interface AuthTokenPayload extends PublicUser {
-  exp?: number;
-  iat?: number;
 }
 
 export interface PracticeRecord {
@@ -93,9 +93,9 @@ export interface UpdateRecordInput {
 }
 
 export interface RecordFilters {
-  student_id?: number | string | null;
-  teacher_id?: number | string | null;
-  status?: RecordStatus | string | null;
+  student_id?: number | null;
+  teacher_id?: number | null;
+  status?: RecordStatus | null;
   practice_after?: string | null;
   practice_before?: string | null;
   created_after?: string | null;
@@ -132,7 +132,7 @@ export interface CreateUserResult {
   uid: string;
   name: string;
   role: UserRole;
-  password: string; // plaintext, only returned on creation
+  password: string;
 }
 
 export interface UploadResult {
@@ -166,9 +166,5 @@ export interface DatabaseState {
     practice_records: number;
     notifications: number;
   };
-  nextUidNumber: {
-    admin: number;
-    teacher: number;
-    student: number;
-  };
+  nextUidNumber: Record<UserRole, number>;
 }

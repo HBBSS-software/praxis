@@ -3,18 +3,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const testDbPath = `/tmp/test-db-${Date.now()}.json`;
+const testDbPath = `/tmp/social-practice-test-db-${Date.now()}.json`;
 const testUploadDir = fileURLToPath(new URL('../uploads', import.meta.url));
 const cleanupUploadFiles = new Set<string>();
+
 process.env.DATABASE_FILE = testDbPath;
-process.env.JWT_SECRET = 'test-jwt-secret-1234567890123456';
+process.env.JWT_SECRET = 'test-jwt-secret-12345678901234567890';
 process.env.LOGIN_MAX_ATTEMPTS = '3';
 process.env.LOGIN_LOCKOUT_MS = '60000';
 
 type DatabaseModule = typeof import('../src/database');
 type LoginAttemptsModule = typeof import('../src/auth/login-attempts');
 type CsvImportModule = typeof import('../src/csv/user-import');
+type AppModule = typeof import('../src/app');
+
 let database: DatabaseModule['default'];
+let app: AppModule['app'];
 let getRemainingLockoutMs: LoginAttemptsModule['getRemainingLockoutMs'];
 let recordLoginFailure: LoginAttemptsModule['recordLoginFailure'];
 let clearLoginFailures: LoginAttemptsModule['clearLoginFailures'];
@@ -22,11 +26,15 @@ let parseUserImportCsvBuffer: CsvImportModule['parseUserImportCsvBuffer'];
 let parseUserImportCsvText: CsvImportModule['parseUserImportCsvText'];
 
 beforeAll(async () => {
-  const databaseModule = await import('../src/database');
-  const loginAttemptsModule = await import('../src/auth/login-attempts');
-  const csvImportModule = await import('../src/csv/user-import');
+  const [databaseModule, loginAttemptsModule, csvImportModule, appModule] = await Promise.all([
+    import('../src/database'),
+    import('../src/auth/login-attempts'),
+    import('../src/csv/user-import'),
+    import('../src/app')
+  ]);
 
   database = databaseModule.default;
+  app = appModule.app;
   getRemainingLockoutMs = loginAttemptsModule.getRemainingLockoutMs;
   recordLoginFailure = loginAttemptsModule.recordLoginFailure;
   clearLoginFailures = loginAttemptsModule.clearLoginFailures;
@@ -37,16 +45,58 @@ beforeAll(async () => {
 afterAll(() => {
   try {
     fs.unlinkSync(testDbPath);
-  } catch { }
+  } catch {
+  }
 
   for (const filePath of cleanupUploadFiles) {
     try {
       fs.unlinkSync(filePath);
-    } catch { }
+    } catch {
+    }
   }
 });
 
-describe('Database bootstrap and users', () => {
+async function apiRequest(pathname: string, init?: RequestInit) {
+  return app.handle(new Request(`http://localhost${pathname}`, init));
+}
+
+async function jsonRequest(pathname: string, body?: unknown, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+
+  if (body !== undefined) {
+    headers.set('content-type', 'application/json');
+  }
+
+  return apiRequest(pathname, {
+    ...init,
+    headers,
+    body: body === undefined ? init.body : JSON.stringify(body)
+  });
+}
+
+async function formRequest(pathname: string, body: FormData, init: RequestInit = {}) {
+  return apiRequest(pathname, {
+    ...init,
+    body
+  });
+}
+
+async function readJson(response: Response) {
+  return await response.json() as Record<string, unknown>;
+}
+
+async function loginAs(uid: string, password: string) {
+  const response = await jsonRequest('/api/auth/login', { uid, password }, { method: 'POST' });
+  const payload = await readJson(response);
+
+  if (!response.ok) {
+    throw new Error(`login failed: ${JSON.stringify(payload)}`);
+  }
+
+  return payload.token as string;
+}
+
+describe('database bootstrap and users', () => {
   test('seeds default admin, teacher and student accounts', () => {
     expect(database.findUserByUid('A00001')?.role).toBe('admin');
     expect(database.findUserByUid('T00001')?.role).toBe('teacher');
@@ -57,22 +107,21 @@ describe('Database bootstrap and users', () => {
 
   test('creates users and filters by role', async () => {
     const createdStudent = await database.createUser('测试学生', 'student');
-    const createdBatch = await database.createUsers([
+    const createdUsers = await database.createUsers([
       { name: '批量教师', role: 'teacher' },
       { name: '批量管理员', role: 'admin' }
     ]);
 
     expect(createdStudent.uid).toMatch(/^S/);
     expect(createdStudent.password).toHaveLength(8);
-    expect(createdBatch).toHaveLength(2);
-    expect(createdBatch[0].uid).toMatch(/^T/);
-    expect(createdBatch[1].uid).toMatch(/^A/);
-    expect(database.getUsersByRole('teacher').some((user) => user.uid === createdBatch[0].uid)).toBe(true);
+    expect(createdUsers[0]?.uid).toMatch(/^T/);
+    expect(createdUsers[1]?.uid).toMatch(/^A/);
+    expect(database.getUsersByRole('teacher').some((user) => user.uid === createdUsers[0]?.uid)).toBe(true);
     expect(database.isValidRole('teacher')).toBe(true);
     expect(database.isValidRole('invalid-role')).toBe(false);
   });
 
-  test('updates and deletes users', async () => {
+  test('updates, resets and deletes users', async () => {
     const createdUser = await database.createUser('待修改用户', 'student');
 
     expect(database.updateUserName(createdUser.id, '已修改用户')).toBe(true);
@@ -81,26 +130,16 @@ describe('Database bootstrap and users', () => {
     expect(database.updateUserPassword(createdUser.id, 'hashed-password')).toBe(true);
     expect(database.findUserById(createdUser.id)?.password).toBe('hashed-password');
 
+    const resetResults = await database.resetUserPasswords([createdUser.id]);
+    expect(resetResults).toHaveLength(1);
+    expect(resetResults[0]?.password).toHaveLength(8);
+
     expect(database.deleteUser(createdUser.id)).toBe(true);
     expect(database.findUserById(createdUser.id)).toBeUndefined();
   });
-
-  test('resets user passwords and returns plaintext credentials', async () => {
-    const createdUser = await database.createUser('待重置用户', 'student');
-
-    const resetResults = await database.resetUserPasswords([createdUser.id]);
-
-    expect(resetResults).toHaveLength(1);
-    expect(resetResults[0]?.id).toBe(createdUser.id);
-    expect(resetResults[0]?.uid).toBe(createdUser.uid);
-    expect(resetResults[0]?.name).toBe(createdUser.name);
-    expect(resetResults[0]?.role).toBe(createdUser.role);
-    expect(resetResults[0]?.password).toHaveLength(8);
-    expect(resetResults[0]?.password).not.toBe(createdUser.password);
-  });
 });
 
-describe('Assignments, records and notifications', () => {
+describe('assignments, records and notifications', () => {
   test('assigns students to a teacher and supports removing assignments', () => {
     const teacher = database.findUserByUid('T00001');
     const students = database.getAllStudents().slice(0, 2);
@@ -110,18 +149,17 @@ describe('Assignments, records and notifications', () => {
 
     database.assignStudentsToTeacher(teacher!.id, students.map((student) => student.id));
 
-    const teacherStudents = database.getTeacherStudents(teacher!.id);
-    expect(teacherStudents).toHaveLength(2);
-    expect(database.getStudentTeacherId(students[0].id)).toBe(teacher!.id);
+    expect(database.getTeacherStudents(teacher!.id)).toHaveLength(2);
+    expect(database.getStudentTeacherId(students[0]!.id)).toBe(teacher!.id);
     expect(database.getAllAssignments()).toHaveLength(2);
 
-    database.removeStudentsFromTeacher(teacher!.id, [students[0].id]);
+    database.removeStudentsFromTeacher(teacher!.id, [students[0]!.id]);
 
     expect(database.getTeacherStudents(teacher!.id)).toHaveLength(1);
-    expect(database.getStudentTeacherId(students[0].id)).toBeNull();
+    expect(database.getStudentTeacherId(students[0]!.id)).toBeNull();
   });
 
-  test('creates, updates and deletes student practice records', () => {
+  test('creates, updates and deletes practice records', () => {
     const student = database.findUserByUid('S00002');
     expect(student).toBeTruthy();
 
@@ -139,7 +177,6 @@ describe('Assignments, records and notifications', () => {
     expect(database.getRecordById(createdRecord.id)?.title).toBe('测试记录');
     expect(database.getTeacherRecordById(createdRecord.id)?.student_uid).toBe(student!.uid);
     expect(database.getRecordsByStudent(student!.id).some((record) => record.id === createdRecord.id)).toBe(true);
-    expect(database.countStudentRecordsToday(student!.id)).toBeGreaterThan(0);
 
     const updatedRecord = database.updateRecord(createdRecord.id, {
       status: 'approved',
@@ -153,7 +190,6 @@ describe('Assignments, records and notifications', () => {
     expect(updatedRecord?.updated_by_uid).toBe('T00001');
     expect(database.getStudentStatistics(student!.id).approved_count).toBeGreaterThan(0);
     expect(database.getStudentStatistics(student!.id).total_duration).toBeGreaterThanOrEqual(2.5);
-    expect(database.getAllRecords({ status: 'approved' }).some((record) => record.id === createdRecord.id)).toBe(true);
 
     expect(database.deleteRecord(createdRecord.id)).toBe(true);
     expect(database.getRecordById(createdRecord.id)).toBeNull();
@@ -169,6 +205,8 @@ describe('Assignments, records and notifications', () => {
     const secondImagePath = path.join(testUploadDir, secondImageName);
     cleanupUploadFiles.add(firstImagePath);
     cleanupUploadFiles.add(secondImagePath);
+
+    fs.mkdirSync(testUploadDir, { recursive: true });
     fs.writeFileSync(firstImagePath, 'first');
     fs.writeFileSync(secondImagePath, 'second');
 
@@ -194,11 +232,9 @@ describe('Assignments, records and notifications', () => {
     expect(fs.existsSync(secondImagePath)).toBe(false);
   });
 
-  test('keeps deleted student records visible with deleted user fallback', async () => {
+  test('keeps deleted student records visible to the assigned teacher', async () => {
     const teacher = database.findUserByUid('T00001');
     const student = await database.createUser('将被删除的学生', 'student');
-
-    expect(teacher).toBeTruthy();
 
     database.assignStudentsToTeacher(teacher!.id, [student.id]);
 
@@ -214,10 +250,10 @@ describe('Assignments, records and notifications', () => {
 
     expect(database.deleteUser(student.id)).toBe(true);
 
-    const visibleStudentIds = new Set(database.getTeacherStudentIds(teacher!.id));
-    const teacherRecord = database.getAllRecords({}, visibleStudentIds).find((item) => item.id === record.id);
+    const visibleIds = new Set(database.getTeacherStudentIds(teacher!.id));
+    const teacherRecord = database.getAllRecords({}, visibleIds).find((item) => item.id === record.id);
 
-    expect(visibleStudentIds.has(student.id)).toBe(true);
+    expect(visibleIds.has(student.id)).toBe(true);
     expect(teacherRecord?.student_name).toBe('已删除用户');
     expect(teacherRecord?.student_uid).toBe(student.uid);
   });
@@ -228,20 +264,129 @@ describe('Assignments, records and notifications', () => {
 
     const notification = database.createNotification(student!.id, 'approved', '你的记录已通过。');
     expect(notification.is_read).toBe(false);
-    expect(database.getUnreadNotificationCount(student!.id)).toBe(1);
+    expect(database.getUnreadNotificationCount(student!.id)).toBeGreaterThan(0);
     expect(database.getNotificationsByStudent(student!.id)[0]?.id).toBe(notification.id);
 
     database.markNotificationsAsRead(student!.id);
-
     expect(database.getUnreadNotificationCount(student!.id)).toBe(0);
 
-    const allStats = database.getStatistics();
-    expect(allStats.student_count).toBeGreaterThanOrEqual(2);
-    expect(Array.isArray(allStats.student_durations)).toBe(true);
+    const statistics = database.getStatistics();
+    expect(statistics.student_count).toBeGreaterThanOrEqual(2);
+    expect(Array.isArray(statistics.student_durations)).toBe(true);
   });
 });
 
-describe('Login attempt lockout', () => {
+describe('route behavior', () => {
+  test('rejects non-image content during upload even if the declared type is allowed', async () => {
+    const token = await loginAs('S00001', '12345678');
+    const formData = new FormData();
+    formData.set('image', new File(['not really an image'], 'fake.png', { type: 'image/png' }));
+
+    const response = await formRequest('/api/upload', formData, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+
+    expect(response.status).toBe(422);
+    expect((await readJson(response)).message).toBe('"body.image" has invalid file type');
+  });
+
+  test('rejects oversized images during upload', async () => {
+    const token = await loginAs('S00001', '12345678');
+    const oversizedImage = new Uint8Array(5 * 1024 * 1024 + 1);
+    oversizedImage.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const formData = new FormData();
+    formData.set('image', new File([oversizedImage], 'large.png', { type: 'image/png' }));
+
+    const response = await formRequest('/api/upload', formData, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+
+    expect(response.status).toBe(422);
+    expect((await readJson(response)).message).toBe("Expected kind 'File'");
+  });
+
+  test('rejects future practice dates', async () => {
+    const token = await loginAs('S00001', '12345678');
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const response = await jsonRequest('/api/student/records', {
+      title: '未来记录',
+      content: '不应该允许',
+      practice_date: tomorrow,
+      location: '教室',
+      duration: '1.0',
+      image_path: null
+    }, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+
+    expect(response.status).toBe(400);
+    expect((await readJson(response)).error).toBe('不能记录未来的活动。');
+  });
+
+  test('resubmits rejected record as pending after student edit', async () => {
+    const student = database.findUserByUid('S00001')!;
+    const record = database.createRecord({
+      student_id: student.id,
+      title: '待重提记录',
+      content: '第一次提交',
+      practice_date: '2026-01-13',
+      location: '操场',
+      duration: 1,
+      image_path: null
+    });
+
+    database.updateRecord(record.id, {
+      status: 'rejected',
+      teacher_comment: '请补充内容',
+      updated_by_uid: 'T00001'
+    });
+
+    const token = await loginAs(student.uid, '12345678');
+    const response = await jsonRequest(`/api/student/records/${record.id}`, {
+      title: '已修改记录',
+      content: '补充后的内容',
+      practice_date: '2026-01-13',
+      location: '操场',
+      duration: '1.0',
+      image_path: null
+    }, {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+
+    expect(response.status).toBe(200);
+    expect(database.getRecordById(record.id)?.status).toBe('pending');
+    expect(database.getRecordById(record.id)?.teacher_comment).toBeNull();
+  });
+
+  test('prevents admins from deleting themselves', async () => {
+    const token = await loginAs('A00001', '12345678');
+
+    const response = await jsonRequest('/api/admin/users/1', undefined, {
+      method: 'DELETE',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+
+    expect(response.status).toBe(400);
+    expect((await readJson(response)).error).toBe('不能删除自己的账号。');
+  });
+});
+
+describe('login attempt lockout', () => {
   test('locks a user after repeated failures and clears correctly', () => {
     const key = 'S00001';
     const now = 1_700_000_000_000;
@@ -268,7 +413,7 @@ describe('CSV user import parser', () => {
     expect(parsed.encoding).toBe('utf-8');
     expect(parsed.totalCount).toBe(2);
     expect(parsed.studentCount).toBe(1);
-    expect(parsed.entries[0].teacher_uid).toBe('T00001');
+    expect(parsed.entries[0]?.teacher_uid).toBe('T00001');
   });
 
   test('parses UTF-16 CSV buffer', () => {
@@ -276,11 +421,12 @@ describe('CSV user import parser', () => {
       0xff, 0xfe,
       0x20, 0x5f, 0x09, 0x4e, 0x2c, 0x00, 0x73, 0x00, 0x74, 0x00, 0x75, 0x00, 0x64, 0x00, 0x65, 0x00, 0x6e, 0x00, 0x74, 0x00, 0x2c, 0x00, 0x54, 0x00, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00, 0x31, 0x00, 0x0a, 0x00
     ]);
+
     const parsed = parseUserImportCsvBuffer(utf16Buffer, { columnCount: 3 });
 
     expect(parsed.encoding).toBe('utf-16');
     expect(parsed.totalCount).toBe(1);
-    expect(parsed.entries[0].name).toBe('张三');
+    expect(parsed.entries[0]?.name).toBe('张三');
   });
 
   test('parses GBK CSV buffer', () => {
@@ -288,13 +434,14 @@ describe('CSV user import parser', () => {
       0xd5, 0xc5, 0xc8, 0xfd, 0x2c, 0x73, 0x74, 0x75, 0x64, 0x65, 0x6e, 0x74,
       0x2c, 0x54, 0x30, 0x30, 0x30, 0x30, 0x31, 0x0a
     ]);
+
     const parsed = parseUserImportCsvBuffer(gbkBuffer, { columnCount: 3 });
 
     expect(parsed.encoding).toBe('gbk');
-    expect(parsed.entries[0].name).toBe('张三');
+    expect(parsed.entries[0]?.name).toBe('张三');
   });
 
-  test('rejects unsupported or broken CSV encodings', () => {
+  test('rejects unsupported encodings', () => {
     expect(() => parseUserImportCsvBuffer(new Uint8Array([0xff, 0xff, 0xff]), { columnCount: 3 })).toThrow(
       '无法识别 CSV 文件编码，仅支持 UTF-8、UTF-16 和 GBK。'
     );

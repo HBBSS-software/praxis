@@ -16,6 +16,7 @@ import type {
   RecordStatus,
   StudentRecord,
   TeacherRecord,
+  TeacherStatistics,
   TeacherStudentAssignment,
   UpdateRecordInput,
   User,
@@ -28,204 +29,40 @@ const dbPath = process.env.DATABASE_FILE
   : path.join(currentDir, '..', 'database.json');
 const uploadDir = path.join(currentDir, '..', 'uploads');
 
-const VALID_RECORD_STATUSES: RecordStatus[] = ['approved', 'pending', 'rejected'];
-const VALID_ROLES: UserRole[] = ['admin', 'teacher', 'student'];
-const ROLE_PREFIX: Record<UserRole, string> = { admin: 'A', teacher: 'T', student: 'S' };
-const MAX_DAILY_RECORDS = 50;
+const validRoles: UserRole[] = ['admin', 'teacher', 'student'];
+const validRecordStatuses: RecordStatus[] = ['approved', 'pending', 'rejected'];
+const rolePrefixes: Record<UserRole, string> = {
+  admin: 'A',
+  teacher: 'T',
+  student: 'S'
+};
 const uploadPathPattern = /^\/uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const deletedUserDisplayName = '已删除用户';
+const deletedUserName = '已删除用户';
 
-// --- Helpers ---
+function nowIso() {
+  return new Date().toISOString();
+}
 
-function toNumber(value: unknown, fallback: number): number {
+function toFiniteNumber(value: unknown, fallback: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-function nextNumericId(items: Array<{ id: number; }>): number {
+function nextNumericId(items: Array<{ id: number }>) {
   return items.reduce((maxId, item) => Math.max(maxId, item.id), 0) + 1;
 }
 
-function generatePassword(): string {
+function generatePlainPassword() {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   const bytes = crypto.randomBytes(8);
-  return Array.from(bytes, (b) => chars[b % chars.length]).join('');
+  return Array.from(bytes, (byte) => chars[byte % chars.length]).join('');
 }
 
-function isRecordStatus(status: unknown): status is RecordStatus {
-  return VALID_RECORD_STATUSES.includes(status as RecordStatus);
+function isUserRole(value: unknown): value is UserRole {
+  return validRoles.includes(value as UserRole);
 }
 
-function isValidRole(role: unknown): role is UserRole {
-  return VALID_ROLES.includes(role as UserRole);
-}
-
-function dateRangeFilter(isoDate: string, after?: string | null, before?: string | null): boolean {
-  if (after && isoDate < after) return false;
-  if (before && isoDate > before) return false;
-  return true;
-}
-
-function resolveUploadFilePath(imagePath: string): string | null {
-  if (!uploadPathPattern.test(imagePath)) {
-    return null;
-  }
-
-  const filePath = path.join(uploadDir, path.basename(imagePath));
-
-  if (!filePath.startsWith(uploadDir)) {
-    return null;
-  }
-
-  return filePath;
-}
-
-function removeUploadFile(imagePath: string | null): void {
-  if (!imagePath) {
-    return;
-  }
-
-  const filePath = resolveUploadFilePath(imagePath);
-  if (!filePath || !fs.existsSync(filePath)) {
-    return;
-  }
-
-  fs.unlinkSync(filePath);
-}
-
-function removeUnusedUploadFile(imagePath: string | null, ignoredRecordId?: number): void {
-  if (!imagePath) {
-    return;
-  }
-
-  const isStillReferenced = db.practice_records.some((record) =>
-    record.id !== ignoredRecordId && record.image_path === imagePath
-  );
-
-  if (!isStillReferenced) {
-    removeUploadFile(imagePath);
-  }
-}
-
-function getRecordStudentIdentity(record: Pick<PracticeRecord, 'student_id' | 'student_uid_snapshot'>) {
-  const student = findUserById(record.student_id);
-
-  if (student) {
-    return {
-      student_name: student.name,
-      student_uid: student.uid
-    };
-  }
-
-  return {
-    student_name: deletedUserDisplayName,
-    student_uid: record.student_uid_snapshot ?? ''
-  };
-}
-
-// --- Sanitizers ---
-
-function sanitizeUser(value: unknown): User | null {
-  if (!value || typeof value !== 'object') return null;
-  const c = value as Partial<User>;
-  if (
-    typeof c.id !== 'number' ||
-    typeof c.uid !== 'string' ||
-    typeof c.password !== 'string' ||
-    !isValidRole(c.role) ||
-    typeof c.name !== 'string' ||
-    typeof c.created_at !== 'string'
-  ) return null;
-  return c as User;
-}
-
-function sanitizeRecord(value: unknown): PracticeRecord | null {
-  if (!value || typeof value !== 'object') return null;
-  const c = value as Partial<PracticeRecord>;
-  if (
-    typeof c.id !== 'number' ||
-    typeof c.student_id !== 'number' ||
-    typeof c.title !== 'string' ||
-    typeof c.content !== 'string' ||
-    typeof c.practice_date !== 'string' ||
-    (c.location !== null && typeof c.location !== 'string' && c.location !== undefined) ||
-    typeof c.duration !== 'number' ||
-    (c.image_path !== null && typeof c.image_path !== 'string' && c.image_path !== undefined) ||
-    (c.teacher_comment !== null && typeof c.teacher_comment !== 'string' && c.teacher_comment !== undefined) ||
-    !VALID_RECORD_STATUSES.includes(c.status as RecordStatus) ||
-    typeof c.created_at !== 'string' ||
-    typeof c.updated_at !== 'string'
-  ) return null;
-
-  return {
-    id: c.id,
-    student_id: c.student_id,
-    title: c.title,
-    content: c.content,
-    practice_date: c.practice_date,
-    location: c.location ?? null,
-    duration: c.duration,
-    image_path: c.image_path ?? null,
-    status: c.status as RecordStatus,
-    teacher_comment: c.teacher_comment ?? null,
-    created_at: c.created_at,
-    updated_at: c.updated_at,
-    student_uid_snapshot: typeof c.student_uid_snapshot === 'string' ? c.student_uid_snapshot : null,
-    updated_by_uid: (typeof c.updated_by_uid === 'string' ? c.updated_by_uid : null)
-  };
-}
-
-function sanitizeNotification(value: unknown): AppNotification | null {
-  if (!value || typeof value !== 'object') return null;
-  const c = value as Partial<AppNotification>;
-  if (
-    typeof c.id !== 'number' ||
-    typeof c.student_id !== 'number' ||
-    typeof c.type !== 'string' ||
-    typeof c.message !== 'string' ||
-    typeof c.is_read !== 'boolean' ||
-    typeof c.created_at !== 'string'
-  ) return null;
-  return c as AppNotification;
-}
-
-function sanitizeAssignment(value: unknown): TeacherStudentAssignment | null {
-  if (!value || typeof value !== 'object') return null;
-  const c = value as Partial<TeacherStudentAssignment>;
-  if (typeof c.teacher_id !== 'number' || typeof c.student_id !== 'number') return null;
-  return c as TeacherStudentAssignment;
-}
-
-function sanitizeDatabaseState(raw: unknown): DatabaseState {
-  if (!raw || typeof raw !== 'object') return createEmptyState();
-  const c = raw as Partial<DatabaseState>;
-
-  const users = Array.isArray(c.users) ? c.users.map(sanitizeUser).filter(Boolean) as User[] : [];
-  const records = Array.isArray(c.practice_records)
-    ? c.practice_records.map(sanitizeRecord).filter(Boolean) as PracticeRecord[] : [];
-  const notifications = Array.isArray(c.notifications)
-    ? c.notifications.map(sanitizeNotification).filter(Boolean) as AppNotification[] : [];
-  const assignments = Array.isArray(c.teacher_students)
-    ? c.teacher_students.map(sanitizeAssignment).filter(Boolean) as TeacherStudentAssignment[] : [];
-
-  const nextUid = c.nextUidNumber && typeof c.nextUidNumber === 'object'
-    ? c.nextUidNumber as Partial<DatabaseState['nextUidNumber']> : {};
-
-  return {
-    users,
-    practice_records: records,
-    notifications,
-    teacher_students: assignments,
-    nextId: {
-      users: Math.max(toNumber(c.nextId?.users, 0), nextNumericId(users)),
-      practice_records: Math.max(toNumber(c.nextId?.practice_records, 0), nextNumericId(records)),
-      notifications: Math.max(toNumber(c.nextId?.notifications, 0), nextNumericId(notifications))
-    },
-    nextUidNumber: {
-      admin: toNumber(nextUid.admin, 1),
-      teacher: toNumber(nextUid.teacher, 1),
-      student: toNumber(nextUid.student, 1)
-    }
-  };
+function isRecordStatus(value: unknown): value is RecordStatus {
+  return validRecordStatuses.includes(value as RecordStatus);
 }
 
 function createEmptyState(): DatabaseState {
@@ -234,456 +71,774 @@ function createEmptyState(): DatabaseState {
     practice_records: [],
     notifications: [],
     teacher_students: [],
-    nextId: { users: 1, practice_records: 1, notifications: 1 },
-    nextUidNumber: { admin: 1, teacher: 1, student: 1 }
-  };
-}
-
-// --- Persistence ---
-
-let db = createEmptyState();
-
-function saveData(): void {
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf8');
-}
-
-function loadData(): void {
-  if (!fs.existsSync(dbPath)) return;
-  try {
-    const raw = JSON.parse(fs.readFileSync(dbPath, 'utf8')) as unknown;
-    db = sanitizeDatabaseState(raw);
-  } catch (error) {
-    console.warn('数据库文件解析失败，将使用新的数据存储。', error);
-    db = createEmptyState();
-  }
-}
-
-// --- UID Generation ---
-
-function generateUid(role: UserRole): string {
-  const prefix = ROLE_PREFIX[role];
-  const num = db.nextUidNumber[role]++;
-  return `${prefix}${num.toString(16).padStart(5, '0')}`;
-}
-
-// --- Init ---
-
-function initDefaultData(): void {
-  if (db.users.length > 0) return;
-
-  const createdAt = new Date().toISOString();
-  const defaultHash = hashPasswordSync('12345678');
-
-  db.users.push(
-    { id: db.nextId.users++, uid: generateUid('admin'), password: defaultHash, role: 'admin', name: '超级奶龙', created_at: createdAt },
-    { id: db.nextId.users++, uid: generateUid('teacher'), password: defaultHash, role: 'teacher', name: '教师一', created_at: createdAt },
-    { id: db.nextId.users++, uid: generateUid('student'), password: defaultHash, role: 'student', name: '学生一', created_at: createdAt },
-    { id: db.nextId.users++, uid: generateUid('student'), password: defaultHash, role: 'student', name: '学生二', created_at: createdAt }
-  );
-
-  saveData();
-}
-
-// --- User Lookups ---
-
-function findUserByUid(uid: string): User | undefined {
-  return db.users.find((u) => u.uid === uid);
-}
-
-function findUserById(id: number): User | undefined {
-  return db.users.find((u) => u.id === Number(id));
-}
-
-function getUsersByRole(role?: UserRole): Array<Pick<User, 'id' | 'uid' | 'name' | 'role' | 'created_at'>> {
-  let users = db.users;
-  if (role) users = users.filter((u) => u.role === role);
-  return users
-    .map(({ id, uid, name, role: r, created_at }) => ({ id, uid, name, role: r, created_at }))
-    .sort((a, b) => b.id - a.id);
-}
-
-function getAllStudents(): Array<Pick<User, 'id' | 'uid' | 'name' | 'created_at'>> {
-  return db.users
-    .filter((u) => u.role === 'student')
-    .map(({ id, uid, name, created_at }) => ({ id, uid, name, created_at }))
-    .sort((a, b) => b.id - a.id);
-}
-
-// --- User CRUD ---
-
-async function createUser(name: string, role: UserRole): Promise<CreateUserResult> {
-  const plainPassword = generatePassword();
-  const hashedPassword = await hashPassword(plainPassword);
-  const uid = generateUid(role);
-  const user: User = {
-    id: db.nextId.users++,
-    uid,
-    password: hashedPassword,
-    role,
-    name,
-    created_at: new Date().toISOString()
-  };
-  db.users.push(user);
-  saveData();
-  return { id: user.id, uid, name, role, password: plainPassword };
-}
-
-async function createUsers(entries: Array<{ name: string; role: UserRole; }>): Promise<CreateUserResult[]> {
-  const plainPasswords = entries.map(() => generatePassword());
-  const hashedPasswords = await Promise.all(plainPasswords.map((password) => hashPassword(password)));
-  const results: CreateUserResult[] = [];
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    const uid = generateUid(entry.role);
-    const user: User = {
-      id: db.nextId.users++,
-      uid,
-      password: hashedPasswords[index],
-      role: entry.role,
-      name: entry.name,
-      created_at: new Date().toISOString()
-    };
-    db.users.push(user);
-    results.push({ id: user.id, uid, name: entry.name, role: entry.role, password: plainPasswords[index] });
-  }
-  saveData();
-  return results;
-}
-
-function deleteUser(id: number): boolean {
-  const index = db.users.findIndex((u) => u.id === Number(id));
-  if (index === -1) return false;
-  const [user] = db.users.splice(index, 1);
-  for (const record of db.practice_records) {
-    if (record.student_id === id && !record.student_uid_snapshot) {
-      record.student_uid_snapshot = user.uid;
+    nextId: {
+      users: 1,
+      practice_records: 1,
+      notifications: 1
+    },
+    nextUidNumber: {
+      admin: 1,
+      teacher: 1,
+      student: 1
     }
-  }
-  db.teacher_students = db.teacher_students.filter(
-    (a) => a.teacher_id !== id && (user.role === 'student' || a.student_id !== id)
-  );
-  saveData();
-  return true;
+  };
 }
 
-function updateUserName(id: number, name: string): boolean {
-  const user = findUserById(id);
-  if (!user) return false;
-  user.name = name;
-  saveData();
-  return true;
-}
-
-function updateUserPassword(id: number, hashedPassword: string): boolean {
-  const user = findUserById(id);
-  if (!user) return false;
-  user.password = hashedPassword;
-  saveData();
-  return true;
-}
-
-async function resetUserPasswords(ids: number[]): Promise<CreateUserResult[]> {
-  const users = ids
-    .map((id) => findUserById(id))
-    .filter((user): user is User => Boolean(user));
-
-  if (users.length === 0) {
-    return [];
+function sanitizeUser(value: unknown): User | null {
+  if (!value || typeof value !== 'object') {
+    return null;
   }
 
-  const plainPasswords = users.map(() => generatePassword());
-  const hashedPasswords = await Promise.all(plainPasswords.map((password) => hashPassword(password)));
+  const candidate = value as Partial<User>;
 
-  const results = users.map((user, index) => {
-    user.password = hashedPasswords[index];
+  if (
+    typeof candidate.id !== 'number' ||
+    typeof candidate.uid !== 'string' ||
+    typeof candidate.password !== 'string' ||
+    !isUserRole(candidate.role) ||
+    typeof candidate.name !== 'string' ||
+    typeof candidate.created_at !== 'string'
+  ) {
+    return null;
+  }
+
+  return {
+    id: candidate.id,
+    uid: candidate.uid,
+    password: candidate.password,
+    role: candidate.role,
+    name: candidate.name,
+    created_at: candidate.created_at
+  };
+}
+
+function sanitizeRecord(value: unknown): PracticeRecord | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as Partial<PracticeRecord>;
+
+  if (
+    typeof candidate.id !== 'number' ||
+    typeof candidate.student_id !== 'number' ||
+    typeof candidate.title !== 'string' ||
+    typeof candidate.content !== 'string' ||
+    typeof candidate.practice_date !== 'string' ||
+    typeof candidate.duration !== 'number' ||
+    !isRecordStatus(candidate.status) ||
+    typeof candidate.created_at !== 'string' ||
+    typeof candidate.updated_at !== 'string'
+  ) {
+    return null;
+  }
+
+  if (candidate.location !== undefined && candidate.location !== null && typeof candidate.location !== 'string') {
+    return null;
+  }
+
+  if (candidate.image_path !== undefined && candidate.image_path !== null && typeof candidate.image_path !== 'string') {
+    return null;
+  }
+
+  if (candidate.teacher_comment !== undefined && candidate.teacher_comment !== null && typeof candidate.teacher_comment !== 'string') {
+    return null;
+  }
+
+  if (candidate.student_uid_snapshot !== undefined && candidate.student_uid_snapshot !== null && typeof candidate.student_uid_snapshot !== 'string') {
+    return null;
+  }
+
+  if (candidate.updated_by_uid !== undefined && candidate.updated_by_uid !== null && typeof candidate.updated_by_uid !== 'string') {
+    return null;
+  }
+
+  return {
+    id: candidate.id,
+    student_id: candidate.student_id,
+    student_uid_snapshot: candidate.student_uid_snapshot ?? null,
+    title: candidate.title,
+    content: candidate.content,
+    practice_date: candidate.practice_date,
+    location: candidate.location ?? null,
+    duration: candidate.duration,
+    image_path: candidate.image_path ?? null,
+    status: candidate.status,
+    teacher_comment: candidate.teacher_comment ?? null,
+    created_at: candidate.created_at,
+    updated_at: candidate.updated_at,
+    updated_by_uid: candidate.updated_by_uid ?? null
+  };
+}
+
+function sanitizeNotification(value: unknown): AppNotification | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as Partial<AppNotification>;
+
+  if (
+    typeof candidate.id !== 'number' ||
+    typeof candidate.student_id !== 'number' ||
+    typeof candidate.type !== 'string' ||
+    typeof candidate.message !== 'string' ||
+    typeof candidate.is_read !== 'boolean' ||
+    typeof candidate.created_at !== 'string'
+  ) {
+    return null;
+  }
+
+  return {
+    id: candidate.id,
+    student_id: candidate.student_id,
+    type: candidate.type as NotificationType,
+    message: candidate.message,
+    is_read: candidate.is_read,
+    created_at: candidate.created_at
+  };
+}
+
+function sanitizeAssignment(value: unknown): TeacherStudentAssignment | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as Partial<TeacherStudentAssignment>;
+
+  if (typeof candidate.teacher_id !== 'number' || typeof candidate.student_id !== 'number') {
+    return null;
+  }
+
+  return {
+    teacher_id: candidate.teacher_id,
+    student_id: candidate.student_id
+  };
+}
+
+function sanitizeState(raw: unknown): DatabaseState {
+  if (!raw || typeof raw !== 'object') {
+    return createEmptyState();
+  }
+
+  const source = raw as Partial<DatabaseState>;
+  const users = Array.isArray(source.users) ? source.users.map(sanitizeUser).filter(Boolean) as User[] : [];
+  const records = Array.isArray(source.practice_records)
+    ? source.practice_records.map(sanitizeRecord).filter(Boolean) as PracticeRecord[]
+    : [];
+  const notifications = Array.isArray(source.notifications)
+    ? source.notifications.map(sanitizeNotification).filter(Boolean) as AppNotification[]
+    : [];
+  const assignments = Array.isArray(source.teacher_students)
+    ? source.teacher_students.map(sanitizeAssignment).filter(Boolean) as TeacherStudentAssignment[]
+    : [];
+  const nextUid = source.nextUidNumber && typeof source.nextUidNumber === 'object'
+    ? source.nextUidNumber as Partial<DatabaseState['nextUidNumber']>
+    : {};
+
+  return {
+    users,
+    practice_records: records,
+    notifications,
+    teacher_students: assignments,
+    nextId: {
+      users: Math.max(toFiniteNumber(source.nextId?.users, 0), nextNumericId(users)),
+      practice_records: Math.max(toFiniteNumber(source.nextId?.practice_records, 0), nextNumericId(records)),
+      notifications: Math.max(toFiniteNumber(source.nextId?.notifications, 0), nextNumericId(notifications))
+    },
+    nextUidNumber: {
+      admin: toFiniteNumber(nextUid.admin, 1),
+      teacher: toFiniteNumber(nextUid.teacher, 1),
+      student: toFiniteNumber(nextUid.student, 1)
+    }
+  };
+}
+
+class JsonDatabase {
+  readonly MAX_DAILY_RECORDS = 50;
+  #state: DatabaseState = createEmptyState();
+
+  constructor() {
+    this.load();
+    this.seedDefaults();
+  }
+
+  isValidRole(role: unknown): role is UserRole {
+    return isUserRole(role);
+  }
+
+  findUserById(id: number) {
+    return this.#state.users.find((user) => user.id === id);
+  }
+
+  findUserByUid(uid: string) {
+    return this.#state.users.find((user) => user.uid === uid);
+  }
+
+  getUsersByRole(role?: UserRole) {
+    const users = role
+      ? this.#state.users.filter((user) => user.role === role)
+      : this.#state.users;
+
+    return users
+      .map(({ id, uid, role: userRole, name, created_at }) => ({
+        id,
+        uid,
+        role: userRole,
+        name,
+        created_at
+      }))
+      .sort((left, right) => right.id - left.id);
+  }
+
+  getAllStudents() {
+    return this.#state.users
+      .filter((user) => user.role === 'student')
+      .map(({ id, uid, name, created_at }) => ({ id, uid, name, created_at }))
+      .sort((left, right) => right.id - left.id);
+  }
+
+  async createUser(name: string, role: UserRole): Promise<CreateUserResult> {
+    const password = generatePlainPassword();
+    const user: User = {
+      id: this.#state.nextId.users++,
+      uid: this.generateUid(role),
+      role,
+      name,
+      password: await hashPassword(password),
+      created_at: nowIso()
+    };
+
+    this.#state.users.push(user);
+    this.save();
 
     return {
       id: user.id,
       uid: user.uid,
-      name: user.name,
       role: user.role,
-      password: plainPasswords[index]
+      name: user.name,
+      password
     };
-  });
-
-  saveData();
-  return results;
-}
-
-// --- Teacher-Student Assignments ---
-
-function getTeacherStudents(teacherId: number): Array<Pick<User, 'id' | 'uid' | 'name' | 'created_at'>> {
-  const studentIds = new Set(getTeacherStudentIds(teacherId));
-  return db.users
-    .filter((u) => studentIds.has(u.id))
-    .map(({ id, uid, name, created_at }) => ({ id, uid, name, created_at }))
-    .sort((a, b) => b.id - a.id);
-}
-
-function getTeacherStudentIds(teacherId: number): number[] {
-  return db.teacher_students
-    .filter((a) => a.teacher_id === teacherId)
-    .map((a) => a.student_id);
-}
-
-function getStudentTeacherId(studentId: number): number | null {
-  const assignment = db.teacher_students.find((a) => a.student_id === studentId);
-  return assignment ? assignment.teacher_id : null;
-}
-
-function assignStudentsToTeacher(teacherId: number, studentIds: number[]): void {
-  for (const sid of studentIds) {
-    // Remove existing assignment for this student (a student belongs to one teacher)
-    db.teacher_students = db.teacher_students.filter((a) => a.student_id !== sid);
-    db.teacher_students.push({ teacher_id: teacherId, student_id: sid });
-  }
-  saveData();
-}
-
-function removeStudentsFromTeacher(teacherId: number, studentIds: number[]): void {
-  const removeSet = new Set(studentIds);
-  db.teacher_students = db.teacher_students.filter(
-    (a) => !(a.teacher_id === teacherId && removeSet.has(a.student_id))
-  );
-  saveData();
-}
-
-function getAllAssignments(): TeacherStudentAssignment[] {
-  return [...db.teacher_students];
-}
-
-// --- Records ---
-
-function getRecordsByStudent(studentId: number): StudentRecord[] {
-  return db.practice_records
-    .filter((r) => r.student_id === Number(studentId))
-    .map((r) => ({ ...r, student_name: getRecordStudentIdentity(r).student_name }))
-    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-}
-
-function getAllRecords(filters: RecordFilters = {}, studentIds?: Set<number>): TeacherRecord[] {
-  let records: TeacherRecord[] = db.practice_records.map((r) => {
-    const identity = getRecordStudentIdentity(r);
-    return { ...r, ...identity };
-  });
-
-  if (studentIds) {
-    records = records.filter((r) => studentIds.has(r.student_id));
-  }
-  if (filters.student_id != null && filters.student_id !== '') {
-    records = records.filter((r) => r.student_id === Number(filters.student_id));
-  }
-  if (filters.teacher_id != null && filters.teacher_id !== '') {
-    records = records.filter((r) => getStudentTeacherId(r.student_id) === Number(filters.teacher_id));
-  }
-  if (isRecordStatus(filters.status)) {
-    records = records.filter((r) => r.status === filters.status);
-  }
-  records = records.filter((r) =>
-    (!filters.practice_after || r.practice_date >= filters.practice_after) &&
-    (!filters.practice_before || r.practice_date <= filters.practice_before) &&
-    dateRangeFilter(r.created_at, filters.created_after, filters.created_before) &&
-    dateRangeFilter(r.updated_at, filters.updated_after, filters.updated_before)
-  );
-
-  return records.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-}
-
-function getRecordById(id: number): PracticeRecord | null {
-  return db.practice_records.find((r) => r.id === Number(id)) ?? null;
-}
-
-function getTeacherRecordById(id: number, studentIds?: Set<number>): TeacherRecord | null {
-  const records = getAllRecords({}, studentIds);
-  return records.find((r) => r.id === Number(id)) ?? null;
-}
-
-function countStudentRecordsToday(studentId: number): number {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayIso = todayStart.toISOString();
-  return db.practice_records.filter(
-    (r) => r.student_id === studentId && r.created_at >= todayIso
-  ).length;
-}
-
-function createRecord(record: CreateRecordInput): PracticeRecord {
-  const timestamp = new Date().toISOString();
-  const student = findUserById(record.student_id);
-  const newRecord: PracticeRecord = {
-    id: db.nextId.practice_records++,
-    ...record,
-    student_uid_snapshot: student?.uid ?? null,
-    status: 'pending',
-    teacher_comment: null,
-    created_at: timestamp,
-    updated_at: timestamp,
-    updated_by_uid: null
-  };
-  db.practice_records.push(newRecord);
-  saveData();
-  return newRecord;
-}
-
-function updateRecord(id: number, updates: UpdateRecordInput): PracticeRecord | null {
-  const index = db.practice_records.findIndex((r) => r.id === Number(id));
-  if (index === -1) return null;
-  const currentRecord = db.practice_records[index];
-  const updatedRecord: PracticeRecord = {
-    ...currentRecord,
-    ...updates,
-    updated_at: new Date().toISOString()
-  };
-  db.practice_records[index] = updatedRecord;
-  saveData();
-
-  if (currentRecord.image_path !== updatedRecord.image_path) {
-    removeUnusedUploadFile(currentRecord.image_path, updatedRecord.id);
   }
 
-  return updatedRecord;
-}
+  async createUsers(entries: Array<{ name: string; role: UserRole }>) {
+    const passwords = entries.map(() => generatePlainPassword());
+    const hashes = await Promise.all(passwords.map((password) => hashPassword(password)));
+    const timestamp = nowIso();
+    const results: CreateUserResult[] = [];
 
-function deleteRecord(id: number): boolean {
-  const index = db.practice_records.findIndex((r) => r.id === Number(id));
-  if (index === -1) return false;
-  const [deletedRecord] = db.practice_records.splice(index, 1);
-  saveData();
-  removeUnusedUploadFile(deletedRecord.image_path);
-  return true;
-}
+    entries.forEach((entry, index) => {
+      const user: User = {
+        id: this.#state.nextId.users++,
+        uid: this.generateUid(entry.role),
+        role: entry.role,
+        name: entry.name,
+        password: hashes[index],
+        created_at: timestamp
+      };
 
-// --- Notifications ---
+      this.#state.users.push(user);
+      results.push({
+        id: user.id,
+        uid: user.uid,
+        role: user.role,
+        name: user.name,
+        password: passwords[index]
+      });
+    });
 
-function createNotification(studentId: number, type: NotificationType, message: string): AppNotification {
-  const newNotification: AppNotification = {
-    id: db.nextId.notifications++,
-    student_id: studentId,
-    type,
-    message,
-    is_read: false,
-    created_at: new Date().toISOString()
-  };
-  db.notifications.push(newNotification);
-  saveData();
-  return newNotification;
-}
+    this.save();
+    return results;
+  }
 
-function getNotificationsByStudent(studentId: number): AppNotification[] {
-  return db.notifications
-    .filter((n) => n.student_id === Number(studentId))
-    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-}
+  updateUserName(id: number, name: string) {
+    const user = this.findUserById(id);
 
-function getUnreadNotificationCount(studentId: number): number {
-  return db.notifications.filter((n) => n.student_id === Number(studentId) && !n.is_read).length;
-}
+    if (!user) {
+      return false;
+    }
 
-function markNotificationsAsRead(studentId: number): void {
-  let updated = false;
-  for (const n of db.notifications) {
-    if (n.student_id === Number(studentId) && !n.is_read) {
-      n.is_read = true;
-      updated = true;
+    user.name = name;
+    this.save();
+    return true;
+  }
+
+  updateUserPassword(id: number, hashedPassword: string) {
+    const user = this.findUserById(id);
+
+    if (!user) {
+      return false;
+    }
+
+    user.password = hashedPassword;
+    this.save();
+    return true;
+  }
+
+  async resetUserPasswords(ids: number[]) {
+    const users = ids
+      .map((id) => this.findUserById(id))
+      .filter((user): user is User => Boolean(user));
+
+    if (users.length === 0) {
+      return [];
+    }
+
+    const passwords = users.map(() => generatePlainPassword());
+    const hashes = await Promise.all(passwords.map((password) => hashPassword(password)));
+
+    const results = users.map((user, index) => {
+      user.password = hashes[index];
+
+      return {
+        id: user.id,
+        uid: user.uid,
+        role: user.role,
+        name: user.name,
+        password: passwords[index]
+      };
+    });
+
+    this.save();
+    return results;
+  }
+
+  deleteUser(id: number) {
+    const index = this.#state.users.findIndex((user) => user.id === id);
+
+    if (index === -1) {
+      return false;
+    }
+
+    const [user] = this.#state.users.splice(index, 1);
+
+    for (const record of this.#state.practice_records) {
+      if (record.student_id === user.id && !record.student_uid_snapshot) {
+        record.student_uid_snapshot = user.uid;
+      }
+    }
+
+    if (user.role === 'teacher') {
+      this.#state.teacher_students = this.#state.teacher_students.filter((assignment) => assignment.teacher_id !== user.id);
+    }
+
+    this.save();
+    return true;
+  }
+
+  getTeacherStudents(teacherId: number) {
+    const studentIds = new Set(this.getTeacherStudentIds(teacherId));
+
+    return this.#state.users
+      .filter((user) => user.role === 'student' && studentIds.has(user.id))
+      .map(({ id, uid, name, created_at }) => ({ id, uid, name, created_at }))
+      .sort((left, right) => right.id - left.id);
+  }
+
+  getTeacherStudentIds(teacherId: number) {
+    return this.#state.teacher_students
+      .filter((assignment) => assignment.teacher_id === teacherId)
+      .map((assignment) => assignment.student_id);
+  }
+
+  getStudentTeacherId(studentId: number) {
+    return this.#state.teacher_students.find((assignment) => assignment.student_id === studentId)?.teacher_id ?? null;
+  }
+
+  assignStudentsToTeacher(teacherId: number, studentIds: number[]) {
+    for (const studentId of studentIds) {
+      this.#state.teacher_students = this.#state.teacher_students.filter((assignment) => assignment.student_id !== studentId);
+      this.#state.teacher_students.push({ teacher_id: teacherId, student_id: studentId });
+    }
+
+    this.save();
+  }
+
+  removeStudentsFromTeacher(teacherId: number, studentIds: number[]) {
+    const ids = new Set(studentIds);
+    this.#state.teacher_students = this.#state.teacher_students.filter((assignment) => {
+      return !(assignment.teacher_id === teacherId && ids.has(assignment.student_id));
+    });
+
+    this.save();
+  }
+
+  getAllAssignments() {
+    return [...this.#state.teacher_students];
+  }
+
+  createRecord(input: CreateRecordInput) {
+    const student = this.findUserById(input.student_id);
+    const timestamp = nowIso();
+    const record: PracticeRecord = {
+      id: this.#state.nextId.practice_records++,
+      student_id: input.student_id,
+      student_uid_snapshot: student?.uid ?? null,
+      title: input.title,
+      content: input.content,
+      practice_date: input.practice_date,
+      location: input.location,
+      duration: input.duration,
+      image_path: input.image_path,
+      status: 'pending',
+      teacher_comment: null,
+      created_at: timestamp,
+      updated_at: timestamp,
+      updated_by_uid: null
+    };
+
+    this.#state.practice_records.push(record);
+    this.save();
+    return record;
+  }
+
+  getRecordById(id: number) {
+    return this.#state.practice_records.find((record) => record.id === id) ?? null;
+  }
+
+  getRecordsByStudent(studentId: number): StudentRecord[] {
+    return this.#state.practice_records
+      .filter((record) => record.student_id === studentId)
+      .map((record) => ({
+        ...record,
+        student_name: this.resolveStudentIdentity(record).student_name
+      }))
+      .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+  }
+
+  getTeacherRecordById(id: number, visibleStudentIds?: Set<number>) {
+    return this.getAllRecords({}, visibleStudentIds).find((record) => record.id === id) ?? null;
+  }
+
+  getAllRecords(filters: RecordFilters = {}, visibleStudentIds?: Set<number>): TeacherRecord[] {
+    let records = this.#state.practice_records.map((record) => ({
+      ...record,
+      ...this.resolveStudentIdentity(record)
+    }));
+
+    if (visibleStudentIds) {
+      records = records.filter((record) => visibleStudentIds.has(record.student_id));
+    }
+
+    if (filters.student_id) {
+      records = records.filter((record) => record.student_id === filters.student_id);
+    }
+
+    if (filters.teacher_id) {
+      records = records.filter((record) => this.getStudentTeacherId(record.student_id) === filters.teacher_id);
+    }
+
+    if (filters.status) {
+      records = records.filter((record) => record.status === filters.status);
+    }
+
+    if (filters.practice_after) {
+      records = records.filter((record) => record.practice_date >= filters.practice_after!);
+    }
+
+    if (filters.practice_before) {
+      records = records.filter((record) => record.practice_date <= filters.practice_before!);
+    }
+
+    if (filters.created_after) {
+      records = records.filter((record) => record.created_at >= filters.created_after!);
+    }
+
+    if (filters.created_before) {
+      records = records.filter((record) => record.created_at <= filters.created_before!);
+    }
+
+    if (filters.updated_after) {
+      records = records.filter((record) => record.updated_at >= filters.updated_after!);
+    }
+
+    if (filters.updated_before) {
+      records = records.filter((record) => record.updated_at <= filters.updated_before!);
+    }
+
+    return records.sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+  }
+
+  updateRecord(id: number, updates: UpdateRecordInput) {
+    const index = this.#state.practice_records.findIndex((record) => record.id === id);
+
+    if (index === -1) {
+      return null;
+    }
+
+    const current = this.#state.practice_records[index];
+    const next: PracticeRecord = {
+      ...current,
+      ...updates,
+      updated_at: nowIso()
+    };
+
+    this.#state.practice_records[index] = next;
+    this.save();
+
+    if (current.image_path !== next.image_path) {
+      this.removeUnusedUpload(current.image_path, next.id);
+    }
+
+    return next;
+  }
+
+  deleteRecord(id: number) {
+    const index = this.#state.practice_records.findIndex((record) => record.id === id);
+
+    if (index === -1) {
+      return false;
+    }
+
+    const [removed] = this.#state.practice_records.splice(index, 1);
+    this.save();
+    this.removeUnusedUpload(removed.image_path);
+    return true;
+  }
+
+  countStudentRecordsToday(studentId: number) {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const startMs = start.getTime();
+
+    return this.#state.practice_records.filter((record) => {
+      return record.student_id === studentId && Date.parse(record.created_at) >= startMs;
+    }).length;
+  }
+
+  createNotification(studentId: number, type: NotificationType, message: string) {
+    const notification: AppNotification = {
+      id: this.#state.nextId.notifications++,
+      student_id: studentId,
+      type,
+      message,
+      is_read: false,
+      created_at: nowIso()
+    };
+
+    this.#state.notifications.push(notification);
+    this.save();
+    return notification;
+  }
+
+  getNotificationsByStudent(studentId: number) {
+    return this.#state.notifications
+      .filter((notification) => notification.student_id === studentId)
+      .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+  }
+
+  getUnreadNotificationCount(studentId: number) {
+    return this.#state.notifications.filter((notification) => {
+      return notification.student_id === studentId && !notification.is_read;
+    }).length;
+  }
+
+  markNotificationsAsRead(studentId: number) {
+    let changed = false;
+
+    for (const notification of this.#state.notifications) {
+      if (notification.student_id === studentId && !notification.is_read) {
+        notification.is_read = true;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.save();
     }
   }
-  if (updated) saveData();
-}
 
-// --- Statistics ---
+  getStudentStatistics(studentId: number) {
+    return this.calculateRecordStatistics(
+      this.#state.practice_records.filter((record) => record.student_id === studentId)
+    );
+  }
 
-function calculateRecordStatistics(records: Pick<PracticeRecord, 'status' | 'duration'>[]): RecordStatistics {
-  return {
-    total_records: records.length,
-    pending_count: records.filter((r) => r.status === 'pending').length,
-    approved_count: records.filter((r) => r.status === 'approved').length,
-    rejected_count: records.filter((r) => r.status === 'rejected').length,
-    total_duration: records.reduce(
-      (sum, r) => r.status === 'approved' && typeof r.duration === 'number' ? sum + r.duration : sum, 0
-    )
-  };
-}
+  getStatistics(visibleStudentIds?: Set<number>): TeacherStatistics {
+    const students = visibleStudentIds
+      ? this.#state.users.filter((user) => user.role === 'student' && visibleStudentIds.has(user.id))
+      : this.#state.users.filter((user) => user.role === 'student');
 
-function getStudentStatistics(studentId: number): RecordStatistics {
-  return calculateRecordStatistics(getRecordsByStudent(studentId));
-}
+    const records = visibleStudentIds
+      ? this.#state.practice_records.filter((record) => visibleStudentIds.has(record.student_id))
+      : this.#state.practice_records;
 
-function getStatistics(studentIds?: Set<number>): RecordStatistics & {
-  student_count: number;
-  student_durations: Array<{ student_id: number; student_name: string; student_uid: string; total_duration: number; }>;
-} {
-  const relevantRecords = studentIds
-    ? db.practice_records.filter((r) => studentIds.has(r.student_id))
-    : db.practice_records;
+    const base = this.calculateRecordStatistics(records);
 
-  const baseStats = calculateRecordStatistics(relevantRecords);
-  const students = studentIds
-    ? db.users.filter((u) => u.role === 'student' && studentIds.has(u.id))
-    : db.users.filter((u) => u.role === 'student');
+    const student_durations = students
+      .map((student) => ({
+        student_id: student.id,
+        student_name: student.name,
+        student_uid: student.uid,
+        total_duration: records.reduce((total, record) => {
+          if (record.student_id !== student.id || record.status !== 'approved') {
+            return total;
+          }
 
-  const studentDurations = students
-    .map((s) => ({
-      student_id: s.id,
-      student_name: s.name,
-      student_uid: s.uid,
-      total_duration: relevantRecords.reduce(
-        (sum, r) => r.student_id === s.id && r.status === 'approved' && typeof r.duration === 'number'
-          ? sum + r.duration : sum, 0
-      )
-    }))
-    .sort((a, b) => b.total_duration !== a.total_duration
-      ? b.total_duration - a.total_duration
-      : a.student_name.localeCompare(b.student_name)
+          return total + record.duration;
+        }, 0)
+      }))
+      .sort((left, right) => {
+        if (right.total_duration !== left.total_duration) {
+          return right.total_duration - left.total_duration;
+        }
+
+        return left.student_name.localeCompare(right.student_name);
+      });
+
+    return {
+      ...base,
+      student_count: students.length,
+      student_durations
+    };
+  }
+
+  #loadFromDisk() {
+    if (!fs.existsSync(dbPath)) {
+      return createEmptyState();
+    }
+
+    try {
+      const raw = JSON.parse(fs.readFileSync(dbPath, 'utf8')) as unknown;
+      return sanitizeState(raw);
+    } catch (error) {
+      console.warn('数据库文件解析失败，将使用新的数据存储。', error);
+      return createEmptyState();
+    }
+  }
+
+  private load() {
+    this.#state = this.#loadFromDisk();
+  }
+
+  private save() {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    fs.writeFileSync(dbPath, JSON.stringify(this.#state, null, 2), 'utf8');
+  }
+
+  private seedDefaults() {
+    if (this.#state.users.length > 0) {
+      return;
+    }
+
+    const password = hashPasswordSync('12345678');
+    const timestamp = nowIso();
+
+    this.#state.users.push(
+      {
+        id: this.#state.nextId.users++,
+        uid: this.generateUid('admin'),
+        role: 'admin',
+        name: '超级奶龙',
+        password,
+        created_at: timestamp
+      },
+      {
+        id: this.#state.nextId.users++,
+        uid: this.generateUid('teacher'),
+        role: 'teacher',
+        name: '教师一',
+        password,
+        created_at: timestamp
+      },
+      {
+        id: this.#state.nextId.users++,
+        uid: this.generateUid('student'),
+        role: 'student',
+        name: '学生一',
+        password,
+        created_at: timestamp
+      },
+      {
+        id: this.#state.nextId.users++,
+        uid: this.generateUid('student'),
+        role: 'student',
+        name: '学生二',
+        password,
+        created_at: timestamp
+      }
     );
 
-  return { ...baseStats, student_count: students.length, student_durations: studentDurations };
+    this.save();
+  }
+
+  private generateUid(role: UserRole) {
+    const prefix = rolePrefixes[role];
+    const next = this.#state.nextUidNumber[role]++;
+    return `${prefix}${next.toString(16).padStart(5, '0')}`;
+  }
+
+  private resolveStudentIdentity(record: Pick<PracticeRecord, 'student_id' | 'student_uid_snapshot'>) {
+    const student = this.findUserById(record.student_id);
+
+    if (student) {
+      return {
+        student_name: student.name,
+        student_uid: student.uid
+      };
+    }
+
+    return {
+      student_name: deletedUserName,
+      student_uid: record.student_uid_snapshot ?? ''
+    };
+  }
+
+  private resolveUploadFilePath(imagePath: string) {
+    if (!uploadPathPattern.test(imagePath)) {
+      return null;
+    }
+
+    const filePath = path.join(uploadDir, path.basename(imagePath));
+
+    if (!filePath.startsWith(uploadDir)) {
+      return null;
+    }
+
+    return filePath;
+  }
+
+  private removeUploadFile(imagePath: string | null) {
+    if (!imagePath) {
+      return;
+    }
+
+    const filePath = this.resolveUploadFilePath(imagePath);
+
+    if (!filePath || !fs.existsSync(filePath)) {
+      return;
+    }
+
+    fs.unlinkSync(filePath);
+  }
+
+  private removeUnusedUpload(imagePath: string | null, ignoredRecordId?: number) {
+    if (!imagePath) {
+      return;
+    }
+
+    const stillUsed = this.#state.practice_records.some((record) => {
+      return record.id !== ignoredRecordId && record.image_path === imagePath;
+    });
+
+    if (!stillUsed) {
+      this.removeUploadFile(imagePath);
+    }
+  }
+
+  private calculateRecordStatistics(records: Pick<PracticeRecord, 'status' | 'duration'>[]): RecordStatistics {
+    return {
+      total_records: records.length,
+      pending_count: records.filter((record) => record.status === 'pending').length,
+      approved_count: records.filter((record) => record.status === 'approved').length,
+      rejected_count: records.filter((record) => record.status === 'rejected').length,
+      total_duration: records.reduce((total, record) => {
+        return record.status === 'approved' ? total + record.duration : total;
+      }, 0)
+    };
+  }
 }
 
-// --- Init ---
-
-loadData();
-initDefaultData();
-
-const database = {
-  // User
-  findUserByUid,
-  findUserById,
-  getUsersByRole,
-  getAllStudents,
-  createUser,
-  createUsers,
-  deleteUser,
-  updateUserName,
-  updateUserPassword,
-  resetUserPasswords,
-  // Assignments
-  getTeacherStudents,
-  getTeacherStudentIds,
-  getStudentTeacherId,
-  assignStudentsToTeacher,
-  removeStudentsFromTeacher,
-  getAllAssignments,
-  // Records
-  getRecordsByStudent,
-  getAllRecords,
-  getRecordById,
-  getTeacherRecordById,
-  countStudentRecordsToday,
-  createRecord,
-  updateRecord,
-  deleteRecord,
-  // Notifications
-  createNotification,
-  getNotificationsByStudent,
-  getUnreadNotificationCount,
-  markNotificationsAsRead,
-  // Statistics
-  getStudentStatistics,
-  getStatistics,
-  // Constants
-  MAX_DAILY_RECORDS,
-  isValidRole
-};
+const database = new JsonDatabase();
 
 export default database;

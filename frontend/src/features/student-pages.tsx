@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
-import { ApiResponseError, createApiClient, getApiOrigin, unwrapResponse, uploadImage } from '@/lib/api';
+import { ApiResponseError, createApiClient, getApiOrigin, unwrapResponse, uploadImage, validateUploadImageFile } from '@/lib/api';
 import { toastError, toastSuccess } from '@/lib/feedback';
 import { formatDate, formatDateTime, formatDuration, notificationLabel, statusLabel } from '@/lib/format';
 import type { AppNotification, RecordStatistics, StudentRecord } from '@/lib/types';
@@ -401,18 +401,26 @@ export function StudentUploadPage() {
                     <input
                       className="hidden"
                       type="file"
-                      accept="image/*"
+                      accept="image/jpeg,image/png,image/gif"
                       onChange={(event) => {
                         const file = event.target.files?.[0] ?? null;
-                        setSelectedImage(file);
                         if (!file) {
+                          setSelectedImage(null);
                           setImagePreview(originalImagePath ? `${getApiOrigin()}${originalImagePath}` : '');
                           return;
                         }
-                        if (file.size > 5 * 1024 * 1024) {
-                          toastError(new Error('图片大小不能超过 5 MiB。'));
+
+                        try {
+                          validateUploadImageFile(file);
+                        } catch (nextError) {
+                          setSelectedImage(null);
+                          event.target.value = '';
+                          setImagePreview(originalImagePath ? `${getApiOrigin()}${originalImagePath}` : '');
+                          toastError(nextError);
                           return;
                         }
+
+                        setSelectedImage(file);
                         setImagePreview(URL.createObjectURL(file));
                       }}
                     />

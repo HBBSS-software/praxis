@@ -1,24 +1,25 @@
 import { loginLockoutMs, loginMaxAttempts } from './config';
 
-interface LoginAttemptState {
+interface AttemptState {
   count: number;
   lastAttemptAt: number;
   lockedUntil: number | null;
 }
 
-const attempts = new Map<string, LoginAttemptState>();
+const attempts = new Map<string, AttemptState>();
 
-function getState(key: string, now = Date.now()): LoginAttemptState {
+function getState(key: string, now = Date.now()) {
   const current = attempts.get(key);
 
   if (!current) {
-    const nextState: LoginAttemptState = {
+    const created: AttemptState = {
       count: 0,
       lastAttemptAt: now,
       lockedUntil: null
     };
-    attempts.set(key, nextState);
-    return nextState;
+
+    attempts.set(key, created);
+    return created;
   }
 
   if (current.lockedUntil !== null && current.lockedUntil <= now) {
@@ -30,17 +31,15 @@ function getState(key: string, now = Date.now()): LoginAttemptState {
   return current;
 }
 
-function prune(now = Date.now()): void {
+function prune(now = Date.now()) {
   for (const [key, state] of attempts.entries()) {
-    const isExpired = state.lockedUntil === null && now - state.lastAttemptAt > loginLockoutMs * 2;
-
-    if (isExpired) {
+    if (state.lockedUntil === null && now - state.lastAttemptAt > loginLockoutMs * 2) {
       attempts.delete(key);
     }
   }
 }
 
-export function getRemainingLockoutMs(key: string, now = Date.now()): number {
+export function getRemainingLockoutMs(key: string, now = Date.now()) {
   prune(now);
   const state = getState(key, now);
 
@@ -48,10 +47,10 @@ export function getRemainingLockoutMs(key: string, now = Date.now()): number {
     return 0;
   }
 
-  return Math.max(state.lockedUntil - now, 0);
+  return Math.max(0, state.lockedUntil - now);
 }
 
-export function recordLoginFailure(key: string, now = Date.now()): number {
+export function recordLoginFailure(key: string, now = Date.now()) {
   prune(now);
   const state = getState(key, now);
   state.count += 1;
@@ -63,6 +62,6 @@ export function recordLoginFailure(key: string, now = Date.now()): number {
   return getRemainingLockoutMs(key, now);
 }
 
-export function clearLoginFailures(key: string): void {
+export function clearLoginFailures(key: string) {
   attempts.delete(key);
 }
