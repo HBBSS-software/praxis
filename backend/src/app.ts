@@ -22,6 +22,12 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+const uploadExtensionByType: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif'
+};
+
 const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
   .split(',')
   .map((origin) => origin.trim())
@@ -33,7 +39,7 @@ const uploadsPlugin = await staticPlugin({
   etag: false,
   maxAge: 0,
   indexHTML: false,
-  alwaysStatic: true,
+  alwaysStatic: false,
   silent: true
 });
 
@@ -64,7 +70,13 @@ export const api = new Elysia({ prefix: '/api' })
     }
 
     const image = body.image;
-    const fileName = `${randomUUID()}${path.extname(image.name).toLowerCase()}`;
+    const extension = uploadExtensionByType[image.type];
+
+    if (!extension) {
+      return apiError(400, '图片格式不受支持。');
+    }
+
+    const fileName = `${randomUUID()}${extension}`;
 
     await Bun.write(path.join(uploadDir, fileName), image);
 
