@@ -48,6 +48,7 @@ export interface AuthTokenPayload extends PublicUser {
 export interface PracticeRecord {
   id: number;
   student_id: number;
+  student_uid_snapshot: string | null;
   title: string;
   content: string;
   practice_date: string;

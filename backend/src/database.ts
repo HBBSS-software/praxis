@@ -26,11 +26,14 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.DATABASE_FILE
   ? path.resolve(process.env.DATABASE_FILE)
   : path.join(currentDir, '..', 'database.json');
+const uploadDir = path.join(currentDir, '..', 'uploads');
 
 const VALID_RECORD_STATUSES: RecordStatus[] = ['approved', 'pending', 'rejected'];
 const VALID_ROLES: UserRole[] = ['admin', 'teacher', 'student'];
 const ROLE_PREFIX: Record<UserRole, string> = { admin: 'A', teacher: 'T', student: 'S' };
 const MAX_DAILY_RECORDS = 50;
+const uploadPathPattern = /^\/uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const deletedUserDisplayName = '已删除用户';
 
 // --- Helpers ---
 
@@ -60,6 +63,63 @@ function dateRangeFilter(isoDate: string, after?: string | null, before?: string
   if (after && isoDate < after) return false;
   if (before && isoDate > before) return false;
   return true;
+}
+
+function resolveUploadFilePath(imagePath: string): string | null {
+  if (!uploadPathPattern.test(imagePath)) {
+    return null;
+  }
+
+  const filePath = path.join(uploadDir, path.basename(imagePath));
+
+  if (!filePath.startsWith(uploadDir)) {
+    return null;
+  }
+
+  return filePath;
+}
+
+function removeUploadFile(imagePath: string | null): void {
+  if (!imagePath) {
+    return;
+  }
+
+  const filePath = resolveUploadFilePath(imagePath);
+  if (!filePath || !fs.existsSync(filePath)) {
+    return;
+  }
+
+  fs.unlinkSync(filePath);
+}
+
+function removeUnusedUploadFile(imagePath: string | null, ignoredRecordId?: number): void {
+  if (!imagePath) {
+    return;
+  }
+
+  const isStillReferenced = db.practice_records.some((record) =>
+    record.id !== ignoredRecordId && record.image_path === imagePath
+  );
+
+  if (!isStillReferenced) {
+    removeUploadFile(imagePath);
+  }
+}
+
+function getRecordStudentIdentity(record: Pick<PracticeRecord, 'student_id' | 'student_uid_snapshot'>) {
+  const student = findUserById(record.student_id);
+
+  if (student) {
+    return {
+      student_name: student.name,
+      student_uid: student.uid
+    };
+  }
+
+  return {
+    student_name: deletedUserDisplayName,
+    student_uid: record.student_uid_snapshot ?? ''
+  };
 }
 
 // --- Sanitizers ---
@@ -109,6 +169,7 @@ function sanitizeRecord(value: unknown): PracticeRecord | null {
     teacher_comment: c.teacher_comment ?? null,
     created_at: c.created_at,
     updated_at: c.updated_at,
+    student_uid_snapshot: typeof c.student_uid_snapshot === 'string' ? c.student_uid_snapshot : null,
     updated_by_uid: (typeof c.updated_by_uid === 'string' ? c.updated_by_uid : null)
   };
 }
@@ -293,9 +354,14 @@ async function createUsers(entries: Array<{ name: string; role: UserRole; }>): P
 function deleteUser(id: number): boolean {
   const index = db.users.findIndex((u) => u.id === Number(id));
   if (index === -1) return false;
-  db.users.splice(index, 1);
+  const [user] = db.users.splice(index, 1);
+  for (const record of db.practice_records) {
+    if (record.student_id === id && !record.student_uid_snapshot) {
+      record.student_uid_snapshot = user.uid;
+    }
+  }
   db.teacher_students = db.teacher_students.filter(
-    (a) => a.teacher_id !== id && a.student_id !== id
+    (a) => a.teacher_id !== id && (user.role === 'student' || a.student_id !== id)
   );
   saveData();
   return true;
@@ -348,13 +414,17 @@ async function resetUserPasswords(ids: number[]): Promise<CreateUserResult[]> {
 // --- Teacher-Student Assignments ---
 
 function getTeacherStudents(teacherId: number): Array<Pick<User, 'id' | 'uid' | 'name' | 'created_at'>> {
-  const studentIds = new Set(
-    db.teacher_students.filter((a) => a.teacher_id === teacherId).map((a) => a.student_id)
-  );
+  const studentIds = new Set(getTeacherStudentIds(teacherId));
   return db.users
     .filter((u) => studentIds.has(u.id))
     .map(({ id, uid, name, created_at }) => ({ id, uid, name, created_at }))
     .sort((a, b) => b.id - a.id);
+}
+
+function getTeacherStudentIds(teacherId: number): number[] {
+  return db.teacher_students
+    .filter((a) => a.teacher_id === teacherId)
+    .map((a) => a.student_id);
 }
 
 function getStudentTeacherId(studentId: number): number | null {
@@ -388,14 +458,14 @@ function getAllAssignments(): TeacherStudentAssignment[] {
 function getRecordsByStudent(studentId: number): StudentRecord[] {
   return db.practice_records
     .filter((r) => r.student_id === Number(studentId))
-    .map((r) => ({ ...r, student_name: findUserById(r.student_id)?.name ?? '' }))
+    .map((r) => ({ ...r, student_name: getRecordStudentIdentity(r).student_name }))
     .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
 }
 
 function getAllRecords(filters: RecordFilters = {}, studentIds?: Set<number>): TeacherRecord[] {
   let records: TeacherRecord[] = db.practice_records.map((r) => {
-    const student = findUserById(r.student_id);
-    return { ...r, student_name: student?.name ?? '', student_uid: student?.uid ?? '' };
+    const identity = getRecordStudentIdentity(r);
+    return { ...r, ...identity };
   });
 
   if (studentIds) {
@@ -440,9 +510,11 @@ function countStudentRecordsToday(studentId: number): number {
 
 function createRecord(record: CreateRecordInput): PracticeRecord {
   const timestamp = new Date().toISOString();
+  const student = findUserById(record.student_id);
   const newRecord: PracticeRecord = {
     id: db.nextId.practice_records++,
     ...record,
+    student_uid_snapshot: student?.uid ?? null,
     status: 'pending',
     teacher_comment: null,
     created_at: timestamp,
@@ -457,20 +529,28 @@ function createRecord(record: CreateRecordInput): PracticeRecord {
 function updateRecord(id: number, updates: UpdateRecordInput): PracticeRecord | null {
   const index = db.practice_records.findIndex((r) => r.id === Number(id));
   if (index === -1) return null;
-  db.practice_records[index] = {
-    ...db.practice_records[index],
+  const currentRecord = db.practice_records[index];
+  const updatedRecord: PracticeRecord = {
+    ...currentRecord,
     ...updates,
     updated_at: new Date().toISOString()
   };
+  db.practice_records[index] = updatedRecord;
   saveData();
-  return db.practice_records[index];
+
+  if (currentRecord.image_path !== updatedRecord.image_path) {
+    removeUnusedUploadFile(currentRecord.image_path, updatedRecord.id);
+  }
+
+  return updatedRecord;
 }
 
 function deleteRecord(id: number): boolean {
   const index = db.practice_records.findIndex((r) => r.id === Number(id));
   if (index === -1) return false;
-  db.practice_records.splice(index, 1);
+  const [deletedRecord] = db.practice_records.splice(index, 1);
   saveData();
+  removeUnusedUploadFile(deletedRecord.image_path);
   return true;
 }
 
@@ -579,6 +659,7 @@ const database = {
   resetUserPasswords,
   // Assignments
   getTeacherStudents,
+  getTeacherStudentIds,
   getStudentTeacherId,
   assignStudentsToTeacher,
   removeStudentsFromTeacher,

@@ -29,7 +29,7 @@ function getVisibleStudentIds(userId: number, role: UserRole): Set<number> | und
     return undefined;
   }
 
-  return new Set(database.getTeacherStudents(userId).map((student) => student.id));
+  return new Set(database.getTeacherStudentIds(userId));
 }
 
 function canManageStudent(studentId: number, userId: number, role: UserRole) {

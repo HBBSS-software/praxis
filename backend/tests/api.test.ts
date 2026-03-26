@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const testDbPath = `/tmp/test-db-${Date.now()}.json`;
+const testUploadDir = fileURLToPath(new URL('../uploads', import.meta.url));
+const cleanupUploadFiles = new Set<string>();
 process.env.DATABASE_FILE = testDbPath;
 process.env.JWT_SECRET = 'test-jwt-secret-1234567890123456';
 process.env.LOGIN_MAX_ATTEMPTS = '3';
@@ -34,6 +38,12 @@ afterAll(() => {
   try {
     fs.unlinkSync(testDbPath);
   } catch { }
+
+  for (const filePath of cleanupUploadFiles) {
+    try {
+      fs.unlinkSync(filePath);
+    } catch { }
+  }
 });
 
 describe('Database bootstrap and users', () => {
@@ -147,6 +157,69 @@ describe('Assignments, records and notifications', () => {
 
     expect(database.deleteRecord(createdRecord.id)).toBe(true);
     expect(database.getRecordById(createdRecord.id)).toBeNull();
+  });
+
+  test('cleans up replaced and deleted record images', () => {
+    const student = database.findUserByUid('S00002');
+    expect(student).toBeTruthy();
+
+    const firstImageName = `test-record-image-${Date.now()}-1.png`;
+    const secondImageName = `test-record-image-${Date.now()}-2.png`;
+    const firstImagePath = path.join(testUploadDir, firstImageName);
+    const secondImagePath = path.join(testUploadDir, secondImageName);
+    cleanupUploadFiles.add(firstImagePath);
+    cleanupUploadFiles.add(secondImagePath);
+    fs.writeFileSync(firstImagePath, 'first');
+    fs.writeFileSync(secondImagePath, 'second');
+
+    const record = database.createRecord({
+      student_id: student!.id,
+      title: '带图片记录',
+      content: '测试图片清理',
+      practice_date: '2026-01-11',
+      location: '实验室',
+      duration: 1,
+      image_path: `/uploads/${firstImageName}`
+    });
+
+    const updatedRecord = database.updateRecord(record.id, {
+      image_path: `/uploads/${secondImageName}`
+    });
+
+    expect(updatedRecord?.image_path).toBe(`/uploads/${secondImageName}`);
+    expect(fs.existsSync(firstImagePath)).toBe(false);
+    expect(fs.existsSync(secondImagePath)).toBe(true);
+
+    expect(database.deleteRecord(record.id)).toBe(true);
+    expect(fs.existsSync(secondImagePath)).toBe(false);
+  });
+
+  test('keeps deleted student records visible with deleted user fallback', async () => {
+    const teacher = database.findUserByUid('T00001');
+    const student = await database.createUser('将被删除的学生', 'student');
+
+    expect(teacher).toBeTruthy();
+
+    database.assignStudentsToTeacher(teacher!.id, [student.id]);
+
+    const record = database.createRecord({
+      student_id: student.id,
+      title: '历史记录',
+      content: '删除用户后保留展示',
+      practice_date: '2026-01-12',
+      location: null,
+      duration: 1.5,
+      image_path: null
+    });
+
+    expect(database.deleteUser(student.id)).toBe(true);
+
+    const visibleStudentIds = new Set(database.getTeacherStudentIds(teacher!.id));
+    const teacherRecord = database.getAllRecords({}, visibleStudentIds).find((item) => item.id === record.id);
+
+    expect(visibleStudentIds.has(student.id)).toBe(true);
+    expect(teacherRecord?.student_name).toBe('已删除用户');
+    expect(teacherRecord?.student_uid).toBe(student.uid);
   });
 
   test('tracks unread notifications and aggregate statistics', () => {
