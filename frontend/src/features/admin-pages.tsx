@@ -350,8 +350,10 @@ export function AdminAssignmentsPage() {
     return students.filter((student) => assignmentMap.get(student.id) === Number(filterTeacherId));
   }, [assignmentMap, filterTeacherId, students]);
 
-  const tableStudentIds = filteredStudents.map((student) => student.id);
-  const allSelected = filteredStudents.length > 0 && filteredStudents.every((student) => selectedIds.includes(student.id));
+  const tableStudentIds = useMemo(() => filteredStudents.map((student) => student.id), [filteredStudents]);
+  const tableStudentIdSet = useMemo(() => new Set(tableStudentIds), [tableStudentIds]);
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const allSelected = filteredStudents.length > 0 && filteredStudents.every((student) => selectedIdSet.has(student.id));
 
   const columns = useMemo<Array<ColumnDef<StudentSummary>>>(() => [
     {
@@ -362,7 +364,7 @@ export function AdminAssignmentsPage() {
           onCheckedChange={(checked) => {
             setSelectedIds((current) => {
               if (checked !== true) {
-                return current.filter((id) => !tableStudentIds.includes(id));
+                return current.filter((id) => !tableStudentIdSet.has(id));
               }
 
               return Array.from(new Set([...current, ...tableStudentIds]));
@@ -372,11 +374,11 @@ export function AdminAssignmentsPage() {
       ),
       cell: ({ row }) => (
         <Checkbox
-          checked={selectedIds.includes(row.original.id)}
+          checked={selectedIdSet.has(row.original.id)}
           onClick={captureShiftKey}
           onCheckedChange={(checked) =>
             setSelectedIds((current) => {
-              const currentVisible = current.filter((id) => tableStudentIds.includes(id));
+              const currentVisible = current.filter((id) => tableStudentIdSet.has(id));
               const nextVisible = updateSelection(
                 tableStudentIds,
                 currentVisible,
@@ -384,7 +386,7 @@ export function AdminAssignmentsPage() {
                 checked === true
               );
 
-              return [...current.filter((id) => !tableStudentIds.includes(id)), ...nextVisible];
+              return [...current.filter((id) => !tableStudentIdSet.has(id)), ...nextVisible];
             })
           }
         />
@@ -411,8 +413,8 @@ export function AdminAssignmentsPage() {
         const assignedTeacher = teacherMap.get(assignmentMap.get(row.original.id) ?? -1);
         return assignedTeacher ? `${assignedTeacher.name} (${assignedTeacher.uid})` : <span className="text-muted-foreground">未分配</span>;
       }
-    }
-  ], [allSelected, assignmentMap, captureShiftKey, selectedIds, tableStudentIds, teacherMap, updateSelection]);
+      }
+  ], [allSelected, assignmentMap, captureShiftKey, selectedIdSet, tableStudentIds, tableStudentIdSet, teacherMap, updateSelection]);
 
   return (
     <AdminPageFrame title="关系分配" description="管理员可以把学生批量分配给教师，或者撤销现有分配关系。">
@@ -568,7 +570,8 @@ function UserListPage({
     });
   }, [sortBy, users]);
 
-  const userIds = sortedUsers.map((user) => user.id);
+  const userIds = useMemo(() => sortedUsers.map((user) => user.id), [sortedUsers]);
+  const selectedUserIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const allSelected = sortedUsers.length > 0 && selectedIds.length === sortedUsers.length;
 
   const columns = useMemo<Array<ColumnDef<UserSummary>>>(() => [
@@ -582,7 +585,7 @@ function UserListPage({
       ),
       cell: ({ row }) => (
         <Checkbox
-          checked={selectedIds.includes(row.original.id)}
+          checked={selectedUserIdSet.has(row.original.id)}
           onClick={captureShiftKey}
           onCheckedChange={(checked) =>
             setSelectedIds((current) =>
@@ -641,7 +644,7 @@ function UserListPage({
         </div>
       )
     }
-  ], [allSelected, captureShiftKey, selectedIds, sortBy, updateSelection, userIds]);
+  ], [allSelected, captureShiftKey, selectedUserIdSet, sortBy, updateSelection, userIds]);
 
   return (
     <AdminPageFrame title={title} description={description}>
@@ -908,7 +911,8 @@ function AdminStudentListPage() {
     });
   }, [durations, sortBy, students]);
 
-  const studentIds = sortedStudents.map((student) => student.id);
+  const studentIds = useMemo(() => sortedStudents.map((student) => student.id), [sortedStudents]);
+  const selectedStudentIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const allSelected = sortedStudents.length > 0 && selectedIds.length === sortedStudents.length;
 
   const columns = useMemo<Array<ColumnDef<UserSummary>>>(() => [
@@ -922,7 +926,7 @@ function AdminStudentListPage() {
       ),
       cell: ({ row }) => (
         <Checkbox
-          checked={selectedIds.includes(row.original.id)}
+          checked={selectedStudentIdSet.has(row.original.id)}
           onClick={captureShiftKey}
           onCheckedChange={(checked) =>
             setSelectedIds((current) =>
@@ -993,7 +997,7 @@ function AdminStudentListPage() {
         </div>
       )
     }
-  ], [allSelected, captureShiftKey, durations, selectedIds, sortBy, studentIds, updateSelection]);
+  ], [allSelected, captureShiftKey, durations, selectedStudentIdSet, sortBy, studentIds, updateSelection]);
 
   return (
     <AdminPageFrame title="学生列表" description="管理员可以维护学生姓名和密码，支持批量重置密码、批量删除，并按总时长查看排序。">

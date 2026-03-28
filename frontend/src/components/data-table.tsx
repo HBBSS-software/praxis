@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   type ColumnDef,
   flexRender,
@@ -18,7 +18,7 @@ interface DataTableProps<TData, TValue> {
   rowClassName?: (row: TData, index: number) => string | undefined;
 }
 
-function DataTable<TData, TValue>({
+function DataTableInner<TData, TValue>({
   columns,
   data,
   batchSize = 50,
@@ -100,5 +100,7 @@ function DataTable<TData, TValue>({
     </div>
   );
 }
+
+const DataTable = memo(DataTableInner) as typeof DataTableInner;
 
 export { DataTable };

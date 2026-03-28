@@ -176,6 +176,8 @@ describe('assignments, records and notifications', () => {
     expect(createdRecord.status).toBe('pending');
     expect(database.getRecordById(createdRecord.id)?.title).toBe('测试记录');
     expect(database.getTeacherRecordById(createdRecord.id)?.student_uid).toBe(student!.uid);
+    expect(database.getAllRecords().find((record) => record.id === createdRecord.id)?.title).toBe('测试记录');
+    expect('content' in (database.getAllRecords().find((record) => record.id === createdRecord.id) ?? {})).toBe(false);
     expect(database.getRecordsByStudent(student!.id).some((record) => record.id === createdRecord.id)).toBe(true);
 
     const updatedRecord = database.updateRecord(createdRecord.id, {
@@ -313,7 +315,9 @@ describe('route behavior', () => {
 
   test('rejects future practice dates', async () => {
     const token = await loginAs('S00001', '12345678');
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const tomorrowDate = new Date();
+    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    const tomorrow = `${tomorrowDate.getFullYear()}-${String(tomorrowDate.getMonth() + 1).padStart(2, '0')}-${String(tomorrowDate.getDate()).padStart(2, '0')}`;
 
     const response = await jsonRequest('/api/student/records', {
       title: '未来记录',

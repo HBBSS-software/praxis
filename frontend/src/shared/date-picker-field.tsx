@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { CalendarIcon, XIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
+import { normalizeDateInputValue } from '@/lib/format';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
@@ -16,30 +18,35 @@ export function DatePickerField({
   placeholder?: string;
   className?: string;
 }) {
-  const selectedDate = value ? new Date(`${value}T00:00:00`) : undefined;
+  const [open, setOpen] = useState(false);
+  const normalizedValue = normalizeDateInputValue(value);
+  const selectedDate = normalizedValue ? new Date(`${normalizedValue}T00:00:00`) : undefined;
 
   return (
     <div className={cn('relative w-full', className)}>
-      <Popover>
+      <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button variant="outline" className="w-full justify-start gap-2 pr-16 text-left font-normal">
-            <span className={value ? 'text-foreground' : 'text-muted-foreground'}>
-              {value || placeholder}
+            <span className={normalizedValue ? 'text-foreground' : 'text-muted-foreground'}>
+              {normalizedValue || placeholder}
             </span>
             <CalendarIcon className="ml-auto size-4 shrink-0" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-auto p-0">
-          <Calendar
-            mode="single"
-            selected={selectedDate}
-            onSelect={(date) => {
-              onChange(date ? date.toLocaleDateString('sv-SE') : '');
-            }}
-          />
-        </PopoverContent>
+        {open ? (
+          <PopoverContent align="start" className="w-auto p-0">
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              onSelect={(date) => {
+                onChange(date ? date.toLocaleDateString('sv-SE') : '');
+                setOpen(false);
+              }}
+            />
+          </PopoverContent>
+        ) : null}
       </Popover>
-      {value ? (
+      {normalizedValue ? (
         <Button
           size="icon-sm"
           type="button"

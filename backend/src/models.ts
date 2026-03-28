@@ -70,6 +70,17 @@ export interface TeacherRecord extends StudentRecord {
   student_uid: string;
 }
 
+export interface TeacherRecordSummary {
+  id: number;
+  student_id: number;
+  title: string;
+  practice_date: string;
+  status: RecordStatus;
+  created_at: string;
+  student_name: string;
+  student_uid: string;
+}
+
 export interface CreateRecordInput {
   student_id: number;
   title: string;

@@ -17,7 +17,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { ApiResponseError, createApiClient, getApiOrigin, unwrapResponse, uploadImage, validateUploadImageFile } from '@/lib/api';
 import { toastError, toastSuccess } from '@/lib/feedback';
-import { formatDate, formatDateTime, formatDuration, notificationLabel, statusLabel } from '@/lib/format';
+import { formatDate, formatDateTime, formatDuration, normalizeDateInputValue, notificationLabel, statusLabel } from '@/lib/format';
 import type { AppNotification, RecordStatistics, StudentRecord } from '@/lib/types';
 
 function StudentPageFrame({
@@ -255,7 +255,7 @@ export function StudentUploadPage() {
   const [form, setForm] = useState({
     title: '',
     content: '',
-    practice_date: new Date().toLocaleDateString('sv-SE'),
+    practice_date: normalizeDateInputValue(new Date()),
     location: '',
     duration: ''
   });
@@ -274,7 +274,7 @@ export function StudentUploadPage() {
         setForm({
           title: record.title,
           content: record.content,
-          practice_date: record.practice_date,
+          practice_date: normalizeDateInputValue(record.practice_date),
           location: record.location ?? '',
           duration: String(record.duration)
         });

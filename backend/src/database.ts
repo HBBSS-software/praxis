@@ -16,6 +16,7 @@ import type {
   RecordStatus,
   StudentRecord,
   TeacherRecord,
+  TeacherRecordSummary,
   TeacherStatistics,
   TeacherStudentAssignment,
   UpdateRecordInput,
@@ -507,14 +508,24 @@ class JsonDatabase {
   }
 
   getTeacherRecordById(id: number, visibleStudentIds?: Set<number>) {
-    return this.getAllRecords({}, visibleStudentIds).find((record) => record.id === id) ?? null;
-  }
+    const record = this.getRecordById(id);
 
-  getAllRecords(filters: RecordFilters = {}, visibleStudentIds?: Set<number>): TeacherRecord[] {
-    let records = this.#state.practice_records.map((record) => ({
+    if (!record) {
+      return null;
+    }
+
+    if (visibleStudentIds && !visibleStudentIds.has(record.student_id)) {
+      return null;
+    }
+
+    return {
       ...record,
       ...this.resolveStudentIdentity(record)
-    }));
+    };
+  }
+
+  getAllRecords(filters: RecordFilters = {}, visibleStudentIds?: Set<number>): TeacherRecordSummary[] {
+    let records = [...this.#state.practice_records];
 
     if (visibleStudentIds) {
       records = records.filter((record) => visibleStudentIds.has(record.student_id));
@@ -556,7 +567,22 @@ class JsonDatabase {
       records = records.filter((record) => record.updated_at <= filters.updated_before!);
     }
 
-    return records.sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+    return records
+      .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+      .map((record) => {
+        const identity = this.resolveStudentIdentity(record);
+
+        return {
+          id: record.id,
+          student_id: record.student_id,
+          title: record.title,
+          practice_date: record.practice_date,
+          status: record.status,
+          created_at: record.created_at,
+          student_name: identity.student_name,
+          student_uid: identity.student_uid
+        };
+      });
   }
 
   updateRecord(id: number, updates: UpdateRecordInput) {

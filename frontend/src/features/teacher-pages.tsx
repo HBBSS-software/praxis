@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, CheckCircle2, Clock3, FilePenLine, RefreshCw, UserRoundCog, Users } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useEffectEvent, useMemo, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 
 import { useSession } from '@/lib/auth';
@@ -20,9 +20,9 @@ import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { ApiResponseError, createApiClient, getApiOrigin, unwrapResponse } from '@/lib/api';
 import { toastError, toastSuccess } from '@/lib/feedback';
-import { formatDate, formatDateTime, formatDuration, statusLabel } from '@/lib/format';
+import { formatDate, formatDateTime, formatDuration, normalizeDateInputValue, statusLabel } from '@/lib/format';
 import { useShiftMultiSelect } from '@/lib/shift-selection';
-import type { CreatedUser, StudentSummary, TeacherRecord, TeacherStatistics, UserSummary } from '@/lib/types';
+import type { CreatedUser, StudentSummary, TeacherRecord, TeacherRecordSummary, TeacherStatistics, UserSummary } from '@/lib/types';
 import { UserCredentialsResult } from '@/shared/user-credentials-result';
 import { AccountCard } from './student-pages';
 
@@ -65,13 +65,16 @@ export function TeacherDashboardPage() {
   const { token, signOut, user } = useSession();
   const { captureShiftKey, resetSelectionAnchor, updateSelection } = useShiftMultiSelect();
   const [students, setStudents] = useState<StudentSummary[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
   const [teachers, setTeachers] = useState<UserSummary[]>([]);
+  const [teachersLoading, setTeachersLoading] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
-  const [records, setRecords] = useState<TeacherRecord[]>([]);
+  const [records, setRecords] = useState<TeacherRecordSummary[]>([]);
   const [statistics, setStatistics] = useState<TeacherStatistics | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [reviewRecord, setReviewRecord] = useState<TeacherRecord | null>(null);
   const [editRecord, setEditRecord] = useState<TeacherRecord | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
   const [reviewComment, setReviewComment] = useState('');
   const [editForm, setEditForm] = useState({
     title: '',
@@ -83,11 +86,27 @@ export function TeacherDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<TeacherRecord | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TeacherRecordSummary | null>(null);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  const recordIds = useMemo(() => records.map((record) => record.id), [records]);
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const teacherFilterOptions = useMemo(
+    () => [{ label: '全部老师', value: '' }, ...teachers.map((teacher) => ({ label: `${teacher.name} (${teacher.uid})`, value: String(teacher.id) }))],
+    [teachers]
+  );
+  const studentFilterOptions = useMemo(
+    () => [{ label: '全部学生', value: '' }, ...students.map((student) => ({ label: `${student.name} (${student.uid})`, value: String(student.id) }))],
+    [students]
+  );
   const allSelected = records.length > 0 && selectedIds.length === records.length;
+  const openTeacherFilter = useEffectEvent(() => {
+    void loadTeachers();
+  });
+  const openStudentFilter = useEffectEvent(() => {
+    void loadStudents();
+  });
   const query = useMemo(() => {
     const params = new URLSearchParams();
     if (filters.student_id) params.set('student_id', filters.student_id);
@@ -105,22 +124,28 @@ export function TeacherDashboardPage() {
   }, [filters]);
 
   async function loadStudents() {
-    if (!token) return;
+    if (!token || studentsLoading || students.length > 0) return;
+    setStudentsLoading(true);
     try {
       const data = await unwrapResponse<{ students: StudentSummary[] }>(createApiClient(token).teacher.students.get());
       setStudents(data.students);
     } catch (nextError) {
       if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
+    } finally {
+      setStudentsLoading(false);
     }
   }
 
   async function loadTeachers() {
-    if (!token || user?.role !== 'admin') return;
+    if (!token || user?.role !== 'admin' || teachersLoading || teachers.length > 0) return;
+    setTeachersLoading(true);
     try {
       const data = await unwrapResponse<{ users: UserSummary[] }>(createApiClient(token).admin.users.get({ query: { role: 'teacher' } }));
       setTeachers(data.users);
     } catch (nextError) {
       if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
+    } finally {
+      setTeachersLoading(false);
     }
   }
 
@@ -129,7 +154,7 @@ export function TeacherDashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const data = await unwrapResponse<{ records: TeacherRecord[] }>(
+      const data = await unwrapResponse<{ records: TeacherRecordSummary[] }>(
         createApiClient(token).teacher.records.get({
           query: {
             student_id: filters.student_id || undefined,
@@ -174,14 +199,6 @@ export function TeacherDashboardPage() {
   }
 
   useEffect(() => {
-    void loadStudents();
-  }, [token]);
-
-  useEffect(() => {
-    void loadTeachers();
-  }, [token, user?.role]);
-
-  useEffect(() => {
     void loadRecords();
   }, [query, token]);
 
@@ -189,18 +206,18 @@ export function TeacherDashboardPage() {
     void loadStatistics();
   }, [token]);
 
-  const columns = useMemo<Array<ColumnDef<TeacherRecord>>>(() => [
+  const columns = useMemo<Array<ColumnDef<TeacherRecordSummary>>>(() => [
     {
       id: 'select',
-      header: () => <Checkbox checked={allSelected} onCheckedChange={(checked) => setSelectedIds(checked ? records.map((record) => record.id) : [])} />,
+      header: () => <Checkbox checked={allSelected} onCheckedChange={(checked) => setSelectedIds(checked ? recordIds : [])} />,
       cell: ({ row }) => (
         <Checkbox
-          checked={selectedIds.includes(row.original.id)}
+          checked={selectedIdSet.has(row.original.id)}
           onClick={captureShiftKey}
           onCheckedChange={(checked) =>
             setSelectedIds((current) =>
               updateSelection(
-                records.map((item) => item.id),
+                recordIds,
                 current,
                 row.original.id,
                 checked === true
@@ -247,7 +264,7 @@ export function TeacherDashboardPage() {
         </div>
       )
     }
-  ], [allSelected, captureShiftKey, records, selectedIds, updateSelection]);
+  ], [allSelected, captureShiftKey, recordIds, selectedIdSet, updateSelection]);
 
   return (
     <PageFrame
@@ -276,14 +293,18 @@ export function TeacherDashboardPage() {
                 <FilterSelect
                   label="管理老师"
                   value={filters.teacher_id}
-                  options={[{ label: '全部老师', value: '' }, ...teachers.map((teacher) => ({ label: `${teacher.name} (${teacher.uid})`, value: String(teacher.id) }))]}
+                  options={teacherFilterOptions}
+                  loading={teachersLoading}
+                  onOpen={openTeacherFilter}
                   onChange={(value) => setFilters((current) => ({ ...current, teacher_id: value }))}
                 />
               ) : null}
               <FilterSelect
                 label="学生"
                 value={filters.student_id}
-                options={[{ label: '全部学生', value: '' }, ...students.map((student) => ({ label: `${student.name} (${student.uid})`, value: String(student.id) }))]}
+                options={studentFilterOptions}
+                loading={studentsLoading}
+                onOpen={openStudentFilter}
                 onChange={(value) => setFilters((current) => ({ ...current, student_id: value }))}
               />
               <FilterSelect
@@ -357,25 +378,35 @@ export function TeacherDashboardPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(editRecord)} onOpenChange={(open) => !open && setEditRecord(null)}>
-        <DialogContent>
+      <Dialog
+        open={editLoading || Boolean(editRecord)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditLoading(false);
+            setEditRecord(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl">
           {editRecord ? (
             <>
               <DialogHeader>
                 <DialogTitle>编辑记录</DialogTitle>
                 <DialogDescription>保留原有教师端编辑逻辑。</DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <Field label="标题"><Input value={editForm.title} onChange={(event) => setEditForm((current) => ({ ...current, title: event.target.value }))} /></Field>
                 <Field label="内容"><Textarea value={editForm.content} onChange={(event) => setEditForm((current) => ({ ...current, content: event.target.value }))} /></Field>
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-5 md:grid-cols-3">
                   <Field label="日期"><DatePickerField value={editForm.practice_date} onChange={(value) => setEditForm((current) => ({ ...current, practice_date: value }))} /></Field>
                   <Field label="时长"><Input type="number" step="0.1" min="0.1" value={editForm.duration} onChange={(event) => setEditForm((current) => ({ ...current, duration: event.target.value }))} /></Field>
                   <Field label="地点"><Input value={editForm.location} onChange={(event) => setEditForm((current) => ({ ...current, location: event.target.value }))} /></Field>
                 </div>
-                <Button onClick={() => void saveEdit()}>保存修改</Button>
+                <Button className="w-full sm:w-auto" onClick={() => void saveEdit()}>保存修改</Button>
               </div>
             </>
+          ) : editLoading ? (
+            <LoadingCard label="正在加载记录详情..." />
           ) : null}
         </DialogContent>
       </Dialog>
@@ -430,13 +461,15 @@ export function TeacherDashboardPage() {
 
   async function openEdit(recordId: number) {
     if (!token) return;
+    setEditLoading(true);
+    setEditRecord(null);
     try {
       const data = await unwrapResponse<{ record: TeacherRecord }>(createApiClient(token).teacher.records({ id: recordId }).get());
       setEditRecord(data.record);
       setEditForm({
         title: data.record.title,
         content: data.record.content,
-        practice_date: data.record.practice_date.split('T')[0] ?? data.record.practice_date,
+        practice_date: normalizeDateInputValue(data.record.practice_date),
         duration: String(data.record.duration ?? ''),
         location: data.record.location ?? ''
       });
@@ -445,8 +478,11 @@ export function TeacherDashboardPage() {
         signOut();
         return;
       }
+      setEditLoading(false);
       toastError(nextError, '加载记录详情失败。');
+      return;
     }
+    setEditLoading(false);
   }
 
   async function submitReview(status: 'approved' | 'rejected' | 'pending') {
@@ -587,6 +623,8 @@ export function TeacherStudentsPage() {
       return left.name.localeCompare(right.name);
     });
   }, [durations, sortBy, students]);
+  const sortedStudentIds = useMemo(() => sortedStudents.map((student) => student.id), [sortedStudents]);
+  const selectedStudentIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const columns = useMemo<Array<ColumnDef<StudentSummary>>>(() => [
     {
@@ -594,17 +632,17 @@ export function TeacherStudentsPage() {
       header: () => (
         <Checkbox
           checked={sortedStudents.length > 0 && selectedIds.length === sortedStudents.length}
-          onCheckedChange={(checked) => setSelectedIds(checked ? sortedStudents.map((student) => student.id) : [])}
+          onCheckedChange={(checked) => setSelectedIds(checked ? sortedStudentIds : [])}
         />
       ),
       cell: ({ row }) => (
         <Checkbox
-          checked={selectedIds.includes(row.original.id)}
+          checked={selectedStudentIdSet.has(row.original.id)}
           onClick={captureShiftKey}
           onCheckedChange={(checked) =>
             setSelectedIds((current) =>
               updateSelection(
-                sortedStudents.map((item) => item.id),
+                sortedStudentIds,
                 current,
                 row.original.id,
                 checked === true
@@ -671,7 +709,7 @@ export function TeacherStudentsPage() {
         </Button>
       )
     }
-  ], [captureShiftKey, durations, selectedIds, sortBy, sortedStudents, updateSelection]);
+  ], [captureShiftKey, durations, selectedIds.length, selectedStudentIdSet, sortBy, sortedStudentIds, sortedStudents.length, updateSelection]);
 
   return (
     <PageFrame title="学生列表" description="教师可以查看学生总时长，支持批量重置密码，并按总时长或姓名排序。">
@@ -823,36 +861,57 @@ function ErrorCard({ message, onRetry }: { message: string; onRetry?: () => void
   );
 }
 
-function FilterSelect({
+const FilterSelect = memo(function FilterSelect({
   label,
   value,
   options,
+  loading = false,
+  onOpen,
   onChange
 }: {
   label: string;
   value: string;
   options: Array<{ label: string; value: string }>;
+  loading?: boolean;
+  onOpen?: () => void;
   onChange: (value: string) => void;
 }) {
   const resolvedValue = value || '__all__';
+  const [open, setOpen] = useState(false);
 
   return (
     <Field label={label}>
-      <Select value={resolvedValue} onValueChange={(nextValue) => onChange(nextValue === '__all__' ? '' : nextValue)}>
+      <Select
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (nextOpen) {
+            onOpen?.();
+          }
+        }}
+        value={resolvedValue}
+        onValueChange={(nextValue) => onChange(nextValue === '__all__' ? '' : nextValue)}
+      >
         <SelectTrigger className="w-full">
           <SelectValue placeholder={label} />
         </SelectTrigger>
         <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value || option.label} value={option.value || '__all__'}>
-              {option.label}
-            </SelectItem>
-          ))}
+          {loading ? (
+            <SelectItem disabled value="__loading__">加载中...</SelectItem>
+          ) : options.length > 0 ? (
+            options.map((option) => (
+              <SelectItem key={option.value || option.label} value={option.value || '__all__'}>
+                {option.label}
+              </SelectItem>
+            ))
+          ) : (
+            <SelectItem disabled value="__empty__">暂无可选项</SelectItem>
+          )}
         </SelectContent>
       </Select>
     </Field>
   );
-}
+});
 
 function RecordPreview({ record }: { record: TeacherRecord }) {
   return (
