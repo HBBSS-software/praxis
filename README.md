@@ -1,28 +1,18 @@
-# 社会实践系统
+# 可爱奶龙社会实践系统
 
 ## 技术栈
 
-- 使用 `pnpm` 进行依赖管理
-- 前端使用 `React + Vite + shadcn/ui`
-- 后端使用 `Node.js + Hono`
-- 数据库使用 `SQLite + better-sqlite3`
-- ORM 使用 `Drizzle ORM`
-
-默认数据库文件为 `backend/data/app.db`，上传文件目录为 `backend/uploads`。
-
-## 安装与初始化
-
-```bash
-pnpm install
-pnpm db:migrate
-```
+- 运行时：Node.js
+- 前端：React + Vite + shadcn/ui
+- 后端：Node.js + Hono
+- 数据库：better-sqlite3 + Drizzle ORM
 
 ## 如何使用
 
 安装依赖：
 
 ```bash
-pnpm install --frozen-lockfile
+pnpm install --frozen-lockfile --ignore-scripts=false
 ```
 
 启动：
