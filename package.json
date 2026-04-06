@@ -61,7 +61,6 @@
     "@vitest/ui": "3.2.4",
     "concurrently": "^9.2.1",
     "drizzle-kit": "^0.31.4",
-    "shadcn": "^4.1.0",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
     "vite": "^8.0.1",

@@ -12,7 +12,7 @@
 安装依赖：
 
 ```bash
-pnpm install --frozen-lockfile --ignore-scripts=false
+pnpm install --frozen-lockfile
 ```
 
 启动：
