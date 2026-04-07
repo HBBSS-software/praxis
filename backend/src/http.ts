@@ -106,9 +106,7 @@ export const recordQuerySchema = z.object({
   practice_after: z.string().optional(),
   practice_before: z.string().optional(),
   created_after: z.string().optional(),
-  created_before: z.string().optional(),
-  updated_after: z.string().optional(),
-  updated_before: z.string().optional()
+  created_before: z.string().optional()
 });
 
 export function apiError(c: Context, code: number, message: string) {
@@ -297,9 +295,7 @@ export function validateRecordFilters(query: Record<string, unknown>) {
     'practice_after',
     'practice_before',
     'created_after',
-    'created_before',
-    'updated_after',
-    'updated_before'
+    'created_before'
   ] as const;
 
   for (const field of dateFields) {
@@ -321,9 +317,7 @@ export function normalizeRecordFilters(query: RecordFilters): RecordFilters {
     practice_after: query.practice_after ?? null,
     practice_before: query.practice_before ?? null,
     created_after: query.created_after ?? null,
-    created_before: query.created_before ?? null,
-    updated_after: query.updated_after ?? null,
-    updated_before: query.updated_before ?? null
+    created_before: query.created_before ?? null
   };
 }
 

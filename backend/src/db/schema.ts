@@ -36,9 +36,7 @@ export const practiceRecords = sqliteTable('practice_records', {
   imagePath: text('image_path'),
   status: text('status').notNull(),
   teacherComment: text('teacher_comment'),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
-  updatedByUid: text('updated_by_uid')
+  createdAt: text('created_at').notNull()
 }, (table) => [
   index('practice_records_student_idx').on(table.studentId),
   index('practice_records_status_idx').on(table.status),

@@ -116,9 +116,7 @@ export const studentRoutes = new Hono<AppBindings>()
     }
 
     const payload = buildRecordPayload(body as Record<string, unknown>);
-    const updates: UpdateRecordInput = {
-      updated_by_uid: user.uid
-    };
+    const updates: UpdateRecordInput = {};
 
     if (body.title !== undefined) {
       const error = validateTitle(payload.title);

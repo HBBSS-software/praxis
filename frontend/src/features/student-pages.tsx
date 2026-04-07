@@ -165,9 +165,6 @@ export function StudentDashboardPage() {
                         </Button>
                       ) : null}
                     </div>
-                    {record.updated_by_uid ? (
-                      <p className="text-xs text-[color:var(--muted-foreground)]">最近由 {record.updated_by_uid} 于 {formatDateTime(record.updated_at)} 修改</p>
-                    ) : null}
                   </div>
                 </div>
               </CardContent>

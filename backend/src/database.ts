@@ -77,9 +77,7 @@ function toPracticeRecord(row: PracticeRecordRow): PracticeRecord {
     image_path: row.imagePath,
     status: row.status as PracticeRecord['status'],
     teacher_comment: row.teacherComment,
-    created_at: row.createdAt,
-    updated_at: row.updatedAt,
-    updated_by_uid: row.updatedByUid
+    created_at: row.createdAt
   };
 }
 
@@ -164,14 +162,6 @@ function buildRecordWhere(filters: RecordFilters = {}, visibleStudentIds?: Set<n
 
   if (filters.created_before) {
     conditions.push(lte(practiceRecords.createdAt, filters.created_before));
-  }
-
-  if (filters.updated_after) {
-    conditions.push(gte(practiceRecords.updatedAt, filters.updated_after));
-  }
-
-  if (filters.updated_before) {
-    conditions.push(lte(practiceRecords.updatedAt, filters.updated_before));
   }
 
   return conditions.length > 0 ? and(...conditions) : undefined;
@@ -489,9 +479,7 @@ class SQLiteDatabase {
       imagePath: input.image_path,
       status: 'pending',
       teacherComment: null,
-      createdAt,
-      updatedAt: createdAt,
-      updatedByUid: null
+      createdAt
     }).run();
 
     return this.getRecordById(Number(result.lastInsertRowid))!;
@@ -579,9 +567,7 @@ class SQLiteDatabase {
       return null;
     }
 
-    const nextValues: Partial<typeof practiceRecords.$inferInsert> = {
-      updatedAt: nowIso()
-    };
+    const nextValues: Partial<typeof practiceRecords.$inferInsert> = {};
 
     if (updates.title !== undefined) nextValues.title = updates.title;
     if (updates.content !== undefined) nextValues.content = updates.content;
@@ -591,7 +577,6 @@ class SQLiteDatabase {
     if (updates.image_path !== undefined) nextValues.imagePath = updates.image_path;
     if (updates.status !== undefined) nextValues.status = updates.status;
     if (updates.teacher_comment !== undefined) nextValues.teacherComment = updates.teacher_comment;
-    if (updates.updated_by_uid !== undefined) nextValues.updatedByUid = updates.updated_by_uid;
 
     db.update(practiceRecords).set(nextValues).where(eq(practiceRecords.id, id)).run();
 
@@ -758,7 +743,7 @@ class SQLiteDatabase {
       return;
     }
 
-    const password = hashPasswordSync('12345678', 'low');
+    const password = hashPasswordSync('12345678');
     const createdAt = nowIso();
 
     db.insert(users).values([

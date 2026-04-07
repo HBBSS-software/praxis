@@ -63,8 +63,6 @@ export interface PracticeRecord {
   status: RecordStatus;
   teacher_comment: string | null;
   created_at: string;
-  updated_at: string;
-  updated_by_uid: string | null;
 }
 
 export interface StudentRecord extends PracticeRecord {
@@ -105,7 +103,6 @@ export interface UpdateRecordInput {
   image_path?: string | null;
   status?: RecordStatus;
   teacher_comment?: string | null;
-  updated_by_uid?: string | null;
 }
 
 export interface RecordFilters {
@@ -116,8 +113,6 @@ export interface RecordFilters {
   practice_before?: string | null;
   created_after?: string | null;
   created_before?: string | null;
-  updated_after?: string | null;
-  updated_before?: string | null;
 }
 
 export interface RecordStatistics {

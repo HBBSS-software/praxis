@@ -5,7 +5,7 @@
 - 运行时：Node.js
 - 前端：React + Vite + shadcn/ui
 - 后端：Node.js + Hono
-- 数据库：better-sqlite3 + Drizzle ORM
+- 数据库：SQLite + Drizzle ORM
 
 ## 如何使用
 

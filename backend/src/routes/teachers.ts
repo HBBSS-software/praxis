@@ -60,9 +60,7 @@ function parseRecordFilters(query: Record<string, unknown>): RecordFilters {
     practice_after: typeof query.practice_after === 'string' && query.practice_after ? query.practice_after : null,
     practice_before: typeof query.practice_before === 'string' && query.practice_before ? query.practice_before : null,
     created_after: typeof query.created_after === 'string' && query.created_after ? query.created_after : null,
-    created_before: typeof query.created_before === 'string' && query.created_before ? query.created_before : null,
-    updated_after: typeof query.updated_after === 'string' && query.updated_after ? query.updated_after : null,
-    updated_before: typeof query.updated_before === 'string' && query.updated_before ? query.updated_before : null
+    created_before: typeof query.created_before === 'string' && query.created_before ? query.created_before : null
   });
 }
 
@@ -120,8 +118,7 @@ export const teacherRoutes = new Hono<AppBindings>()
 
     const updated = database.updateRecord(record.id, {
       status: body.status,
-      teacher_comment: comment,
-      updated_by_uid: user.uid
+      teacher_comment: comment
     });
 
     if (!updated) {
@@ -155,8 +152,7 @@ export const teacherRoutes = new Hono<AppBindings>()
       } else {
         database.updateRecord(record.id, {
           status: body.action,
-          teacher_comment: null,
-          updated_by_uid: user.uid
+          teacher_comment: null
         });
         database.createNotification(
           record.student_id,
@@ -180,9 +176,7 @@ export const teacherRoutes = new Hono<AppBindings>()
       return apiError(c, 404, '记录不存在。');
     }
 
-    const updates: UpdateRecordInput = {
-      updated_by_uid: user.uid
-    };
+    const updates: UpdateRecordInput = {};
 
     if (body.title !== undefined) {
       const value = body.title.trim();

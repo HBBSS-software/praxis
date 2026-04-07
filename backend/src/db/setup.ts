@@ -49,9 +49,7 @@ export function ensureDatabaseSchema() {
       image_path text,
       status text not null,
       teacher_comment text,
-      created_at text not null,
-      updated_at text not null,
-      updated_by_uid text
+      created_at text not null
     )
   `);
 

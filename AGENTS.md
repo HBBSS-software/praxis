@@ -1,6 +1,6 @@
 # 默认提示词
 
-本项目采用 `Node.js + pnpm` 开发，各种操作的命令参见 `package.json`。如果你修改了后端或数据库结构，请跑一遍 `test:all`；如果需要，请同步修改 `package.json`、`README.md`、`drizzle.config.ts` 和相关脚本。
+本项目采用 Node.js + pnpm 开发，各种操作的命令参见 `package.json`。如果你修改了后端或数据库结构，请跑一遍 `check`；如果需要，请同步修改配置文件。
 
 ## 前端
 
@@ -14,7 +14,7 @@
 
 ## 后端
 
-后端采用 `Hono` 编写，数据库采用 `SQLite + Drizzle ORM`，运行时使用 `better-sqlite3`。
+后端采用 `Hono` 编写，数据库采用 `SQLite + Drizzle ORM`。
 
 请遵循 RESTful API 规范。
 

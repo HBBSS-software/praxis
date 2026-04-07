@@ -118,6 +118,7 @@ describe('database bootstrap and users', () => {
     expect(database.findUserByUid('T00001')?.role).toBe('teacher');
     expect(database.findUserByUid('S00001')?.role).toBe('student');
     expect(database.findUserByUid('S00002')?.role).toBe('student');
+    expect(isLowCostPasswordHash(database.findUserByUid('S00001')?.password ?? '')).toBe(false);
     expect(database.getUsersByRole('student')).toHaveLength(2);
   });
 
@@ -206,13 +207,11 @@ describe('assignments, records and notifications', () => {
     const updatedRecord = database.updateRecord(createdRecord.id, {
       status: 'approved',
       teacher_comment: '通过',
-      updated_by_uid: 'T00001',
       duration: 2.5
     });
 
     expect(updatedRecord?.status).toBe('approved');
     expect(updatedRecord?.teacher_comment).toBe('通过');
-    expect(updatedRecord?.updated_by_uid).toBe('T00001');
     expect(database.getStudentStatistics(student!.id).approved_count).toBeGreaterThan(0);
     expect(database.getStudentStatistics(student!.id).total_duration).toBeGreaterThanOrEqual(2.5);
 
@@ -302,13 +301,14 @@ describe('assignments, records and notifications', () => {
 });
 
 describe('route behavior', () => {
-  test('requires users with low-cost passwords to set a new password after login', async () => {
-    const response = await jsonRequest('/api/auth/login', { uid: 'S00001', password: '12345678' }, { method: 'POST' });
+  test('requires users with random initial passwords to set a new password after login', async () => {
+    const createdUser = await database.createUser('待设置密码用户', 'student');
+    const response = await jsonRequest('/api/auth/login', { uid: createdUser.uid, password: createdUser.password }, { method: 'POST' });
     const payload = await readJson(response);
 
     expect(response.status).toBe(200);
     expect(payload.user).toMatchObject({
-      uid: 'S00001',
+      uid: createdUser.uid,
       password_setup_required: true
     });
 
@@ -323,7 +323,7 @@ describe('route behavior', () => {
     expect((await readJson(blockedResponse)).error).toBe('请设置密码。');
 
     const changePasswordResponse = await jsonRequest('/api/auth/password', {
-      current_password: '12345678',
+      current_password: createdUser.password,
       new_password: 'new-password-01'
     }, {
       method: 'PUT',
@@ -334,12 +334,12 @@ describe('route behavior', () => {
 
     expect(changePasswordResponse.status).toBe(200);
 
-    const reloginResponse = await jsonRequest('/api/auth/login', { uid: 'S00001', password: 'new-password-01' }, { method: 'POST' });
+    const reloginResponse = await jsonRequest('/api/auth/login', { uid: createdUser.uid, password: 'new-password-01' }, { method: 'POST' });
     const reloginPayload = await readJson(reloginResponse);
 
     expect(reloginResponse.status).toBe(200);
     expect(reloginPayload.user).toMatchObject({
-      uid: 'S00001',
+      uid: createdUser.uid,
       password_setup_required: false
     });
   });
@@ -437,8 +437,7 @@ describe('route behavior', () => {
 
     database.updateRecord(record.id, {
       status: 'rejected',
-      teacher_comment: '请补充内容',
-      updated_by_uid: 'T00001'
+      teacher_comment: '请补充内容'
     });
 
     const token = await loginAs(student.uid, 'student-pass-01');
