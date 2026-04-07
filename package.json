@@ -7,7 +7,9 @@
   },
   "packageManager": "pnpm@10.7.0",
   "scripts": {
-    "dev": "concurrently -n \"API,WEB\" -c \"magenta,cyan\" \"tsx watch backend/src/server.ts\" \"vite --host 0.0.0.0 --config frontend/vite.config.ts\"",
+    "dev:backend": "tsx watch backend/src/server.ts",
+    "dev:frontend": "vite --host 0.0.0.0 --config frontend/vite.config.ts",
+    "dev": "concurrently -n \"API,WEB\" -c \"magenta,cyan\" \"pnpm run dev:backend\" \"pnpm run dev:frontend\"",
     "build": "vite build --config frontend/vite.config.ts",
     "start": "pnpm build && tsx backend/src/server.ts",
     "typecheck": "tsc --noEmit",
