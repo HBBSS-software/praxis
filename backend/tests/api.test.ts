@@ -134,7 +134,7 @@ describe('database bootstrap and users', () => {
 
     expect(createdStudent.uid).toMatch(/^S/);
     expect(createdStudent.password).toHaveLength(8);
-    expect(database.findUserById(createdStudent.id)?.password).toMatch(/^scrypt\$cost=\d+,blockSize=\d+,parallelization=\d+,keyLength=\d+\$[0-9a-f]+\$[0-9a-f]+$/);
+    expect(database.findUserById(createdStudent.id)?.password).toMatch(/^scrypt\$low-v1\$[0-9a-f]+\$[0-9a-f]+$/);
     expect(isLowCostPasswordHash(database.findUserById(createdStudent.id)?.password ?? '')).toBe(true);
     expect(createdUsers[0]?.uid).toMatch(/^T/);
     expect(createdUsers[1]?.uid).toMatch(/^A/);
