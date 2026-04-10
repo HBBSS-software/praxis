@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   },
-  "packageManager": "pnpm@10.7.0",
+  "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev:backend": "tsx watch backend/src/server.ts",
     "dev:frontend": "vite --host 0.0.0.0 --config frontend/vite.config.ts",
@@ -34,11 +34,10 @@
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tabs": "^1.1.13",
     "@tanstack/react-table": "^8.21.3",
-    "better-sqlite3": "^11.10.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
-    "drizzle-orm": "^0.44.5",
+    "drizzle-orm": "1.0.0-beta.21",
     "hono": "^4.9.8",
     "jose": "^6.1.0",
     "lucide-react": "^0.577.0",
@@ -55,14 +54,13 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",
-    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^24.6.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "@vitest/ui": "3.2.4",
     "concurrently": "^9.2.1",
-    "drizzle-kit": "^0.31.4",
+    "drizzle-kit": "1.0.0-beta.21",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
     "vite": "^8.0.1",

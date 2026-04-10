@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
-import BetterSqlite3 from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { drizzle } from 'drizzle-orm/node-sqlite';
 
 import * as schema from './schema';
 
@@ -12,9 +12,9 @@ const databaseFile = process.env.DATABASE_FILE
 
 fs.mkdirSync(path.dirname(databaseFile), { recursive: true });
 
-export const sqlite = new BetterSqlite3(databaseFile);
-sqlite.pragma('journal_mode = WAL');
-sqlite.pragma('foreign_keys = ON');
+export const sqlite = new DatabaseSync(databaseFile);
+sqlite.exec('PRAGMA journal_mode = WAL');
+sqlite.exec('PRAGMA foreign_keys = ON');
 
-export const db = drizzle(sqlite, { schema });
+export const db = drizzle({ client: sqlite, schema });
 export { databaseFile };
