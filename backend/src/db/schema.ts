@@ -26,6 +26,36 @@ export const teacherStudents = sqliteTable('teacher_students', {
   index('teacher_students_teacher_idx').on(table.teacherId)
 ]);
 
+export const classes = sqliteTable('classes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  cid: text('cid').notNull(),
+  name: text('name').notNull(),
+  createdAt: text('created_at').notNull()
+}, (table) => [
+  uniqueIndex('classes_cid_unique').on(table.cid),
+  index('classes_created_at_idx').on(table.createdAt)
+]);
+
+export const classTeachers = sqliteTable('class_teachers', {
+  classId: integer('class_id').notNull().references(() => classes.id, { onDelete: 'cascade' }),
+  teacherId: integer('teacher_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: text('created_at').notNull()
+}, (table) => [
+  primaryKey({ columns: [table.classId, table.teacherId] }),
+  index('class_teachers_class_idx').on(table.classId),
+  index('class_teachers_teacher_idx').on(table.teacherId)
+]);
+
+export const classStudents = sqliteTable('class_students', {
+  classId: integer('class_id').notNull().references(() => classes.id, { onDelete: 'cascade' }),
+  studentId: integer('student_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: text('created_at').notNull()
+}, (table) => [
+  primaryKey({ columns: [table.classId, table.studentId] }),
+  uniqueIndex('class_students_student_unique').on(table.studentId),
+  index('class_students_class_idx').on(table.classId)
+]);
+
 export const practiceRecords = sqliteTable('practice_records', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   studentId: integer('student_id').notNull().references(() => users.id),

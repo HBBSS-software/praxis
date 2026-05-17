@@ -108,8 +108,8 @@ export interface UpdateRecordInput {
 export interface RecordFilters {
   student_id?: number | null;
   student_ids?: number[] | null;
-  teacher_id?: number | null;
-  teacher_ids?: number[] | null;
+  class_id?: number | null;
+  class_ids?: number[] | null;
   status?: RecordStatus | null;
   practice_after?: string | null;
   practice_before?: string | null;
@@ -135,13 +135,32 @@ export interface TeacherStatistics extends RecordStatistics {
   }>;
 }
 
-export interface TeacherStudentAssignment {
+export interface ClassSummary {
+  id: number;
+  cid: string;
+  name: string;
+  created_at: string;
+}
+
+export interface ClassTeacherAssignment {
+  class_id: number;
   teacher_id: number;
+}
+
+export interface ClassStudentAssignment {
+  class_id: number;
   student_id: number;
 }
 
-export interface StudentWithTeacherSummary extends StudentSummary {
-  teacher_id: number | null;
+export interface ClassAssignments {
+  teachers: ClassTeacherAssignment[];
+  students: ClassStudentAssignment[];
+}
+
+export interface StudentWithClassSummary extends StudentSummary {
+  class_id: number | null;
+  class_cid: string | null;
+  class_name: string | null;
 }
 
 export interface CreateUserResult {
@@ -162,7 +181,6 @@ export interface CsvImportEntry {
   lineNumber: number;
   name: string;
   role: UserRole;
-  teacher_uid: string;
 }
 
 export interface CsvImportPreview {

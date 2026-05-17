@@ -262,27 +262,70 @@ export function createApiClient(token?: string | null) {
           patch: (body?: any) => wrapRpcResponse(client.admin.users['password-reset'].$patch({ json: body }))
         }
       }),
-      assignments: {
-        get: () => wrapRpcResponse(client.admin['teacher-student-assignments'].$get()),
+      students: {
+        class: {
+          patch: (body?: any) => wrapRpcResponse(client.admin.students.class.$patch({ json: body }))
+        }
+      },
+      classes: Object.assign((classId: number | string) => ({
+        put: (body?: any) => wrapRpcResponse(client.admin.classes[':classId'].$put({
+          param: { classId: toPathParam(classId) },
+          json: body
+        })),
+        teachers: {
+          put: (body?: any) => wrapRpcResponse(client.admin.classes[':classId'].teachers.$put({
+            param: { classId: toPathParam(classId) },
+            json: body
+          })),
+          delete: (body?: any) => wrapRpcResponse(client.admin.classes[':classId'].teachers.$delete({
+            param: { classId: toPathParam(classId) },
+            json: body
+          }))
+        },
         students: {
-          get: ({ query }: { query?: { q?: string } } = {}) =>
-            wrapRpcResponse(client.admin['teacher-student-assignments'].students.$get({
+          put: (body?: any) => wrapRpcResponse(client.admin.classes[':classId'].students.$put({
+            param: { classId: toPathParam(classId) },
+            json: body
+          })),
+          delete: (body?: any) => wrapRpcResponse(client.admin.classes[':classId'].students.$delete({
+            param: { classId: toPathParam(classId) },
+            json: body
+          }))
+        }
+      }), {
+        get: () => wrapRpcResponse(client.admin.classes.$get()),
+        post: (body?: any) => wrapRpcResponse(client.admin.classes.$post({ json: body })),
+        students: {
+          get: ({ query }: { query?: { q?: string; class_id?: string; scope?: 'all' } } = {}) =>
+            wrapRpcResponse(client.admin.classes.students.$get({
               query: {
-                q: query?.q
+                q: query?.q,
+                class_id: query?.class_id,
+                scope: query?.scope
               }
             }))
         },
-        post: ({ teacher_id, student_ids }: { teacher_id: number; student_ids: number[] }) =>
-          wrapRpcResponse(client.admin.teachers[':teacherId'].students.$put({
-            param: { teacherId: toPathParam(teacher_id) },
+        assignStudents: ({ class_id, student_ids }: { class_id: number; student_ids: number[] }) =>
+          wrapRpcResponse(client.admin.classes[':classId'].students.$put({
+            param: { classId: toPathParam(class_id) },
             json: { student_ids }
           })),
-        delete: ({ teacher_id, student_ids }: { teacher_id: number; student_ids: number[] }) =>
-          wrapRpcResponse(client.admin.teachers[':teacherId'].students.$delete({
-            param: { teacherId: toPathParam(teacher_id) },
+        removeStudents: ({ class_id, student_ids }: { class_id: number; student_ids: number[] }) =>
+          wrapRpcResponse(client.admin.classes[':classId'].students.$delete({
+            param: { classId: toPathParam(class_id) },
             json: { student_ids }
+          })),
+        assignTeachers: ({ class_id, teacher_ids }: { class_id: number; teacher_ids: number[] }) =>
+          wrapRpcResponse(client.admin.classes[':classId'].teachers.$put({
+            param: { classId: toPathParam(class_id) },
+            json: { teacher_ids }
+          })),
+        removeTeachers: ({ class_id, teacher_ids }: { class_id: number; teacher_ids: number[] }) =>
+          wrapRpcResponse(client.admin.classes[':classId'].teachers.$delete({
+            param: { classId: toPathParam(class_id) },
+            json: { teacher_ids }
           }))
-      }
+      })
     },
     student: {
       records: Object.assign(studentRecordRoute, {
@@ -306,15 +349,18 @@ export function createApiClient(token?: string | null) {
       }),
       students: Object.assign(teacherStudentRoute, {
         get: () => wrapRpcResponse(client.teacher.students.$get()),
-        search: ({ query }: { query?: { q?: string; teacher_ids?: string } } = {}) =>
+        search: ({ query }: { query?: { q?: string; class_ids?: string } } = {}) =>
           wrapRpcResponse(client.teacher.students.search.$get({
             query: {
               q: query?.q,
-              teacher_ids: query?.teacher_ids
+              class_ids: query?.class_ids
             }
           })),
         password: {
           patch: (body?: any) => wrapRpcResponse(client.teacher.students['password-reset'].$patch({ json: body }))
+        },
+        class: {
+          patch: (body?: any) => wrapRpcResponse(client.teacher.students.class.$patch({ json: body }))
         }
       }),
       statistics: {

@@ -9,6 +9,7 @@ import {
   apiError,
   batchDeleteUsersBodySchema,
   batchResetPasswordBodySchema,
+  batchUpdateStudentClassBodySchema,
   requireRole,
   roleQuerySchema,
   updateUserBodySchema,
@@ -23,44 +24,51 @@ import { authMiddleware, type AppBindings } from '../plugins/auth';
 const createUserBodySchema = z.object({
   name: z.string(),
   role: userRoleSchema,
-  teacher_uid: z.string().optional()
+  class_id: z.number().int().positive().nullable().optional()
 });
 
 const batchCreateUsersBodySchema = z.object({
   entries: z.array(createUserBodySchema).min(1)
 });
 
-const teacherStudentsBodySchema = z.object({
+const classTeachersBodySchema = z.object({
+  teacher_ids: z.array(z.number().int().positive()).min(1)
+});
+
+const classStudentsBodySchema = z.object({
   student_ids: z.array(z.number().int().positive()).min(1)
 });
-const maxImportCsvSize = 50 * 1024 * 1024;
 
-const teacherIdParamSchema = z.object({
-  teacherId: z.string().regex(/^[1-9]\d*$/)
+const createClassBodySchema = z.object({
+  name: z.string()
 });
 
-function resolveTeacherId(role: 'admin' | 'teacher' | 'student', teacherUid: string) {
-  if (!teacherUid) {
+const classStudentsQuerySchema = userSearchQuerySchema.extend({
+  scope: z.enum(['all']).optional()
+});
+
+const maxImportCsvSize = 50 * 1024 * 1024;
+
+const classIdParamSchema = z.object({
+  classId: z.string().regex(/^[1-9]\d*$/)
+});
+
+function resolveClassId(role: 'admin' | 'teacher' | 'student', classId: number | null | undefined) {
+  if (!classId) {
     return null;
   }
 
   if (role !== 'student') {
-    throw new Error('非学生不能分配管理老师。');
+    throw new Error('非学生不能分配班级。');
   }
 
-  const teacher = database.findUserByUid(teacherUid);
+  const targetClass = database.findClassById(classId);
 
-  if (!teacher || teacher.role !== 'teacher') {
-    throw new Error(`指定的教师 UID ${teacherUid} 无效或不存在。`);
+  if (!targetClass) {
+    throw new Error('指定的班级不存在。');
   }
 
-  return teacher.id;
-}
-
-function buildTeacherIdMap(teacherUids: string[]) {
-  return new Map(
-    database.findTeachersByUids([...new Set(teacherUids.filter(Boolean))]).map((teacher) => [teacher.uid, teacher.id])
-  );
+  return targetClass.id;
 }
 
 async function readImportFile(file: File) {
@@ -72,12 +80,10 @@ async function readImportFile(file: File) {
     throw new Error('CSV 文件大小不能超过 50 MiB。');
   }
 
-  return parseUserImportCsvBuffer(new Uint8Array(await file.arrayBuffer()), { columnCount: 3 });
+  return parseUserImportCsvBuffer(new Uint8Array(await file.arrayBuffer()), { columnCount: 2 });
 }
 
 function validateImportEntries(entries: CsvUserImportEntry[]) {
-  const teacherIdMap = buildTeacherIdMap(entries.map((entry) => entry.teacher_uid.trim()));
-
   return entries.map((entry) => {
     const nameError = validateName(entry.name);
 
@@ -85,29 +91,11 @@ function validateImportEntries(entries: CsvUserImportEntry[]) {
       throw new Error(`第 ${entry.lineNumber} 行错误：${nameError}`);
     }
 
-    const teacherUid = entry.teacher_uid.trim();
-    let teacherId: number | null = null;
-
-    if (teacherUid) {
-      if (entry.role !== 'student') {
-        throw new Error(`第 ${entry.lineNumber} 行错误：非学生不能分配管理老师。`);
-      }
-
-      const matchedTeacherId = teacherIdMap.get(teacherUid);
-
-      if (!matchedTeacherId) {
-        throw new Error(`第 ${entry.lineNumber} 行错误：指定的教师 UID ${teacherUid} 无效或不存在。`);
-      }
-
-      teacherId = matchedTeacherId;
-    }
-
     return {
       lineNumber: entry.lineNumber,
       name: entry.name.trim(),
       role: entry.role,
-      teacher_uid: teacherUid,
-      teacherId
+      classId: null
     };
   });
 }
@@ -143,11 +131,11 @@ export const adminRoutes = new Hono<AppBindings>()
     }
 
     try {
-      const teacherId = resolveTeacherId(body.role, body.teacher_uid?.trim() ?? '');
+      const classId = resolveClassId(body.role, body.class_id);
       const user = await database.createUser(body.name.trim(), body.role);
 
-      if (teacherId && user.role === 'student') {
-        database.assignStudentsToTeacher(teacherId, [user.id]);
+      if (classId && user.role === 'student') {
+        database.assignStudentsToClass(classId, [user.id]);
       }
 
       return c.json({
@@ -155,13 +143,12 @@ export const adminRoutes = new Hono<AppBindings>()
         user
       });
     } catch (error) {
-      return apiError(c, 400, error instanceof Error ? error.message : '教师信息无效。');
+      return apiError(c, 400, error instanceof Error ? error.message : '班级信息无效。');
     }
   })
   .post('/users/batch', zValidator('json', batchCreateUsersBodySchema, validationHook), async (c) => {
     const body = c.req.valid('json');
-    const normalized: Array<{ name: string; role: 'admin' | 'teacher' | 'student'; teacherId: number | null }> = [];
-    const teacherIdMap = buildTeacherIdMap(body.entries.map((entry) => entry.teacher_uid?.trim() ?? ''));
+    const normalized: Array<{ name: string; role: 'admin' | 'teacher' | 'student'; classId: number | null }> = [];
 
     for (let index = 0; index < body.entries.length; index += 1) {
       const entry = body.entries[index]!;
@@ -172,28 +159,13 @@ export const adminRoutes = new Hono<AppBindings>()
       }
 
       try {
-        const teacherUid = entry.teacher_uid?.trim() ?? '';
-        let teacherId: number | null = null;
-
-        if (teacherUid) {
-          if (entry.role !== 'student') {
-            throw new Error('非学生不能分配管理老师。');
-          }
-
-          teacherId = teacherIdMap.get(teacherUid) ?? null;
-
-          if (!teacherId) {
-            throw new Error(`指定的教师 UID ${teacherUid} 无效或不存在。`);
-          }
-        }
-
         normalized.push({
           name: entry.name.trim(),
           role: entry.role,
-          teacherId
+          classId: resolveClassId(entry.role, entry.class_id)
         });
       } catch (error) {
-        return apiError(c, 400, `第 ${index + 1} 行错误：${error instanceof Error ? error.message : '教师信息无效。'}`);
+        return apiError(c, 400, `第 ${index + 1} 行错误：${error instanceof Error ? error.message : '班级信息无效。'}`);
       }
     }
 
@@ -220,7 +192,7 @@ export const adminRoutes = new Hono<AppBindings>()
         encoding: parsed.encoding,
         totalCount: parsed.totalCount,
         studentCount: parsed.studentCount,
-        entries: entries.map(({ teacherId: _teacherId, ...entry }) => entry)
+        entries: entries.map(({ classId: _classId, ...entry }) => entry)
       });
     } catch (error) {
       return apiError(c, 400, error instanceof Error ? error.message : 'CSV 文件无效。');
@@ -289,7 +261,38 @@ export const adminRoutes = new Hono<AppBindings>()
       database.updateUserPassword(user.id, await hashPassword(body.password));
     }
 
+    if (body.class_id !== undefined) {
+      if (user.role !== 'student') {
+        return apiError(c, 400, '只有学生可以修改班级。');
+      }
+
+      if (body.class_id && !database.findClassById(body.class_id)) {
+        return apiError(c, 404, '班级不存在。');
+      }
+
+      database.setStudentsClass([user.id], body.class_id);
+    }
+
     return c.json({ message: '用户信息更新成功。' });
+  })
+  .patch('/students/class', zValidator('json', batchUpdateStudentClassBodySchema, validationHook), (c) => {
+    const body = c.req.valid('json');
+
+    if (body.class_id && !database.findClassById(body.class_id)) {
+      return apiError(c, 404, '班级不存在。');
+    }
+
+    const invalidStudentIds = body.ids.filter((id: number) => {
+      const student = database.findUserById(id);
+      return !student || student.role !== 'student';
+    });
+
+    if (invalidStudentIds.length > 0) {
+      return apiError(c, 400, '列表中存在无效学生。');
+    }
+
+    database.setStudentsClass(body.ids, body.class_id);
+    return c.json({ message: '班级已更新。' });
   })
   .patch('/users/password-reset', zValidator('json', batchResetPasswordBodySchema, validationHook), async (c) => {
     const body = c.req.valid('json');
@@ -331,47 +334,109 @@ export const adminRoutes = new Hono<AppBindings>()
 
     return c.json({ message: '用户删除成功。' });
   })
-  .get('/teacher-student-assignments', (c) => {
+  .get('/classes', (c) => {
     return c.json({
-      assignments: database.getAllAssignments(),
+      classes: database.getClasses(),
+      assignments: database.getAllClassAssignments(),
       teachers: database.getUsersByRole('teacher')
     });
   })
-  .get('/teacher-student-assignments/students', zValidator('query', userSearchQuerySchema, validationHook), (c) => {
-    const query = c.req.valid('query');
+  .post('/classes', zValidator('json', createClassBodySchema, validationHook), (c) => {
+    const body = c.req.valid('json');
+    const nameError = validateName(body.name);
+
+    if (nameError) {
+      return apiError(c, 400, nameError);
+    }
 
     return c.json({
-      students: database.searchStudents(query.q?.trim() ?? '')
+      message: '班级创建成功。',
+      class: database.createClass(body.name.trim())
     });
   })
-  .put('/teachers/:teacherId/students', zValidator('param', teacherIdParamSchema, validationHook), zValidator('json', teacherStudentsBodySchema, validationHook), (c) => {
-    const teacherId = Number(c.req.valid('param').teacherId);
+  .put('/classes/:classId', zValidator('param', classIdParamSchema, validationHook), zValidator('json', createClassBodySchema, validationHook), (c) => {
+    const classId = Number(c.req.valid('param').classId);
     const body = c.req.valid('json');
-    const teacher = database.findUserById(teacherId);
+    const nameError = validateName(body.name);
 
-    if (!teacher || teacher.role !== 'teacher') {
-      return apiError(c, 404, '教师不存在。');
+    if (nameError) {
+      return apiError(c, 400, nameError);
     }
 
-    const invalidStudentIds = body.student_ids.filter((id: number) => {
-      const student = database.findUserById(id);
-      return !student || student.role !== 'student';
+    if (!database.updateClassName(classId, body.name.trim())) {
+      return apiError(c, 404, '班级不存在。');
+    }
+
+    return c.json({ message: '班级信息已保存。' });
+  })
+  .get('/classes/students', zValidator('query', classStudentsQuerySchema, validationHook), (c) => {
+    const query = c.req.valid('query');
+
+    if (query.scope === 'all') {
+      return c.json({
+        students: database.getAssignedStudents()
+      });
+    }
+
+    const classId = query.class_id ? Number(query.class_id) : null;
+
+    if (classId && !database.findClassById(classId)) {
+      return apiError(c, 404, '班级不存在。');
+    }
+
+    return c.json({
+      students: database.searchStudentsForClassAssignment(query.q?.trim() ?? '', classId)
+    });
+  })
+  .put('/classes/:classId/teachers', zValidator('param', classIdParamSchema, validationHook), zValidator('json', classTeachersBodySchema, validationHook), (c) => {
+    const classId = Number(c.req.valid('param').classId);
+    const body = c.req.valid('json');
+    const targetClass = database.findClassById(classId);
+
+    if (!targetClass) {
+      return apiError(c, 404, '班级不存在。');
+    }
+
+    const invalidTeacherIds = body.teacher_ids.filter((id: number) => {
+      const teacher = database.findUserById(id);
+      return !teacher || teacher.role !== 'teacher';
     });
 
-    if (invalidStudentIds.length > 0) {
-      return apiError(c, 400, '分配列表中存在无效学生。');
+    if (invalidTeacherIds.length > 0) {
+      return apiError(c, 400, '分配列表中存在无效教师。');
     }
 
-    database.assignStudentsToTeacher(teacherId, body.student_ids);
+    database.assignTeachersToClass(classId, body.teacher_ids);
     return c.json({ message: '分配关系更新成功。' });
   })
-  .delete('/teachers/:teacherId/students', zValidator('param', teacherIdParamSchema, validationHook), zValidator('json', teacherStudentsBodySchema, validationHook), (c) => {
-    const teacherId = Number(c.req.valid('param').teacherId);
+  .delete('/classes/:classId/teachers', zValidator('param', classIdParamSchema, validationHook), zValidator('json', classTeachersBodySchema, validationHook), (c) => {
+    const classId = Number(c.req.valid('param').classId);
     const body = c.req.valid('json');
-    const teacher = database.findUserById(teacherId);
+    const targetClass = database.findClassById(classId);
 
-    if (!teacher || teacher.role !== 'teacher') {
-      return apiError(c, 404, '教师不存在。');
+    if (!targetClass) {
+      return apiError(c, 404, '班级不存在。');
+    }
+
+    const invalidTeacherIds = body.teacher_ids.filter((id: number) => {
+      const teacher = database.findUserById(id);
+      return !teacher || teacher.role !== 'teacher';
+    });
+
+    if (invalidTeacherIds.length > 0) {
+      return apiError(c, 400, '分配列表中存在无效教师。');
+    }
+
+    database.removeTeachersFromClass(classId, body.teacher_ids);
+    return c.json({ message: '分配关系更新成功。' });
+  })
+  .put('/classes/:classId/students', zValidator('param', classIdParamSchema, validationHook), zValidator('json', classStudentsBodySchema, validationHook), (c) => {
+    const classId = Number(c.req.valid('param').classId);
+    const body = c.req.valid('json');
+    const targetClass = database.findClassById(classId);
+
+    if (!targetClass) {
+      return apiError(c, 404, '班级不存在。');
     }
 
     const invalidStudentIds = body.student_ids.filter((id: number) => {
@@ -383,6 +448,27 @@ export const adminRoutes = new Hono<AppBindings>()
       return apiError(c, 400, '分配列表中存在无效学生。');
     }
 
-    database.removeStudentsFromTeacher(teacherId, body.student_ids);
+    database.assignStudentsToClass(classId, body.student_ids);
+    return c.json({ message: '分配关系更新成功。' });
+  })
+  .delete('/classes/:classId/students', zValidator('param', classIdParamSchema, validationHook), zValidator('json', classStudentsBodySchema, validationHook), (c) => {
+    const classId = Number(c.req.valid('param').classId);
+    const body = c.req.valid('json');
+    const targetClass = database.findClassById(classId);
+
+    if (!targetClass) {
+      return apiError(c, 404, '班级不存在。');
+    }
+
+    const invalidStudentIds = body.student_ids.filter((id: number) => {
+      const student = database.findUserById(id);
+      return !student || student.role !== 'student';
+    });
+
+    if (invalidStudentIds.length > 0) {
+      return apiError(c, 400, '分配列表中存在无效学生。');
+    }
+
+    database.removeStudentsFromClass(classId, body.student_ids);
     return c.json({ message: '分配关系更新成功。' });
   });

@@ -1,5 +1,9 @@
 import type {
   AppNotification,
+  ClassAssignments,
+  ClassStudentAssignment,
+  ClassSummary,
+  ClassTeacherAssignment,
   CreateUserResult,
   CsvImportEntry,
   CsvImportPreview,
@@ -9,10 +13,10 @@ import type {
   RecordStatus,
   StudentRecord,
   StudentSummary,
+  StudentWithClassSummary,
   TeacherRecord,
   TeacherRecordSummary,
   TeacherStatistics,
-  TeacherStudentAssignment,
   UploadResult,
   UserRole,
   UserSummary
@@ -22,6 +26,10 @@ export const API_URL = '/api';
 
 export type {
   AppNotification,
+  ClassAssignments,
+  ClassStudentAssignment,
+  ClassSummary,
+  ClassTeacherAssignment,
   CsvImportEntry,
   CsvImportPreview,
   NotificationType,
@@ -29,6 +37,7 @@ export type {
   RecordStatus,
   StudentRecord,
   StudentSummary,
+  StudentWithClassSummary,
   TeacherRecord,
   TeacherRecordSummary,
   TeacherStatistics,
@@ -37,7 +46,6 @@ export type {
   UserSummary
 };
 
-export type Assignment = TeacherStudentAssignment;
 export type CreatedUser = CreateUserResult;
 export type StoredUser = PublicUser;
 

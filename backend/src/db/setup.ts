@@ -44,6 +44,41 @@ export function ensureDatabaseSchema() {
   db.run(sql`create index if not exists teacher_students_teacher_idx on teacher_students(teacher_id)`);
 
   db.run(sql`
+    create table if not exists classes (
+      id integer primary key autoincrement,
+      cid text not null unique,
+      name text not null,
+      created_at text not null
+    )
+  `);
+
+  db.run(sql`create index if not exists classes_created_at_idx on classes(created_at)`);
+
+  db.run(sql`
+    create table if not exists class_teachers (
+      class_id integer not null references classes(id) on delete cascade,
+      teacher_id integer not null references users(id) on delete cascade,
+      created_at text not null,
+      primary key (class_id, teacher_id)
+    )
+  `);
+
+  db.run(sql`create index if not exists class_teachers_class_idx on class_teachers(class_id)`);
+  db.run(sql`create index if not exists class_teachers_teacher_idx on class_teachers(teacher_id)`);
+
+  db.run(sql`
+    create table if not exists class_students (
+      class_id integer not null references classes(id) on delete cascade,
+      student_id integer not null references users(id) on delete cascade,
+      created_at text not null,
+      primary key (class_id, student_id)
+    )
+  `);
+
+  db.run(sql`create unique index if not exists class_students_student_unique on class_students(student_id)`);
+  db.run(sql`create index if not exists class_students_class_idx on class_students(class_id)`);
+
+  db.run(sql`
     create table if not exists practice_records (
       id integer primary key autoincrement,
       student_id integer not null references users(id),

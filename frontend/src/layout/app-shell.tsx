@@ -23,7 +23,7 @@ const navMap: Record<UserRole, Array<{ to: string; label: string }>> = {
   admin: [
     { to: '/admin/records', label: '记录管理' },
     { to: '/admin/users', label: '用户创建' },
-    { to: '/admin/assign', label: '关系分配' },
+    { to: '/admin/assign', label: '班级管理' },
     { to: '/admin/students', label: '学生列表' },
     { to: '/admin/teachers', label: '教师列表' },
     { to: '/admin/account', label: '账号设置' }

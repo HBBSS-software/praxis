@@ -23,7 +23,9 @@ import {
   ComboboxEmpty,
   ComboboxGroup,
   ComboboxItem,
+  ComboboxLabel,
   ComboboxList,
+  ComboboxSeparator,
   useComboboxAnchor
 } from '@/components/ui/combobox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -37,7 +39,7 @@ import { toastError, toastSuccess } from '@/lib/feedback';
 import { formatDate, formatDateTime, formatDuration, normalizeDateInputValue, statusLabel } from '@/lib/format';
 import { useShiftMultiSelect } from '@/lib/shift-selection';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
-import type { CreatedUser, StudentSummary, TeacherRecord, TeacherRecordSummary, TeacherStatistics, UserSummary } from '@/lib/types';
+import type { ClassSummary, CreatedUser, StudentSummary, StudentWithClassSummary, TeacherRecord, TeacherRecordSummary, TeacherStatistics, UserSummary } from '@/lib/types';
 import { UserCredentialsResult } from '@/shared/user-credentials-result';
 import { AccountCard } from './student-pages';
 
@@ -68,7 +70,7 @@ function PageFrame({
 
 const defaultFilters = {
   student_ids: [] as number[],
-  teacher_ids: [] as number[],
+  class_ids: [] as number[],
   status: '',
   practice_after: '',
   practice_before: '',
@@ -76,11 +78,17 @@ const defaultFilters = {
   created_before: ''
 };
 
-const comboboxPageSize = 40;
+const comboboxPageSize = 50;
 
 interface UserOption {
   label: string;
   value: string;
+}
+
+interface StudentOption extends UserOption {
+  class_id: number | null;
+  class_cid: string | null;
+  class_name: string | null;
 }
 
 function toUserOption(user: Pick<UserSummary, 'id' | 'name' | 'uid'>): UserOption {
@@ -90,10 +98,20 @@ function toUserOption(user: Pick<UserSummary, 'id' | 'name' | 'uid'>): UserOptio
   };
 }
 
+function toStudentOption(user: StudentWithClassSummary): StudentOption {
+  return {
+    label: `${user.name} (${user.uid})`,
+    value: String(user.id),
+    class_id: user.class_id,
+    class_cid: user.class_cid,
+    class_name: user.class_name
+  };
+}
+
 export function TeacherDashboardPage() {
   const { token, signOut, user } = useSession();
   const { captureShiftKey, resetSelectionAnchor, updateSelection } = useShiftMultiSelect();
-  const [students, setStudents] = useState<StudentSummary[]>([]);
+  const [classes, setClasses] = useState<ClassSummary[]>([]);
   const [filters, setFilters] = useState(defaultFilters);
   const [records, setRecords] = useState<TeacherRecordSummary[]>([]);
   const [statistics, setStatistics] = useState<TeacherStatistics | null>(null);
@@ -122,7 +140,7 @@ export function TeacherDashboardPage() {
   const query = useMemo(() => {
     const params = new URLSearchParams();
     if (filters.student_ids.length > 0) params.set('student_ids', filters.student_ids.join(','));
-    if (filters.teacher_ids.length > 0) params.set('teacher_ids', filters.teacher_ids.join(','));
+    if (filters.class_ids.length > 0) params.set('class_ids', filters.class_ids.join(','));
     if (filters.status) params.set('status', filters.status);
     if (filters.practice_after) params.set('practice_after', filters.practice_after);
     if (filters.practice_before) params.set('practice_before', filters.practice_before);
@@ -139,34 +157,45 @@ export function TeacherDashboardPage() {
     if (!token) return [];
 
     try {
-      const data = await unwrapResponse<{ students: StudentSummary[] }>(
+      const data = await unwrapResponse<{ students: StudentWithClassSummary[] }>(
         createApiClient(token).teacher.students.search({
           query: {
             q: searchQuery.trim() || undefined,
-            teacher_ids: user?.role === 'admin' && filters.teacher_ids.length > 0 ? filters.teacher_ids.join(',') : undefined
+            class_ids: user?.role === 'admin' && filters.class_ids.length > 0 ? filters.class_ids.join(',') : undefined
           }
         })
       );
-      return data.students.map(toUserOption);
+      return data.students.map(toStudentOption);
     } catch (nextError) {
       if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
       return [];
     }
-  }, [filters.teacher_ids, signOut, token, user?.role]);
+  }, [filters.class_ids, signOut, token, user?.role]);
 
-  const searchTeachers = useCallback(async (searchQuery: string) => {
+  const searchClasses = useCallback(async (searchQuery: string) => {
     if (!token || user?.role !== 'admin') return [];
 
     try {
-      const data = await unwrapResponse<{ users: UserSummary[] }>(
-        createApiClient(token).admin.users.search({ query: { role: 'teacher', q: searchQuery.trim() || undefined } })
-      );
-      return data.users.map(toUserOption);
+      const normalized = searchQuery.trim().toLowerCase();
+      const nextClasses = classes.length > 0
+        ? classes
+        : (await unwrapResponse<{ classes: ClassSummary[] }>(createApiClient(token).admin.classes.get())).classes;
+
+      if (classes.length === 0) {
+        setClasses(nextClasses);
+      }
+
+      return nextClasses
+        .filter((item) => !normalized || item.name.toLowerCase().includes(normalized) || item.cid.toLowerCase().includes(normalized))
+        .map((item) => ({
+          label: `${item.name} (${item.cid})`,
+          value: String(item.id)
+        }));
     } catch (nextError) {
       if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
       return [];
     }
-  }, [signOut, token, user?.role]);
+  }, [classes, signOut, token, user?.role]);
 
   async function loadRecords() {
     if (!token) return;
@@ -177,7 +206,7 @@ export function TeacherDashboardPage() {
         createApiClient(token).teacher.records.get({
           query: {
             student_ids: filters.student_ids.length > 0 ? filters.student_ids.join(',') : undefined,
-            teacher_ids: filters.teacher_ids.length > 0 ? filters.teacher_ids.join(',') : undefined,
+            class_ids: filters.class_ids.length > 0 ? filters.class_ids.join(',') : undefined,
             status: filters.status ? (filters.status as 'approved' | 'pending' | 'rejected') : undefined,
             practice_after: filters.practice_after || undefined,
             practice_before: filters.practice_before || undefined,
@@ -310,13 +339,13 @@ export function TeacherDashboardPage() {
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {user?.role === 'admin' ? (
                 <UserMultiCombobox
-                  label="管理老师"
-                  value={filters.teacher_ids}
-                  loadOptions={searchTeachers}
-                  onChange={(value) => setFilters((current) => ({ ...current, teacher_ids: value, student_ids: [] }))}
+                  label="班级"
+                  value={filters.class_ids}
+                  loadOptions={searchClasses}
+                  onChange={(value) => setFilters((current) => ({ ...current, class_ids: value, student_ids: [] }))}
                 />
               ) : null}
-              <UserMultiCombobox
+              <StudentMultiCombobox
                 label="学生"
                 value={filters.student_ids}
                 loadOptions={searchStudents}
@@ -589,12 +618,14 @@ export function TeacherDashboardPage() {
 export function TeacherStudentsPage() {
   const { token, signOut } = useSession();
   const { captureShiftKey, resetSelectionAnchor, updateSelection } = useShiftMultiSelect();
-  const [students, setStudents] = useState<StudentSummary[]>([]);
+  const [students, setStudents] = useState<StudentWithClassSummary[]>([]);
+  const [classes, setClasses] = useState<ClassSummary[]>([]);
   const [durations, setDurations] = useState<Record<number, number>>({});
-  const [sortBy, setSortBy] = useState<'duration-desc' | 'duration-asc' | 'uid-asc' | 'uid-desc' | 'name-asc' | 'name-desc'>('duration-desc');
+  const [sortBy, setSortBy] = useState<'duration-desc' | 'duration-asc' | 'uid-asc' | 'uid-desc' | 'name-asc' | 'name-desc' | 'class-asc' | 'class-desc'>('duration-desc');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [editing, setEditing] = useState<StudentSummary | null>(null);
-  const [form, setForm] = useState({ name: '', password: '' });
+  const [editing, setEditing] = useState<StudentWithClassSummary | null>(null);
+  const [form, setForm] = useState({ name: '', password: '', class_id: null as number | null });
+  const [batchClassId, setBatchClassId] = useState<number | null>(null);
   const [batchResetOpen, setBatchResetOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [resetResult, setResetResult] = useState<CreatedUser[]>([]);
@@ -602,10 +633,16 @@ export function TeacherStudentsPage() {
   async function loadData() {
     if (!token) return;
     try {
-      const [studentsData, statisticsData] = await Promise.all([
-        unwrapResponse<{ students: StudentSummary[] }>(createApiClient(token).teacher.students.get()),
-        unwrapResponse<{ statistics: TeacherStatistics }>(createApiClient(token).teacher.statistics.get())
+      const api = createApiClient(token);
+      const [studentsData, statisticsData, classesData] = await Promise.all([
+        unwrapResponse<{ students: StudentWithClassSummary[] }>(api.teacher.students.get()),
+        unwrapResponse<{ statistics: TeacherStatistics }>(api.teacher.statistics.get()),
+        unwrapResponse<{ classes: ClassSummary[] }>(api.admin.classes.get())
+          .catch(() => ({ classes: [] }))
       ]);
+
+      const managedClassIds = new Set(studentsData.students.map((student) => student.class_id).filter((id): id is number => Boolean(id)));
+      setClasses(classesData.classes.filter((item) => managedClassIds.has(item.id)));
 
       setStudents(studentsData.students);
       setDurations(Object.fromEntries(statisticsData.statistics.student_durations.map((item) => [item.student_id, item.total_duration])));
@@ -634,6 +671,8 @@ export function TeacherStudentsPage() {
       if (sortBy === 'duration-asc') return leftDuration - rightDuration || left.name.localeCompare(right.name);
       if (sortBy === 'uid-desc') return right.uid.localeCompare(left.uid);
       if (sortBy === 'uid-asc') return left.uid.localeCompare(right.uid);
+      if (sortBy === 'class-asc') return compareStudentClass(left, right, 'asc');
+      if (sortBy === 'class-desc') return compareStudentClass(left, right, 'desc');
       if (sortBy === 'name-desc') return right.name.localeCompare(left.name);
       return left.name.localeCompare(right.name);
     });
@@ -641,7 +680,7 @@ export function TeacherStudentsPage() {
   const sortedStudentIds = useMemo(() => sortedStudents.map((student) => student.id), [sortedStudents]);
   const selectedStudentIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
-  const columns = useMemo<Array<ColumnDef<StudentSummary>>>(() => [
+  const columns = useMemo<Array<ColumnDef<StudentWithClassSummary>>>(() => [
     {
       id: 'select',
       header: () => (
@@ -691,6 +730,18 @@ export function TeacherStudentsPage() {
       cell: ({ row }) => <span className="font-medium">{row.original.name}</span>
     },
     {
+      id: 'class',
+      header: () => (
+        <SortButton
+          active={sortBy === 'class-asc' || sortBy === 'class-desc'}
+          descending={sortBy === 'class-desc'}
+          label="班级"
+          onClick={() => setSortBy((current) => current === 'class-asc' ? 'class-desc' : 'class-asc')}
+        />
+      ),
+      cell: ({ row }) => formatStudentClass(row.original)
+    },
+    {
       id: 'duration',
       header: () => (
         <SortButton
@@ -716,7 +767,7 @@ export function TeacherStudentsPage() {
           variant="outline"
           onClick={() => {
             setEditing(row.original);
-            setForm({ name: row.original.name, password: '' });
+            setForm({ name: row.original.name, password: '', class_id: row.original.class_id });
           }}
         >
           <UserRoundCog className="size-4" />
@@ -739,6 +790,20 @@ export function TeacherStudentsPage() {
               <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-slate-100 p-3">
                 <p className="mr-2 text-sm text-muted-foreground">已选 {selectedIds.length} 人</p>
                 <Button size="sm" onClick={() => setBatchResetOpen(true)}>重置密码</Button>
+                <Select value={batchClassId ? String(batchClassId) : '__none__'} onValueChange={(value) => setBatchClassId(value === '__none__' ? null : Number(value))}>
+                  <SelectTrigger className="h-8 w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">未分配班级</SelectItem>
+                    {classes.map((item) => (
+                      <SelectItem key={item.id} value={String(item.id)}>
+                        {item.name} ({item.cid})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button size="sm" variant="outline" onClick={() => void updateSelectedClass()}>批量改班级</Button>
               </div>
             ) : <div />}
             <FilterSelect
@@ -749,6 +814,8 @@ export function TeacherStudentsPage() {
                 { label: '总时长从低到高', value: 'duration-asc' },
                 { label: 'UID 从小到大', value: 'uid-asc' },
                 { label: 'UID 从大到小', value: 'uid-desc' },
+                { label: '班级 CID 从小到大', value: 'class-asc' },
+                { label: '班级 CID 从大到小', value: 'class-desc' },
                 { label: '姓名 A-Z', value: 'name-asc' },
                 { label: '姓名 Z-A', value: 'name-desc' }
               ]}
@@ -780,6 +847,7 @@ export function TeacherStudentsPage() {
           <div className="space-y-4">
             <Field label="姓名"><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></Field>
             <Field label="新密码"><Input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} /></Field>
+            <SelectClass classes={classes} value={form.class_id} onChange={(class_id) => setForm((current) => ({ ...current, class_id }))} />
             <Button
               onClick={async () => {
                 if (!token || !editing) return;
@@ -787,7 +855,8 @@ export function TeacherStudentsPage() {
                   await unwrapResponse(
                     createApiClient(token).teacher.students({ id: editing.id }).put({
                       name: form.name.trim(),
-                      password: form.password
+                      password: form.password,
+                      class_id: form.class_id
                     })
                   );
                   setEditing(null);
@@ -839,6 +908,22 @@ export function TeacherStudentsPage() {
       />
     </PageFrame>
   );
+
+  async function updateSelectedClass() {
+    if (!token || selectedIds.length === 0) return;
+
+    try {
+      await unwrapResponse(createApiClient(token).teacher.students.class.patch({ ids: selectedIds, class_id: batchClassId }));
+      toastSuccess('班级已更新。');
+      await loadData();
+    } catch (nextError) {
+      if (nextError instanceof ApiResponseError && nextError.status === 401) {
+        signOut();
+        return;
+      }
+      toastError(nextError, '更新失败。');
+    }
+  }
 }
 
 export function AccountSettingsPage({ allowNameChange }: { allowNameChange: boolean }) {
@@ -851,6 +936,54 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <Label>{label}</Label>
       {children}
     </div>
+  );
+}
+
+function formatStudentClass(student: Pick<StudentWithClassSummary, 'class_cid' | 'class_name'>) {
+  return student.class_cid && student.class_name ? `${student.class_cid} ${student.class_name}` : <span className="text-muted-foreground">未分配</span>;
+}
+
+function getStudentClassSortValue(student: Pick<StudentWithClassSummary, 'class_cid'>) {
+  return student.class_cid ?? null;
+}
+
+function compareStudentClass(left: Pick<StudentWithClassSummary, 'class_cid' | 'uid'>, right: Pick<StudentWithClassSummary, 'class_cid' | 'uid'>, direction: 'asc' | 'desc') {
+  const leftClass = getStudentClassSortValue(left);
+  const rightClass = getStudentClassSortValue(right);
+
+  if (!leftClass && !rightClass) return left.uid.localeCompare(right.uid);
+  if (!leftClass) return 1;
+  if (!rightClass) return -1;
+
+  const result = leftClass.localeCompare(rightClass) || left.uid.localeCompare(right.uid);
+  return direction === 'asc' ? result : -result;
+}
+
+function SelectClass({
+  classes,
+  value,
+  onChange
+}: {
+  classes: ClassSummary[];
+  value: number | null;
+  onChange: (value: number | null) => void;
+}) {
+  return (
+    <Field label="班级">
+      <Select value={value ? String(value) : '__none__'} onValueChange={(nextValue) => onChange(nextValue === '__none__' ? null : Number(nextValue))}>
+        <SelectTrigger className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">未分配班级</SelectItem>
+          {classes.map((item) => (
+            <SelectItem key={item.id} value={String(item.id)}>
+              {item.name} ({item.cid})
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Field>
   );
 }
 
@@ -1040,6 +1173,144 @@ const UserMultiCombobox = memo(function UserMultiCombobox({
                 </ComboboxCollection>
               </ComboboxGroup>
             ) : null}
+          </ComboboxList>
+        </ComboboxContent>
+      </Combobox>
+    </Field>
+  );
+});
+
+const StudentMultiCombobox = memo(function StudentMultiCombobox({
+  label,
+  value,
+  loadOptions,
+  onChange
+}: {
+  label: string;
+  value: number[];
+  loadOptions: (query: string) => Promise<StudentOption[]>;
+  onChange: (value: number[]) => void;
+}) {
+  const anchorRef = useComboboxAnchor();
+  const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query);
+  const [options, setOptions] = useState<StudentOption[]>([]);
+  const [selectedOptionMap, setSelectedOptionMap] = useState(() => new Map<string, StudentOption>());
+  const [visibleCount, setVisibleCount] = useState(comboboxPageSize);
+  const [loading, setLoading] = useState(false);
+  const selectedOptions = useMemo(() => value.map((id) => selectedOptionMap.get(String(id))).filter((option): option is StudentOption => Boolean(option)), [selectedOptionMap, value]);
+  const visibleOptions = useMemo(() => options.slice(0, visibleCount), [options, visibleCount]);
+  const visibleGroups = useMemo(() => {
+    const groupMap = new Map<string, { value: string; items: StudentOption[] }>();
+
+    for (const option of visibleOptions) {
+      const groupKey = option.class_id ? String(option.class_id) : '__unassigned__';
+      const groupLabel = option.class_id && option.class_name && option.class_cid
+        ? `${option.class_name} (${option.class_cid})`
+        : '未分配';
+      const group = groupMap.get(groupKey) ?? { value: groupLabel, items: [] };
+      group.items.push(option);
+      groupMap.set(groupKey, group);
+    }
+
+    return [...groupMap.values()];
+  }, [visibleOptions]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMatchedOptions() {
+      setLoading(true);
+      const nextOptions = await loadOptions(debouncedQuery);
+
+      if (cancelled) return;
+
+      setOptions(nextOptions);
+      setLoading(false);
+      setSelectedOptionMap((current) => {
+        const next = new Map(current);
+        for (const option of nextOptions) {
+          next.set(option.value, option);
+        }
+        return next;
+      });
+    }
+
+    void loadMatchedOptions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedQuery, loadOptions]);
+
+  useEffect(() => {
+    setVisibleCount(comboboxPageSize);
+  }, [debouncedQuery]);
+
+  function loadMoreOptions(event: React.UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+
+    if (element.scrollTop + element.clientHeight < element.scrollHeight - 24) {
+      return;
+    }
+
+    setVisibleCount((current) => Math.min(current + comboboxPageSize, options.length));
+  }
+
+  return (
+    <Field label={label}>
+      <Combobox
+        multiple
+        items={visibleGroups}
+        inputValue={query}
+        value={selectedOptions}
+        onInputValueChange={setQuery}
+        filter={null}
+        onValueChange={(nextValue) => {
+          setSelectedOptionMap((current) => {
+            const next = new Map(current);
+            for (const option of nextValue) {
+              next.set(option.value, option);
+            }
+            return next;
+          });
+          onChange(nextValue.map((item) => Number(item.value)).filter((id) => Number.isInteger(id) && id > 0));
+        }}
+        itemToStringLabel={(item: { value: string; items?: StudentOption[]; label?: string }) => item.label ?? item.value}
+        itemToStringValue={(item: { value: string }) => item.value}
+        isItemEqualToValue={(item: { value: string; items?: StudentOption[] }, selected: StudentOption) => !item.items && item.value === selected.value}
+      >
+        <ComboboxChips ref={anchorRef} className="min-h-9 w-full">
+          {selectedOptions.map((option) => (
+            <ComboboxChip key={option.value}>{option.label}</ComboboxChip>
+          ))}
+          <ComboboxChipsInput placeholder={selectedOptions.length > 0 ? '' : `筛选${label}`} />
+          {selectedOptions.length > 0 ? (
+            <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange([])}>
+              <X className="size-3" />
+            </Button>
+          ) : null}
+        </ComboboxChips>
+        <ComboboxContent anchor={anchorRef} className="max-h-80">
+          <ComboboxEmpty>暂无可选项</ComboboxEmpty>
+          <ComboboxList onScroll={loadMoreOptions}>
+            {loading ? (
+              <div className="px-2 py-2 text-sm text-muted-foreground">加载中...</div>
+            ) : (
+              (group, index) => (
+                <ComboboxGroup key={group.value} items={group.items}>
+                  <ComboboxLabel>{group.value}</ComboboxLabel>
+                  <ComboboxCollection>
+                    {(option: StudentOption) => (
+                      <ComboboxItem key={option.value} value={option}>
+                        {option.label}
+                      </ComboboxItem>
+                    )}
+                  </ComboboxCollection>
+                  {index < visibleGroups.length - 1 && <ComboboxSeparator />}
+                </ComboboxGroup>
+              )
+            )}
           </ComboboxList>
         </ComboboxContent>
       </Combobox>

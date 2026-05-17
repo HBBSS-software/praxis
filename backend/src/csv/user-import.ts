@@ -10,7 +10,6 @@ export interface CsvUserImportEntry {
   lineNumber: number;
   name: string;
   role: UserRole;
-  teacher_uid: string;
 }
 
 export interface ParsedCsvUserImport {
@@ -38,7 +37,6 @@ export function parseUserImportCsvText(
   const entries = rows.map(({ lineNumber, columns }) => {
     const name = columns[0].trim();
     const role = columns[1].trim();
-    const teacherUid = columns[2].trim();
 
     if (!name) {
       throw new Error(`第 ${lineNumber} 行姓名为空。`);
@@ -48,15 +46,10 @@ export function parseUserImportCsvText(
       throw new Error(`第 ${lineNumber} 行角色无效，只能是 student/teacher/admin。`);
     }
 
-    if (role !== 'student' && teacherUid) {
-      throw new Error(`第 ${lineNumber} 行错误：非学生该列（管理老师 UID）必须留空。`);
-    }
-
     return {
       lineNumber,
       name,
-      role: role as UserRole,
-      teacher_uid: teacherUid
+      role: role as UserRole
     };
   });
 

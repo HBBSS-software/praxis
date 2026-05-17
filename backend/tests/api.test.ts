@@ -168,12 +168,12 @@ describe('database bootstrap and users', () => {
   });
 
   test('creates users and filters by role', async () => {
-    const teacher = database.findUserByUid('T00001');
+    const targetClass = database.createClass('批量班级');
     const createdStudent = await database.createUser('测试学生', 'student');
     const createdUsers = await database.createUsers([
       { name: '批量教师', role: 'teacher' },
       { name: '批量管理员', role: 'admin' },
-      { name: '批量学生', role: 'student', teacherId: teacher?.id }
+      { name: '批量学生', role: 'student', classId: targetClass.id }
     ]);
 
     expect(createdStudent.uid).toMatch(/^S/);
@@ -184,7 +184,7 @@ describe('database bootstrap and users', () => {
     expect(createdUsers[1]?.uid).toMatch(/^A/);
     expect(createdUsers[2]?.uid).toMatch(/^S/);
     expect(database.getUsersByRole('teacher').some((user) => user.uid === createdUsers[0]?.uid)).toBe(true);
-    expect(createdUsers[2] ? database.getStudentTeacherId(createdUsers[2].id) : null).toBe(teacher?.id ?? null);
+    expect(createdUsers[2] ? database.getStudentClassId(createdUsers[2].id) : null).toBe(targetClass.id);
     expect(database.isValidRole('teacher')).toBe(true);
     expect(database.isValidRole('invalid-role')).toBe(false);
   });
@@ -209,23 +209,26 @@ describe('database bootstrap and users', () => {
 });
 
 describe('assignments, records and notifications', () => {
-  test('assigns students to a teacher and supports removing assignments', () => {
+  test('assigns teachers and students to a class and supports removing assignments', () => {
     const teacher = database.findUserByUid('T00001');
     const students = database.getAllStudents().slice(0, 2);
+    const targetClass = database.createClass('测试班级');
 
     expect(teacher).toBeTruthy();
     expect(students).toHaveLength(2);
 
-    database.assignStudentsToTeacher(teacher!.id, students.map((student) => student.id));
+    database.assignTeachersToClass(targetClass.id, [teacher!.id]);
+    database.assignStudentsToClass(targetClass.id, students.map((student) => student.id));
 
     expect(database.getTeacherStudents(teacher!.id)).toHaveLength(2);
-    expect(database.getStudentTeacherId(students[0]!.id)).toBe(teacher!.id);
-    expect(database.getAllAssignments()).toHaveLength(2);
+    expect(database.getStudentClassId(students[0]!.id)).toBe(targetClass.id);
+    expect(database.getAllClassAssignments().students.length).toBeGreaterThanOrEqual(2);
+    expect(database.getAllClassAssignments().teachers.some((assignment) => assignment.class_id === targetClass.id && assignment.teacher_id === teacher!.id)).toBe(true);
 
-    database.removeStudentsFromTeacher(teacher!.id, [students[0]!.id]);
+    database.removeStudentsFromClass(targetClass.id, [students[0]!.id]);
 
     expect(database.getTeacherStudents(teacher!.id)).toHaveLength(1);
-    expect(database.getStudentTeacherId(students[0]!.id)).toBeNull();
+    expect(database.getStudentClassId(students[0]!.id)).toBeNull();
   });
 
   test('creates, updates and deletes practice records', () => {
@@ -304,8 +307,10 @@ describe('assignments, records and notifications', () => {
   test('keeps deleted student records visible to the assigned teacher', async () => {
     const teacher = database.findUserByUid('T00001');
     const student = await database.createUser('将被删除的学生', 'student');
+    const targetClass = database.createClass('历史班级');
 
-    database.assignStudentsToTeacher(teacher!.id, [student.id]);
+    database.assignTeachersToClass(targetClass.id, [teacher!.id]);
+    database.assignStudentsToClass(targetClass.id, [student.id]);
 
     const record = database.createRecord({
       student_id: student.id,
@@ -456,7 +461,9 @@ describe('route behavior', () => {
 
     const student = database.findUserByUid('S00001')!;
     const teacher = database.findUserByUid('T00001')!;
-    database.assignStudentsToTeacher(teacher.id, [student.id]);
+    const targetClass = database.createClass('图片权限班级');
+    database.assignTeachersToClass(targetClass.id, [teacher.id]);
+    database.assignStudentsToClass(targetClass.id, [student.id]);
 
     const studentToken = await loginAs('S00001', 'student-pass-01');
     const otherStudentToken = await loginAs('S00002', 'student-pass-02');
@@ -615,7 +622,7 @@ describe('route behavior', () => {
     await setNormalPassword('A00001', 'admin-pass-01');
     const token = await loginAs('A00001', 'admin-pass-01');
     const oversizedCsv = new Uint8Array(50 * 1024 * 1024 + 1);
-    oversizedCsv.set(new TextEncoder().encode('张三,student,T00001\n'));
+    oversizedCsv.set(new TextEncoder().encode('张三,student\n'));
     const formData = new FormData();
     formData.set('file', new File([oversizedCsv], 'users.csv', { type: 'text/csv' }));
 
@@ -682,21 +689,21 @@ describe('login attempt lockout', () => {
 
 describe('CSV user import parser', () => {
   test('parses UTF-8 CSV text content', () => {
-    const parsed = parseUserImportCsvText('张三,student,T00001\n李老师,teacher,\n', { columnCount: 3 });
+    const parsed = parseUserImportCsvText('张三,student\n李老师,teacher\n', { columnCount: 2 });
 
     expect(parsed.encoding).toBe('utf-8');
     expect(parsed.totalCount).toBe(2);
     expect(parsed.studentCount).toBe(1);
-    expect(parsed.entries[0]?.teacher_uid).toBe('T00001');
+    expect(parsed.entries[0]?.name).toBe('张三');
   });
 
   test('parses UTF-16 CSV buffer', () => {
     const utf16Buffer = new Uint8Array([
       0xff, 0xfe,
-      0x20, 0x5f, 0x09, 0x4e, 0x2c, 0x00, 0x73, 0x00, 0x74, 0x00, 0x75, 0x00, 0x64, 0x00, 0x65, 0x00, 0x6e, 0x00, 0x74, 0x00, 0x2c, 0x00, 0x54, 0x00, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00, 0x31, 0x00, 0x0a, 0x00
+      0x20, 0x5f, 0x09, 0x4e, 0x2c, 0x00, 0x73, 0x00, 0x74, 0x00, 0x75, 0x00, 0x64, 0x00, 0x65, 0x00, 0x6e, 0x00, 0x74, 0x00, 0x0a, 0x00
     ]);
 
-    const parsed = parseUserImportCsvBuffer(utf16Buffer, { columnCount: 3 });
+    const parsed = parseUserImportCsvBuffer(utf16Buffer, { columnCount: 2 });
 
     expect(parsed.encoding).toBe('utf-16');
     expect(parsed.totalCount).toBe(1);
@@ -706,17 +713,17 @@ describe('CSV user import parser', () => {
   test('parses GBK CSV buffer', () => {
     const gbkBuffer = new Uint8Array([
       0xd5, 0xc5, 0xc8, 0xfd, 0x2c, 0x73, 0x74, 0x75, 0x64, 0x65, 0x6e, 0x74,
-      0x2c, 0x54, 0x30, 0x30, 0x30, 0x30, 0x31, 0x0a
+      0x0a
     ]);
 
-    const parsed = parseUserImportCsvBuffer(gbkBuffer, { columnCount: 3 });
+    const parsed = parseUserImportCsvBuffer(gbkBuffer, { columnCount: 2 });
 
     expect(parsed.encoding).toBe('gbk');
     expect(parsed.entries[0]?.name).toBe('张三');
   });
 
   test('rejects unsupported encodings', () => {
-    expect(() => parseUserImportCsvBuffer(new Uint8Array([0xff, 0xff, 0xff]), { columnCount: 3 })).toThrow(
+    expect(() => parseUserImportCsvBuffer(new Uint8Array([0xff, 0xff, 0xff]), { columnCount: 2 })).toThrow(
       '无法识别 CSV 文件编码，仅支持 UTF-8、UTF-16 和 GBK。'
     );
   });

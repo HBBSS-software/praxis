@@ -7,6 +7,7 @@ import database from '../database';
 import {
   apiError,
   batchResetPasswordBodySchema,
+  batchUpdateStudentClassBodySchema,
   batchReviewBodySchema,
   buildReviewNotificationMessage,
   isValidUploadPath,
@@ -61,12 +62,24 @@ function canManageStudent(studentId: number, userId: number, role: UserRole) {
   return database.getTeacherStudentIds(userId).includes(studentId);
 }
 
+function canManageClass(classId: number | null, userId: number, role: UserRole) {
+  if (!classId) {
+    return role === 'admin';
+  }
+
+  if (role === 'admin') {
+    return true;
+  }
+
+  return database.getTeacherClassIds(userId).includes(classId);
+}
+
 function parseRecordFilters(query: Record<string, unknown>): RecordFilters {
   return normalizeRecordFilters({
     student_id: typeof query.student_id === 'string' ? Number(query.student_id) : null,
     student_ids: typeof query.student_ids === 'string' && query.student_ids ? query.student_ids.split(',').map(Number) : null,
-    teacher_id: typeof query.teacher_id === 'string' ? Number(query.teacher_id) : null,
-    teacher_ids: typeof query.teacher_ids === 'string' && query.teacher_ids ? query.teacher_ids.split(',').map(Number) : null,
+    class_id: typeof query.class_id === 'string' ? Number(query.class_id) : null,
+    class_ids: typeof query.class_ids === 'string' && query.class_ids ? query.class_ids.split(',').map(Number) : null,
     status: typeof query.status === 'string' ? query.status as RecordFilters['status'] : null,
     practice_after: typeof query.practice_after === 'string' && query.practice_after ? query.practice_after : null,
     practice_before: typeof query.practice_before === 'string' && query.practice_before ? query.practice_before : null,
@@ -255,17 +268,17 @@ export const teacherRoutes = new Hono<AppBindings>()
 
     return c.json({
       students: user.role === 'admin'
-        ? database.getAllStudents()
-        : database.getTeacherStudents(user.id)
+        ? database.searchStudents('')
+        : database.searchStudents('', getVisibleStudentIds(user.id, user.role))
     });
   })
   .get('/teacher/students/search', zValidator('query', userSearchQuerySchema, validationHook), (c) => {
     const user = c.get('user')!;
     const query = c.req.valid('query');
-    const teacherIds = user.role === 'admin' ? parseIdList(query.teacher_ids) : undefined;
+    const classIds = user.role === 'admin' ? parseIdList(query.class_ids) : undefined;
 
     return c.json({
-      students: database.searchStudents(query.q?.trim() ?? '', getVisibleStudentIds(user.id, user.role), teacherIds)
+      students: database.searchStudents(query.q?.trim() ?? '', getVisibleStudentIds(user.id, user.role), classIds)
     });
   })
   .get('/teacher/students/:id/records', zValidator('param', recordIdParamSchema, validationHook), (c) => {
@@ -306,7 +319,42 @@ export const teacherRoutes = new Hono<AppBindings>()
       database.updateUserPassword(studentId, await hashPassword(body.password));
     }
 
+    if (body.class_id !== undefined) {
+      if (!canManageClass(body.class_id, user.id, user.role)) {
+        return apiError(c, 403, '无权分配到该班级。');
+      }
+
+      database.setStudentsClass([studentId], body.class_id);
+    }
+
     return c.json({ message: '学生信息更新成功。' });
+  })
+  .patch('/teacher/students/class', zValidator('json', batchUpdateStudentClassBodySchema, validationHook), (c) => {
+    const body = c.req.valid('json');
+    const user = c.get('user')!;
+    const ids = user.role === 'admin'
+      ? body.ids
+      : body.ids.filter((id: number) => canManageStudent(id, user.id, user.role));
+
+    if (ids.length === 0) {
+      return apiError(c, 400, '请选择至少一个可管理的学生。');
+    }
+
+    if (!canManageClass(body.class_id, user.id, user.role)) {
+      return apiError(c, 403, '无权分配到该班级。');
+    }
+
+    const invalidStudentIds = ids.filter((id: number) => {
+      const student = database.findUserById(id);
+      return !student || student.role !== 'student';
+    });
+
+    if (invalidStudentIds.length > 0) {
+      return apiError(c, 400, '列表中存在无效学生。');
+    }
+
+    database.setStudentsClass(ids, body.class_id);
+    return c.json({ message: '班级已更新。' });
   })
   .patch('/teacher/students/password-reset', zValidator('json', batchResetPasswordBodySchema, validationHook), async (c) => {
     const body = c.req.valid('json');
