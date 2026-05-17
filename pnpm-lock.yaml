@@ -62,6 +62,9 @@ importers:
       drizzle-orm:
         specifier: 1.0.0-beta.21
         version: 1.0.0-beta.21(@types/mssql@9.1.11(@azure/core-client@1.10.1))(mssql@11.0.1(@azure/core-client@1.10.1))(zod@3.25.76)
+      fast-csv:
+        specifier: ^5.0.7
+        version: 5.0.7
       hono:
         specifier: ^4.9.8
         version: 4.12.12
@@ -584,6 +587,12 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@fast-csv/format@5.0.7':
+    resolution: {integrity: sha512-VdypoRxv7PF+LsyPouTMKdB0d76hync+gLpgdNqfqVK44MsgW4oiCJSdrki2FisWT7v2QGUYDHjp4L7w5oO6gw==}
+
+  '@fast-csv/parse@5.0.7':
+    resolution: {integrity: sha512-MeuDeQj0DVmIGWky8STaKtvj232Gpq8kjrOGplHJ99Os7OO5CetVfXvUGqX/3GHYFOUsz6FK8isWtDY2XTFNWw==}
 
   '@floating-ui/core@1.7.5':
     resolution: {integrity: sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ==}
@@ -2265,6 +2274,10 @@ packages:
     resolution: {integrity: sha512-knvyeauYhqjOYvQ66MznSMs83wmHrCycNEN6Ao+2AeYEfxUIkuiVxdEa1qlGEPK+We3n0THiDciYSsCcgW/DoA==}
     engines: {node: '>=12.0.0'}
 
+  fast-csv@5.0.7:
+    resolution: {integrity: sha512-KirK9wYIUXF/xTYmg/jv9ehUWbQ4Faf6XutuJKlEz72eoqKMMLdCnz+rGDeBSjpV2wwkHQnLSuJ5i+FRRnzZwA==}
+    engines: {node: '>=10.0.0'}
+
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
     engines: {node: '>=12.0.0'}
@@ -2452,6 +2465,12 @@ packages:
     resolution: {integrity: sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ==}
     engines: {node: '>= 12.0.0'}
 
+  lodash.escaperegexp@4.1.2:
+    resolution: {integrity: sha512-TM9YBvyC84ZxE3rgfefxUWiQKLilstD6k7PTGt6wfbtXF8ixIJLOL3VYyV/z+ZiPLsVxAsKAFVwWlWeb2Y8Yyw==}
+
+  lodash.groupby@4.6.0:
+    resolution: {integrity: sha512-5dcWxm23+VAoz+awKmBaiBvzox8+RqMgFhi7UvX9DHZr2HdxHXM/Wrf8cfKpsW37RNrvtPn6hSwNqurSILbmJw==}
+
   lodash.includes@4.3.0:
     resolution: {integrity: sha512-W3Bx6mdkRTGtlJISOvVD/lbqjTlPPUDTMnlXZFnVwi9NKJ6tiAk6LVdlhZMm17VZisqhKcgzpO5Wz91PCt5b0w==}
 
@@ -2472,6 +2491,9 @@ packages:
 
   lodash.once@4.1.1:
     resolution: {integrity: sha512-Sb487aTOCr9drQVL8pIxOzVhafOjZN9UU54hiN8PU3uAiSV7lx1yYNpbNmex2PK6dSJoNTSJUUswT651yww3Mg==}
+
+  lodash.uniq@4.5.0:
+    resolution: {integrity: sha512-xfBaXQd9ryd9dlSDvnvI0lvxfLJlYAZzXomUYzLKtUeOQvOP5piqAWuGtrhWeqaXK9hhoM/iyJc5AV+XfsX3HQ==}
 
   loupe@3.2.1:
     resolution: {integrity: sha512-CdzqowRJCeLU72bHvWqwRBBlLcMEtIvGrlvef74kMnV2AolS9Y8xUv1I0U/MNAWMhBlKIoyuEgoJ0t/bbwHbLQ==}
@@ -3316,6 +3338,16 @@ snapshots:
 
   '@esbuild/win32-x64@0.27.7':
     optional: true
+
+  '@fast-csv/format@5.0.7':
+    dependencies:
+      lodash.escaperegexp: 4.1.2
+
+  '@fast-csv/parse@5.0.7':
+    dependencies:
+      lodash.escaperegexp: 4.1.2
+      lodash.groupby: 4.6.0
+      lodash.uniq: 4.5.0
 
   '@floating-ui/core@1.7.5':
     dependencies:
@@ -4786,6 +4818,11 @@ snapshots:
 
   expect-type@1.3.0: {}
 
+  fast-csv@5.0.7:
+    dependencies:
+      '@fast-csv/format': 5.0.7
+      '@fast-csv/parse': 5.0.7
+
   fdir@6.5.0(picomatch@4.0.4):
     optionalDependencies:
       picomatch: 4.0.4
@@ -4934,6 +4971,10 @@ snapshots:
       lightningcss-win32-arm64-msvc: 1.32.0
       lightningcss-win32-x64-msvc: 1.32.0
 
+  lodash.escaperegexp@4.1.2: {}
+
+  lodash.groupby@4.6.0: {}
+
   lodash.includes@4.3.0: {}
 
   lodash.isboolean@3.0.3: {}
@@ -4947,6 +4988,8 @@ snapshots:
   lodash.isstring@4.0.1: {}
 
   lodash.once@4.1.1: {}
+
+  lodash.uniq@4.5.0: {}
 
   loupe@3.2.1: {}
 

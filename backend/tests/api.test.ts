@@ -43,6 +43,7 @@ let recordLoginFailure: LoginAttemptsModule['recordLoginFailure'];
 let clearLoginFailures: LoginAttemptsModule['clearLoginFailures'];
 let parseUserImportCsvBuffer: CsvImportModule['parseUserImportCsvBuffer'];
 let parseUserImportCsvText: CsvImportModule['parseUserImportCsvText'];
+let createUserCredentialsCsv: CsvImportModule['createUserCredentialsCsv'];
 let hashPassword: PasswordModule['hashPassword'];
 let isLowCostPasswordHash: PasswordModule['isLowCostPasswordHash'];
 
@@ -62,6 +63,7 @@ beforeAll(async () => {
   clearLoginFailures = loginAttemptsModule.clearLoginFailures;
   parseUserImportCsvBuffer = csvImportModule.parseUserImportCsvBuffer;
   parseUserImportCsvText = csvImportModule.parseUserImportCsvText;
+  createUserCredentialsCsv = csvImportModule.createUserCredentialsCsv;
   hashPassword = passwordModule.hashPassword;
   isLowCostPasswordHash = passwordModule.isLowCostPasswordHash;
 
@@ -667,6 +669,58 @@ describe('route behavior', () => {
     expect((await readJson(response)).error).toBe('CSV 文件大小不能超过 50 MiB。');
   });
 
+  test('imports csv users with optional student class cid', async () => {
+    await setNormalPassword('A00001', 'admin-pass-01');
+    const token = await loginAs('A00001', 'admin-pass-01');
+    const targetClass = database.createClass('CSV 导入班级');
+    const formData = new FormData();
+    formData.set('file', new File([`CSV 学生,student,${targetClass.cid}\nCSV 教师,teacher,\nCSV 管理员,admin,\n`], 'users.csv', { type: 'text/csv' }));
+
+    const response = await formRequest('/api/admin/users/import', formData, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+    const payload = await readJson(response);
+
+    expect(response.status).toBe(200);
+    expect((payload.users as Array<{ id: number; role: string }>)).toHaveLength(3);
+    expect(payload.credentialsCsv).toContain('"name","uid","role","password"');
+    const student = (payload.users as Array<{ id: number; role: string }>).find((user) => user.role === 'student');
+    expect(student ? database.getStudentClassId(student.id) : null).toBe(targetClass.id);
+  });
+
+  test('rejects csv class cid problems by role', async () => {
+    await setNormalPassword('A00001', 'admin-pass-01');
+    const token = await loginAs('A00001', 'admin-pass-01');
+    const teacherClassData = new FormData();
+    teacherClassData.set('file', new File(['CSV 教师,teacher,C0001\n'], 'users.csv', { type: 'text/csv' }));
+
+    const teacherClassResponse = await formRequest('/api/admin/users/import/preview', teacherClassData, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+
+    expect(teacherClassResponse.status).toBe(400);
+    expect((await readJson(teacherClassResponse)).error).toBe('第 1 行错误：非学生不能填写班级 ID。');
+
+    const missingClassData = new FormData();
+    missingClassData.set('file', new File(['CSV 学生,student,Cffff\n'], 'users.csv', { type: 'text/csv' }));
+
+    const missingClassResponse = await formRequest('/api/admin/users/import/preview', missingClassData, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+
+    expect(missingClassResponse.status).toBe(400);
+    expect((await readJson(missingClassResponse)).error).toBe('第 1 行错误：班级 ID 不存在或错误。');
+  });
+
   test('locks failed logins per uid and source without blocking other accounts from the same address', async () => {
     await setNormalPassword('S00001', 'student-pass-01');
     await setNormalPassword('S00002', 'student-pass-02');
@@ -718,42 +772,65 @@ describe('login attempt lockout', () => {
 });
 
 describe('CSV user import parser', () => {
-  test('parses UTF-8 CSV text content', () => {
-    const parsed = parseUserImportCsvText('张三,student\n李老师,teacher\n', { columnCount: 2 });
+  test('parses UTF-8 CSV text content', async () => {
+    const parsed = await parseUserImportCsvText('张三,student,\n李老师,teacher,\n', { columnCount: 3 });
 
     expect(parsed.encoding).toBe('utf-8');
     expect(parsed.totalCount).toBe(2);
     expect(parsed.studentCount).toBe(1);
     expect(parsed.entries[0]?.name).toBe('张三');
+    expect(parsed.entries[0]?.classCid).toBeNull();
   });
 
-  test('parses UTF-16 CSV buffer', () => {
-    const utf16Buffer = new Uint8Array([
-      0xff, 0xfe,
-      0x20, 0x5f, 0x09, 0x4e, 0x2c, 0x00, 0x73, 0x00, 0x74, 0x00, 0x75, 0x00, 0x64, 0x00, 0x65, 0x00, 0x6e, 0x00, 0x74, 0x00, 0x0a, 0x00
+  test('parses CSV text content with class cid', async () => {
+    const parsed = await parseUserImportCsvText('张三,student,C0001\n李老师,teacher,\n', { columnCount: 3 });
+
+    expect(parsed.totalCount).toBe(2);
+    expect(parsed.entries[0]?.classCid).toBe('C0001');
+    expect(parsed.entries[1]?.classCid).toBeNull();
+  });
+
+  test('generates user credentials CSV with escaping', async () => {
+    const csv = await createUserCredentialsCsv([
+      { id: 1, name: '张,三', uid: 'S00001', role: 'student', password: 'abc12345' }
     ]);
 
-    const parsed = parseUserImportCsvBuffer(utf16Buffer, { columnCount: 2 });
+    expect(csv).toBe('"name","uid","role","password"\n"张,三","S00001","student","abc12345"\n');
+  });
+
+  test('rejects two-column CSV rows', async () => {
+    await expect(parseUserImportCsvText('张三,student\n', { columnCount: 3 })).rejects.toThrow(
+      '第 1 行格式无效，必须包含 3 列。'
+    );
+  });
+
+  test('parses UTF-16 CSV buffer', async () => {
+    const utf16Buffer = new Uint8Array([
+      0xff, 0xfe,
+      0x20, 0x5f, 0x09, 0x4e, 0x2c, 0x00, 0x73, 0x00, 0x74, 0x00, 0x75, 0x00, 0x64, 0x00, 0x65, 0x00, 0x6e, 0x00, 0x74, 0x00, 0x2c, 0x00, 0x0a, 0x00
+    ]);
+
+    const parsed = await parseUserImportCsvBuffer(utf16Buffer, { columnCount: 3 });
 
     expect(parsed.encoding).toBe('utf-16');
     expect(parsed.totalCount).toBe(1);
     expect(parsed.entries[0]?.name).toBe('张三');
   });
 
-  test('parses GBK CSV buffer', () => {
+  test('parses GBK CSV buffer', async () => {
     const gbkBuffer = new Uint8Array([
       0xd5, 0xc5, 0xc8, 0xfd, 0x2c, 0x73, 0x74, 0x75, 0x64, 0x65, 0x6e, 0x74,
-      0x0a
+      0x2c, 0x0a
     ]);
 
-    const parsed = parseUserImportCsvBuffer(gbkBuffer, { columnCount: 2 });
+    const parsed = await parseUserImportCsvBuffer(gbkBuffer, { columnCount: 3 });
 
     expect(parsed.encoding).toBe('gbk');
     expect(parsed.entries[0]?.name).toBe('张三');
   });
 
-  test('rejects unsupported encodings', () => {
-    expect(() => parseUserImportCsvBuffer(new Uint8Array([0xff, 0xff, 0xff]), { columnCount: 2 })).toThrow(
+  test('rejects unsupported encodings', async () => {
+    await expect(parseUserImportCsvBuffer(new Uint8Array([0xff, 0xff, 0xff]), { columnCount: 3 })).rejects.toThrow(
       '无法识别 CSV 文件编码，仅支持 UTF-8、UTF-16 和 GBK。'
     );
   });

@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
 import { hashPassword } from '../auth/password';
+import { createUserCredentialsCsv } from '../csv/user-import';
 import database from '../database';
 import {
   apiError,
@@ -392,7 +393,8 @@ export const teacherRoutes = new Hono<AppBindings>()
 
     return c.json({
       message: `成功重置 ${users.length} 个学生的密码。`,
-      users
+      users,
+      credentialsCsv: await createUserCredentialsCsv(users)
     });
   })
   .get('/teacher/statistics', (c) => {

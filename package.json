@@ -42,6 +42,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "drizzle-orm": "1.0.0-beta.21",
+    "fast-csv": "^5.0.7",
     "hono": "^4.9.8",
     "jose": "^6.1.0",
     "lucide-react": "^0.577.0",

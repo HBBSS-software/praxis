@@ -185,6 +185,7 @@ export interface CsvImportEntry {
   lineNumber: number;
   name: string;
   role: UserRole;
+  class_cid: string | null;
 }
 
 export interface CsvImportPreview {
@@ -193,4 +194,8 @@ export interface CsvImportPreview {
   totalCount: number;
   studentCount: number;
   entries: CsvImportEntry[];
+}
+
+export interface UserCredentialsCsvResult {
+  credentialsCsv: string;
 }

@@ -39,7 +39,7 @@ import { toastError, toastSuccess } from '@/lib/feedback';
 import { formatDate, formatDateTime, formatDuration, normalizeDateInputValue, statusLabel } from '@/lib/format';
 import { useShiftMultiSelect } from '@/lib/shift-selection';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
-import type { ClassSummary, CreatedUser, StudentSummary, StudentWithClassSummary, TeacherRecord, TeacherRecordSummary, TeacherStatistics, UserSummary } from '@/lib/types';
+import type { ClassSummary, CreatedUser, CreatedUsersPayload, StudentSummary, StudentWithClassSummary, TeacherRecord, TeacherRecordSummary, TeacherStatistics, UserSummary } from '@/lib/types';
 import { UserCredentialsResult } from '@/shared/user-credentials-result';
 import { AccountCard } from './student-pages';
 
@@ -79,6 +79,11 @@ const defaultFilters = {
 };
 
 const comboboxPageSize = 50;
+
+type CredentialsResult = {
+  users: CreatedUser[];
+  credentialsCsv: string;
+};
 
 interface UserOption {
   label: string;
@@ -628,7 +633,7 @@ export function TeacherStudentsPage() {
   const [batchClassId, setBatchClassId] = useState<number | null>(null);
   const [batchResetOpen, setBatchResetOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
-  const [resetResult, setResetResult] = useState<CreatedUser[]>([]);
+  const [resetResult, setResetResult] = useState<CredentialsResult | null>(null);
 
   async function loadData() {
     if (!token) return;
@@ -827,12 +832,13 @@ export function TeacherStudentsPage() {
           ) : (
             <DataTable batchSize={60} columns={columns} data={sortedStudents} />
           )}
-          {resetResult.length > 0 ? (
+          {resetResult ? (
             <UserCredentialsResult
               autoDownload
-              users={resetResult}
+              users={resetResult.users}
+              credentialsCsv={resetResult.credentialsCsv}
               filename="reset_teacher_students.csv"
-              summary={`成功重置 ${resetResult.length} 个学生的密码。`}
+              summary={`成功重置 ${resetResult.users.length} 个学生的密码。`}
             />
           ) : null}
         </CardContent>
@@ -889,11 +895,11 @@ export function TeacherStudentsPage() {
 
           try {
             setResetLoading(true);
-            const data = await unwrapResponse<{ message: string; users: CreatedUser[] }>(
+            const data = await unwrapResponse<CreatedUsersPayload>(
               createApiClient(token).teacher.students.password.patch({ ids: selectedIds })
             );
             setBatchResetOpen(false);
-            setResetResult(data.users);
+            setResetResult({ users: data.users, credentialsCsv: data.credentialsCsv });
             toastSuccess(`已重置 ${data.users.length} 个学生的密码。`);
           } catch (nextError) {
             if (nextError instanceof ApiResponseError && nextError.status === 401) {

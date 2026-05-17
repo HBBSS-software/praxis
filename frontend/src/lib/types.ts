@@ -50,6 +50,18 @@ export type {
 export type CreatedUser = CreateUserResult;
 export type StoredUser = PublicUser;
 
+export interface CreatedUsersPayload {
+  message: string;
+  users: CreatedUser[];
+  credentialsCsv: string;
+}
+
+export interface CreatedUserPayload {
+  message: string;
+  user: CreatedUser;
+  credentialsCsv: string;
+}
+
 export interface AppRuntimeConfig {
   upload_image_max_size_bytes: number;
 }

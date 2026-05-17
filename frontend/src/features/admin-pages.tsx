@@ -34,11 +34,16 @@ import { toastError, toastSuccess } from '@/lib/feedback';
 import { formatDateTime, formatDuration } from '@/lib/format';
 import { useShiftMultiSelect } from '@/lib/shift-selection';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
-import type { ClassAssignments, ClassSummary, CreatedUser, CsvImportEntry, CsvImportPreview, StudentSummary, StudentWithClassSummary, TeacherStatistics, UserRole, UserSummary } from '@/lib/types';
+import type { ClassAssignments, ClassSummary, CreatedUser, CreatedUserPayload, CreatedUsersPayload, CsvImportEntry, CsvImportPreview, StudentSummary, StudentWithClassSummary, TeacherStatistics, UserRole, UserSummary } from '@/lib/types';
 import { EmptyState } from '@/shared/empty-state';
 import { UserCredentialsResult } from '@/shared/user-credentials-result';
 
 const comboboxPageSize = 50;
+
+type CredentialsResult = {
+  users: CreatedUser[];
+  credentialsCsv: string;
+};
 
 function AdminPageFrame({
   title,
@@ -65,13 +70,13 @@ export function AdminUsersPage() {
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const [classes, setClasses] = useState<ClassSummary[]>([]);
   const [singleForm, setSingleForm] = useState({ name: '', role: 'student' as UserRole, class_id: null as number | null });
-  const [singleResult, setSingleResult] = useState<CreatedUser | null>(null);
+  const [singleResult, setSingleResult] = useState<CredentialsResult | null>(null);
   const [csvFileName, setCsvFileName] = useState('');
   const [csvEncoding, setCsvEncoding] = useState<CsvImportPreview['encoding'] | null>(null);
-  const [csvResult, setCsvResult] = useState<CreatedUser[]>([]);
+  const [csvResult, setCsvResult] = useState<CredentialsResult | null>(null);
   const [csvImporting, setCsvImporting] = useState(false);
   const [batchEntries, setBatchEntries] = useState([{ name: '', role: 'student' as UserRole, class_id: null as number | null }]);
-  const [batchResult, setBatchResult] = useState<CreatedUser[]>([]);
+  const [batchResult, setBatchResult] = useState<CredentialsResult | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -121,8 +126,8 @@ export function AdminUsersPage() {
                     if (!token) return;
 
                     try {
-                      const data = await unwrapResponse<{ message: string; user: CreatedUser }>(createApiClient(token).admin.users.post(singleForm));
-                      setSingleResult(data.user);
+                      const data = await unwrapResponse<CreatedUserPayload>(createApiClient(token).admin.users.post(singleForm));
+                      setSingleResult({ users: [data.user], credentialsCsv: data.credentialsCsv });
                       toastSuccess('账号创建成功。');
                     } catch (error) {
                       if (error instanceof ApiResponseError && error.status === 401) {
@@ -138,7 +143,7 @@ export function AdminUsersPage() {
                   创建账号
                 </Button>
               </div>
-              {singleResult ? <UserCredentialsResult users={[singleResult]} filename="created_user.csv" summary="成功生成 1 个账号。" /> : null}
+              {singleResult ? <UserCredentialsResult users={singleResult.users} credentialsCsv={singleResult.credentialsCsv} filename="created_user.csv" summary="成功生成 1 个账号。" /> : null}
             </CardContent>
           </Card>
         </TabsContent>
@@ -149,9 +154,9 @@ export function AdminUsersPage() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="space-y-1.5">
                   <CardTitle>CSV 导入</CardTitle>
-                  <CardDescription>不包含表头，格式参见<CsvImportExampleDialog />。支持 UTF-8、UTF-16 和 GBK 编码。</CardDescription>
+                  <CardDescription>不包含表头，点击<CsvFormatDialog><Button className="h-auto p-0 text-sm" variant="link">此处</Button></CsvFormatDialog>查看格式。支持 UTF-8、UTF-16 和 GBK 编码。</CardDescription>
                 </div>
-                <CsvImportExampleDialog />
+                <CsvFormatDialog><Button className="h-auto p-0 text-sm" variant="link">格式</Button></CsvFormatDialog>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -166,7 +171,7 @@ export function AdminUsersPage() {
                   const file = event.target.files?.[0];
                   if (!file) return;
 
-                  setCsvResult([]);
+                  setCsvResult(null);
                   setCsvFileName('');
                   setCsvEncoding(null);
 
@@ -185,7 +190,7 @@ export function AdminUsersPage() {
                   try {
                     setCsvImporting(true);
                     const data = await importUserCsv(file, token);
-                    setCsvResult(data.users);
+                    setCsvResult({ users: data.users, credentialsCsv: data.credentialsCsv });
                     setCsvFileName(file.name);
                     setCsvEncoding(data.encoding);
                     toastSuccess(`成功导入 ${data.users.length} 个账号。`);
@@ -213,7 +218,7 @@ export function AdminUsersPage() {
                   </p>
                 ) : null}
               </div>
-              {csvResult.length ? <UserCredentialsResult users={csvResult} filename="imported_users.csv" summary={`成功生成 ${csvResult.length} 个账号。`} /> : null}
+              {csvResult ? <UserCredentialsResult users={csvResult.users} credentialsCsv={csvResult.credentialsCsv} filename="imported_users.csv" summary={`成功生成 ${csvResult.users.length} 个账号。`} /> : null}
             </CardContent>
           </Card>
         </TabsContent>
@@ -304,8 +309,8 @@ export function AdminUsersPage() {
                     }
 
                     try {
-                      const data = await unwrapResponse<{ message: string; users: CreatedUser[] }>(createApiClient(token).admin.users.batch.post({ entries }));
-                      setBatchResult(data.users);
+                      const data = await unwrapResponse<CreatedUsersPayload>(createApiClient(token).admin.users.batch.post({ entries }));
+                      setBatchResult({ users: data.users, credentialsCsv: data.credentialsCsv });
                       toastSuccess(`成功创建 ${data.users.length} 个账号。`);
                     } catch (error) {
                       if (error instanceof ApiResponseError && error.status === 401) {
@@ -320,7 +325,7 @@ export function AdminUsersPage() {
                   批量创建
                 </Button>
               </div>
-              {batchResult.length ? <UserCredentialsResult users={batchResult} filename="batch_created_users.csv" summary={`成功生成 ${batchResult.length} 个账号。`} /> : null}
+              {batchResult ? <UserCredentialsResult users={batchResult.users} credentialsCsv={batchResult.credentialsCsv} filename="batch_created_users.csv" summary={`成功生成 ${batchResult.users.length} 个账号。`} /> : null}
             </CardContent>
           </Card>
         </TabsContent>
@@ -445,57 +450,57 @@ export function AdminAssignmentsPage() {
 
           return (
             <div key={item.id}>
-            <ClassSummaryCard
-              classItem={item}
-              teachers={classTeachers}
-              students={classStudents}
-              onEdit={() => setEditingClassId(item.id)}
-            />
-            <Dialog open={editingClassId === item.id} onOpenChange={(open) => setEditingClassId(open ? item.id : null)}>
-              <DialogContent className="sm:max-w-4xl">
-                <ClassEditorCard
-                  mode="edit"
-                  classItem={item}
-                  teachers={teachers}
-                  teacherIds={teacherIds}
-                  students={classStudents}
-                  token={token}
-                  signOut={signOut}
-                  onCancel={() => setEditingClassId(null)}
-                  onSave={async (name, nextTeacherIds, nextStudentIds) => {
-                    if (!token) return;
+              <ClassSummaryCard
+                classItem={item}
+                teachers={classTeachers}
+                students={classStudents}
+                onEdit={() => setEditingClassId(item.id)}
+              />
+              <Dialog open={editingClassId === item.id} onOpenChange={(open) => setEditingClassId(open ? item.id : null)}>
+                <DialogContent className="sm:max-w-4xl">
+                  <ClassEditorCard
+                    mode="edit"
+                    classItem={item}
+                    teachers={teachers}
+                    teacherIds={teacherIds}
+                    students={classStudents}
+                    token={token}
+                    signOut={signOut}
+                    onCancel={() => setEditingClassId(null)}
+                    onSave={async (name, nextTeacherIds, nextStudentIds) => {
+                      if (!token) return;
 
-                    const api = createApiClient(token);
-                    const currentTeacherSet = new Set(teacherIds);
-                    const nextTeacherSet = new Set(nextTeacherIds);
-                    const addTeacherIds = nextTeacherIds.filter((id) => !currentTeacherSet.has(id));
-                    const removeTeacherIds = teacherIds.filter((id) => !nextTeacherSet.has(id));
-                    const currentStudentIds = classStudents.map((student) => student.id);
-                    const currentStudentSet = new Set(currentStudentIds);
-                    const nextStudentSet = new Set(nextStudentIds);
-                    const addStudentIds = nextStudentIds.filter((id) => !currentStudentSet.has(id));
-                    const removeStudentIds = currentStudentIds.filter((id) => !nextStudentSet.has(id));
+                      const api = createApiClient(token);
+                      const currentTeacherSet = new Set(teacherIds);
+                      const nextTeacherSet = new Set(nextTeacherIds);
+                      const addTeacherIds = nextTeacherIds.filter((id) => !currentTeacherSet.has(id));
+                      const removeTeacherIds = teacherIds.filter((id) => !nextTeacherSet.has(id));
+                      const currentStudentIds = classStudents.map((student) => student.id);
+                      const currentStudentSet = new Set(currentStudentIds);
+                      const nextStudentSet = new Set(nextStudentIds);
+                      const addStudentIds = nextStudentIds.filter((id) => !currentStudentSet.has(id));
+                      const removeStudentIds = currentStudentIds.filter((id) => !nextStudentSet.has(id));
 
-                    await unwrapResponse(api.admin.classes(item.id).put({ name }));
-                    if (addTeacherIds.length > 0) {
-                      await unwrapResponse(api.admin.classes.assignTeachers({ class_id: item.id, teacher_ids: addTeacherIds }));
-                    }
-                    if (removeTeacherIds.length > 0) {
-                      await unwrapResponse(api.admin.classes.removeTeachers({ class_id: item.id, teacher_ids: removeTeacherIds }));
-                    }
-                    if (addStudentIds.length > 0) {
-                      await unwrapResponse(api.admin.classes.assignStudents({ class_id: item.id, student_ids: addStudentIds }));
-                    }
-                    if (removeStudentIds.length > 0) {
-                      await unwrapResponse(api.admin.classes.removeStudents({ class_id: item.id, student_ids: removeStudentIds }));
-                    }
-                    setEditingClassId(null);
-                    toastSuccess('班级信息已保存。');
-                    await loadData();
-                  }}
-                />
-              </DialogContent>
-            </Dialog>
+                      await unwrapResponse(api.admin.classes(item.id).put({ name }));
+                      if (addTeacherIds.length > 0) {
+                        await unwrapResponse(api.admin.classes.assignTeachers({ class_id: item.id, teacher_ids: addTeacherIds }));
+                      }
+                      if (removeTeacherIds.length > 0) {
+                        await unwrapResponse(api.admin.classes.removeTeachers({ class_id: item.id, teacher_ids: removeTeacherIds }));
+                      }
+                      if (addStudentIds.length > 0) {
+                        await unwrapResponse(api.admin.classes.assignStudents({ class_id: item.id, student_ids: addStudentIds }));
+                      }
+                      if (removeStudentIds.length > 0) {
+                        await unwrapResponse(api.admin.classes.removeStudents({ class_id: item.id, student_ids: removeStudentIds }));
+                      }
+                      setEditingClassId(null);
+                      toastSuccess('班级信息已保存。');
+                      await loadData();
+                    }}
+                  />
+                </DialogContent>
+              </Dialog>
             </div>
           );
         })}
@@ -530,7 +535,7 @@ function UserListPage({
   const [form, setForm] = useState({ name: '', password: '' });
   const [batchResetOpen, setBatchResetOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
-  const [resetResult, setResetResult] = useState<CreatedUser[]>([]);
+  const [resetResult, setResetResult] = useState<CredentialsResult | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UserSummary | null>(null);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -674,12 +679,13 @@ function UserListPage({
           ) : (
             <DataTable columns={columns} data={sortedUsers} />
           )}
-          {resetResult.length > 0 ? (
+          {resetResult ? (
             <UserCredentialsResult
               autoDownload
-              users={resetResult}
+              users={resetResult.users}
+              credentialsCsv={resetResult.credentialsCsv}
               filename="reset_teachers.csv"
-              summary={`成功重置 ${resetResult.length} 个教师的密码。`}
+              summary={`成功重置 ${resetResult.users.length} 个教师的密码。`}
             />
           ) : null}
         </CardContent>
@@ -738,11 +744,11 @@ function UserListPage({
 
           try {
             setResetLoading(true);
-            const data = await unwrapResponse<{ message: string; users: CreatedUser[] }>(
+            const data = await unwrapResponse<CreatedUsersPayload>(
               createApiClient(token).admin.users.password.patch({ ids: selectedIds })
             );
             setBatchResetOpen(false);
-            setResetResult(data.users);
+            setResetResult({ users: data.users, credentialsCsv: data.credentialsCsv });
             toastSuccess(`已重置 ${data.users.length} 个教师的密码。`);
           } catch (error) {
             if (error instanceof ApiResponseError && error.status === 401) {
@@ -1394,7 +1400,7 @@ function AdminStudentListPage() {
   const [batchClassId, setBatchClassId] = useState<number | null>(null);
   const [batchResetOpen, setBatchResetOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
-  const [resetResult, setResetResult] = useState<CreatedUser[]>([]);
+  const [resetResult, setResetResult] = useState<CredentialsResult | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StudentWithClassSummary | null>(null);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -1598,12 +1604,13 @@ function AdminStudentListPage() {
           ) : (
             <DataTable batchSize={60} columns={columns} data={sortedStudents} />
           )}
-          {resetResult.length > 0 ? (
+          {resetResult ? (
             <UserCredentialsResult
               autoDownload
-              users={resetResult}
+              users={resetResult.users}
+              credentialsCsv={resetResult.credentialsCsv}
               filename="reset_students.csv"
-              summary={`成功重置 ${resetResult.length} 个学生的密码。`}
+              summary={`成功重置 ${resetResult.users.length} 个学生的密码。`}
             />
           ) : null}
         </CardContent>
@@ -1664,11 +1671,11 @@ function AdminStudentListPage() {
 
           try {
             setResetLoading(true);
-            const data = await unwrapResponse<{ message: string; users: CreatedUser[] }>(
+            const data = await unwrapResponse<CreatedUsersPayload>(
               createApiClient(token).admin.users.password.patch({ ids: selectedIds })
             );
             setBatchResetOpen(false);
-            setResetResult(data.users);
+            setResetResult({ users: data.users, credentialsCsv: data.credentialsCsv });
             toastSuccess(`已重置 ${data.users.length} 个学生的密码。`);
           } catch (error) {
             if (error instanceof ApiResponseError && error.status === 401) {
@@ -1786,42 +1793,22 @@ function SortButton({
   );
 }
 
-const CSV_IMPORT_EXAMPLE_ROWS: CsvImportEntry[] = [
-  { lineNumber: 1, name: '小奶龙', role: 'student' },
-  { lineNumber: 2, name: '大奶龙', role: 'teacher' },
-  { lineNumber: 3, name: '超级奶龙', role: 'admin' }
-];
-
-function CsvImportExampleDialog() {
-  const columns = useMemo<Array<ColumnDef<CsvImportEntry>>>(() => [
-    { accessorKey: 'name', header: '姓名' },
-    { accessorKey: 'role', header: '角色' }
-  ], []);
-
+function CsvFormatDialog({ children }: { children: React.ReactNode }) {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button className="h-auto p-0 text-sm" variant="link">示例</Button>
+        {children}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>CSV 示例</DialogTitle>
-          <DialogDescription>导入文件不包含表头。</DialogDescription>
+          <DialogTitle>CSV 格式</DialogTitle>
+          <DialogDescription>导入文件不包含表头，格式为 <code>姓名,用户类型,班级ID</code>，其中用户类型可以为 <code>student</code>、<code>teacher</code> 或 <code>admin</code>。对于 <code>student</code>，班级 ID 选填；对于 <code>teacher</code> 和 <code>admin</code>，不要填写班级 ID。以下是一个示例：</DialogDescription>
         </DialogHeader>
-        <Tabs defaultValue="source">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="source">源码</TabsTrigger>
-            <TabsTrigger value="table">表格</TabsTrigger>
-          </TabsList>
-          <TabsContent value="source" className="mt-4">
-            <pre className="overflow-x-auto rounded-xl border border-border/70 bg-muted/30 p-4 text-sm leading-6">
-              {CSV_IMPORT_EXAMPLE_ROWS.map((row) => `${row.name},${row.role}`).join('\n')}
-            </pre>
-          </TabsContent>
-          <TabsContent value="table" className="mt-4">
-            <DataTable batchSize={10} columns={columns} data={CSV_IMPORT_EXAMPLE_ROWS} />
-          </TabsContent>
-        </Tabs>
+        <pre className="overflow-x-auto rounded-xl border border-border/70 bg-muted/30 p-4 text-sm leading-6">
+          {`小奶龙,student,C0001
+大奶龙,teacher,
+超级奶龙,admin,`}
+        </pre>
       </DialogContent>
     </Dialog>
   );

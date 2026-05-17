@@ -506,6 +506,11 @@ class SQLiteDatabase {
     return row ? toClassSummary(row) : null;
   }
 
+  findClassByCid(cid: string) {
+    const row = db.select().from(classes).where(eq(classes.cid, cid)).get();
+    return row ? toClassSummary(row) : null;
+  }
+
   updateClassName(id: number, name: string) {
     const result = db.update(classes).set({ name }).where(eq(classes.id, id)).run();
     return result.changes > 0;

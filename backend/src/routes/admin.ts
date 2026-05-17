@@ -3,7 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
 import { hashPassword } from '../auth/password';
-import { parseUserImportCsvBuffer, type CsvUserImportEntry } from '../csv/user-import';
+import { createUserCredentialsCsv, parseUserImportCsvBuffer, type CsvUserImportEntry } from '../csv/user-import';
 import database from '../database';
 import {
   apiError,
@@ -80,24 +80,41 @@ async function readImportFile(file: File) {
     throw new Error('CSV 文件大小不能超过 50 MiB。');
   }
 
-  return parseUserImportCsvBuffer(new Uint8Array(await file.arrayBuffer()), { columnCount: 2 });
+  return parseUserImportCsvBuffer(new Uint8Array(await file.arrayBuffer()), { columnCount: 3 });
 }
 
 function validateImportEntries(entries: CsvUserImportEntry[]) {
   return entries.map((entry) => {
     const nameError = validateName(entry.name);
+    const classCid = entry.classCid ? normalizeClassCid(entry.classCid) : null;
 
     if (nameError) {
       throw new Error(`第 ${entry.lineNumber} 行错误：${nameError}`);
+    }
+
+    if (entry.role !== 'student' && classCid) {
+      throw new Error(`第 ${entry.lineNumber} 行错误：非学生不能填写班级 ID。`);
+    }
+
+    const targetClass = classCid ? database.findClassByCid(classCid) : null;
+
+    if (entry.role === 'student' && classCid && !targetClass) {
+      throw new Error(`第 ${entry.lineNumber} 行错误：班级 ID 不存在或错误。`);
     }
 
     return {
       lineNumber: entry.lineNumber,
       name: entry.name.trim(),
       role: entry.role,
-      classId: null
+      classId: targetClass?.id ?? null,
+      class_cid: classCid
     };
   });
+}
+
+function normalizeClassCid(value: string) {
+  const trimmed = value.trim();
+  return trimmed ? `${trimmed[0]?.toUpperCase() ?? ''}${trimmed.slice(1).toLowerCase()}` : null;
 }
 
 async function parseCsvBody(c: Context<AppBindings>) {
@@ -140,7 +157,8 @@ export const adminRoutes = new Hono<AppBindings>()
 
       return c.json({
         message: '用户创建成功。',
-        user
+        user,
+        credentialsCsv: await createUserCredentialsCsv([user])
       });
     } catch (error) {
       return apiError(c, 400, error instanceof Error ? error.message : '班级信息无效。');
@@ -173,7 +191,8 @@ export const adminRoutes = new Hono<AppBindings>()
 
     return c.json({
       message: `成功创建 ${users.length} 个用户。`,
-      users
+      users,
+      credentialsCsv: await createUserCredentialsCsv(users)
     });
   })
   .post('/users/import/preview', async (c) => {
@@ -207,13 +226,14 @@ export const adminRoutes = new Hono<AppBindings>()
       }
 
       const parsed = await readImportFile(file);
-      const entries = validateImportEntries(parsed.entries);
+      const entries = validateImportEntries(parsed.entries).map(({ class_cid: _classCid, ...entry }) => entry);
       const users = await database.createUsers(entries);
 
       return c.json({
         message: `成功导入 ${users.length} 个用户。`,
         encoding: parsed.encoding,
-        users
+        users,
+        credentialsCsv: await createUserCredentialsCsv(users)
       });
     } catch (error) {
       return apiError(c, 400, error instanceof Error ? error.message : 'CSV 导入失败。');
@@ -300,7 +320,8 @@ export const adminRoutes = new Hono<AppBindings>()
 
     return c.json({
       message: `成功重置 ${users.length} 个用户的密码。`,
-      users
+      users,
+      credentialsCsv: await createUserCredentialsCsv(users)
     });
   })
   .delete('/users', zValidator('json', batchDeleteUsersBodySchema, validationHook), (c) => {

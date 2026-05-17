@@ -8,18 +8,20 @@ import type { CreatedUser } from '@/lib/types';
 
 function UserCredentialsResult({
   users,
+  credentialsCsv,
   filename,
   autoDownload = false,
   summary
 }: {
   users: CreatedUser[];
+  credentialsCsv: string;
   filename: string;
   autoDownload?: boolean;
   summary: string;
 }) {
   const downloadRef = useRef<HTMLAnchorElement | null>(null);
-  const csvData = useMemo(() => `name,uid,role,password\n${users.map((user) => `${user.name},${user.uid},${user.role},${user.password}`).join('\n')}`, [users]);
-  const downloadUrl = useMemo(() => URL.createObjectURL(new Blob([csvData], { type: 'text/csv' })), [csvData]);
+  const shouldShowUsers = users.length <= 100;
+  const downloadUrl = useMemo(() => URL.createObjectURL(new Blob([credentialsCsv], { type: 'text/csv' })), [credentialsCsv]);
 
   useEffect(() => () => URL.revokeObjectURL(downloadUrl), [downloadUrl]);
 
@@ -51,7 +53,7 @@ function UserCredentialsResult({
           </a>
         </Button>
       </div>
-      <DataTable batchSize={20} columns={columns} data={users} />
+      {shouldShowUsers ? <DataTable batchSize={20} columns={columns} data={users} /> : null}
     </div>
   );
 }

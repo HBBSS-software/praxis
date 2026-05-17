@@ -1,4 +1,6 @@
-import type { UserRole } from '../models';
+import { parseString, writeToString } from 'fast-csv';
+
+import type { CreateUserResult, UserRole } from '../models';
 
 export type CsvEncoding = 'utf-8' | 'utf-16' | 'gbk';
 
@@ -10,6 +12,7 @@ export interface CsvUserImportEntry {
   lineNumber: number;
   name: string;
   role: UserRole;
+  classCid: string | null;
 }
 
 export interface ParsedCsvUserImport {
@@ -23,20 +26,21 @@ const UTF8_BOM = [0xef, 0xbb, 0xbf] as const;
 const UTF16_LE_BOM = [0xff, 0xfe] as const;
 const UTF16_BE_BOM = [0xfe, 0xff] as const;
 
-export function parseUserImportCsvBuffer(buffer: Uint8Array, requirement: CsvFormatRequirement): ParsedCsvUserImport {
+export async function parseUserImportCsvBuffer(buffer: Uint8Array, requirement: CsvFormatRequirement): Promise<ParsedCsvUserImport> {
   const { encoding, text } = decodeCsvBuffer(buffer);
-  return parseUserImportCsvText(text, requirement, encoding);
+  return await parseUserImportCsvText(text, requirement, encoding);
 }
 
-export function parseUserImportCsvText(
+export async function parseUserImportCsvText(
   text: string,
   requirement: CsvFormatRequirement,
   forcedEncoding: CsvEncoding = 'utf-8'
-): ParsedCsvUserImport {
-  const rows = parseCsvRows(text, requirement);
+): Promise<ParsedCsvUserImport> {
+  const rows = await parseCsvRows(text, requirement);
   const entries = rows.map(({ lineNumber, columns }) => {
-    const name = columns[0].trim();
-    const role = columns[1].trim();
+    const name = columns[0] ?? '';
+    const role = columns[1] ?? '';
+    const classCid = columns[2] ?? '';
 
     if (!name) {
       throw new Error(`第 ${lineNumber} 行姓名为空。`);
@@ -49,7 +53,8 @@ export function parseUserImportCsvText(
     return {
       lineNumber,
       name,
-      role: role as UserRole
+      role: role as UserRole,
+      classCid: classCid || null
     };
   });
 
@@ -59,6 +64,22 @@ export function parseUserImportCsvText(
     studentCount: entries.filter((entry) => entry.role === 'student').length,
     entries
   };
+}
+
+export async function createUserCredentialsCsv(users: CreateUserResult[]) {
+  return await writeToString(
+    users.map((user) => ({
+      name: user.name,
+      uid: user.uid,
+      role: user.role,
+      password: user.password
+    })),
+    {
+      headers: ['name', 'uid', 'role', 'password'],
+      quoteColumns: true,
+      includeEndRowDelimiter: true
+    }
+  );
 }
 
 function decodeCsvBuffer(buffer: Uint8Array): { encoding: CsvEncoding; text: string } {
@@ -143,77 +164,36 @@ function looksLikeUtf16(buffer: Uint8Array, endianness: 'le' | 'be') {
   return expectedZeroCount / pairs > 0.3 && unexpectedZeroCount / pairs < 0.1;
 }
 
-function parseCsvRows(text: string, requirement: CsvFormatRequirement) {
-  const normalized = text.replace(/\r\n?/g, '\n');
+async function parseCsvRows(text: string, requirement: CsvFormatRequirement) {
   const rows: Array<{ lineNumber: number; columns: string[] }> = [];
-  let currentField = '';
-  let currentRow: string[] = [];
-  let inQuotes = false;
-  let lineNumber = 1;
-  let rowStartLineNumber = 1;
 
-  const pushRow = () => {
-    currentRow.push(currentField);
-    const trimmed = currentRow.map((column) => column.trim());
+  await new Promise<void>((resolve, reject) => {
+    parseString<string[], string[]>(text, { headers: false, ignoreEmpty: true, trim: true })
+      .on('error', (error) => reject(formatCsvParseError(error)))
+      .on('data', (columns) => {
+        const lineNumber = rows.length + 1;
 
-    if (!trimmed.every((column) => column.length === 0)) {
-      if (trimmed.length !== requirement.columnCount) {
-        throw new Error(`第 ${rowStartLineNumber} 行格式无效，必须包含 ${requirement.columnCount} 列。`);
-      }
+        if (columns.length !== requirement.columnCount) {
+          reject(new Error(`第 ${lineNumber} 行格式无效，必须包含 ${requirement.columnCount} 列。`));
+          return;
+        }
 
-      rows.push({
-        lineNumber: rowStartLineNumber,
-        columns: trimmed
-      });
-    }
-
-    currentField = '';
-    currentRow = [];
-  };
-
-  for (let index = 0; index < normalized.length; index += 1) {
-    const char = normalized[index];
-
-    if (char === '"') {
-      const next = normalized[index + 1];
-
-      if (inQuotes && next === '"') {
-        currentField += '"';
-        index += 1;
-        continue;
-      }
-
-      inQuotes = !inQuotes;
-      continue;
-    }
-
-    if (char === ',' && !inQuotes) {
-      currentRow.push(currentField);
-      currentField = '';
-      continue;
-    }
-
-    if (char === '\n' && !inQuotes) {
-      pushRow();
-      lineNumber += 1;
-      rowStartLineNumber = lineNumber;
-      continue;
-    }
-
-    currentField += char;
-  }
-
-  if (inQuotes) {
-    throw new Error('CSV 文件格式无效，存在未闭合的引号。');
-  }
-
-  if (currentField.length > 0 || currentRow.length > 0) {
-    pushRow();
-  }
+        rows.push({ lineNumber, columns });
+      })
+      .on('end', () => resolve());
+  });
 
   if (rows.length === 0) {
     throw new Error('CSV 文件没有有效内容。');
   }
 
   return rows;
+}
+
+function formatCsvParseError(error: Error) {
+  if (error.message.includes('missing closing')) {
+    return new Error('CSV 文件格式无效，存在未闭合的引号。');
+  }
+
+  return new Error(`CSV 文件格式无效：${error.message}`);
 }

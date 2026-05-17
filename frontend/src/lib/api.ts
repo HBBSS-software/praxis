@@ -1,7 +1,7 @@
 import { hc } from 'hono/client';
 
 import type { Api } from '../../../backend/src/app';
-import { API_URL, MAX_RECORD_IMAGES, type AppRuntimeConfig, type CreatedUser, type CsvImportPreview, type StoredUser, type UploadResult, type UserRole } from './types';
+import { API_URL, MAX_RECORD_IMAGES, type AppRuntimeConfig, type CreatedUser, type CreatedUsersPayload, type CsvImportPreview, type StoredUser, type UploadResult, type UserRole } from './types';
 
 export class ApiResponseError extends Error {
   status: number;
@@ -435,7 +435,7 @@ export async function uploadImage(file: File, token: string, maxSizeBytes = fall
   return unwrapResponse(api.upload.post({ image: file }));
 }
 
-export async function importUserCsv(file: File, token: string): Promise<{ message: string; encoding: CsvImportPreview['encoding']; users: CreatedUser[] }> {
+export async function importUserCsv(file: File, token: string): Promise<CreatedUsersPayload & { encoding: CsvImportPreview['encoding'] }> {
   const api = createApiClient(token);
   return unwrapResponse(api.admin.users.import.post({ file }));
 }
