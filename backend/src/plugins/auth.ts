@@ -1,10 +1,10 @@
 import { createMiddleware } from 'hono/factory';
 import { SignJWT, jwtVerify } from 'jose';
 
-import { jwtAudience, jwtIssuer, jwtSecret, tokenLifetimeSeconds } from '../auth/config';
+import { jwtIssuer, jwtSecret, tokenLifetimeSeconds } from '../auth/config';
 import { isLowCostPasswordHash } from '../auth/password';
 import database from '../database';
-import type { AuthTokenPayload, PublicUser } from '../models';
+import type { AuthTokenPayload, PublicUser, UserRole } from '../models';
 
 export interface AppBindings {
   Variables: {
@@ -14,6 +14,18 @@ export interface AppBindings {
 }
 
 const jwtKey = new TextEncoder().encode(jwtSecret);
+type TokenAudience = UserRole | 'unauthorized';
+
+const tokenAudiences: TokenAudience[] = ['admin', 'teacher', 'student', 'unauthorized'];
+
+function getTokenAudience(user: PublicUser): TokenAudience {
+  return user.password_setup_required ? 'unauthorized' : user.role;
+}
+
+function tokenAudienceMatchesUser(audience: string | string[] | undefined, user: PublicUser) {
+  const expectedAudience = getTokenAudience(user);
+  return audience === expectedAudience || (Array.isArray(audience) && audience.length === 1 && audience[0] === expectedAudience);
+}
 
 function isPasswordSetupAllowedRequest(path: string, method: string) {
   if (method === 'OPTIONS') {
@@ -53,7 +65,7 @@ export async function signAccessToken(user: PublicUser) {
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setIssuer(jwtIssuer)
-    .setAudience(jwtAudience)
+    .setAudience(getTokenAudience(user))
     .setExpirationTime(`${tokenLifetimeSeconds}s`)
     .sign(jwtKey);
 }
@@ -71,7 +83,7 @@ export const authMiddleware = createMiddleware<AppBindings>(async (c, next) => {
   try {
     const verified = await jwtVerify<AuthTokenPayload>(token, jwtKey, {
       issuer: jwtIssuer,
-      audience: jwtAudience
+      audience: tokenAudiences
     });
     const currentUser = database.findUserById(verified.payload.id);
 
@@ -83,15 +95,27 @@ export const authMiddleware = createMiddleware<AppBindings>(async (c, next) => {
     }
 
     const passwordSetupRequired = isLowCostPasswordHash(currentUser.password);
-
-    c.set('authError', null);
-    c.set('user', {
+    const authUser = {
       id: currentUser.id,
       uid: currentUser.uid,
       role: currentUser.role,
       name: currentUser.name,
       password_setup_required: passwordSetupRequired
-    });
+    };
+
+    c.set('authError', null);
+    c.set('user', authUser);
+
+    if (!tokenAudienceMatchesUser(verified.payload.aud, authUser)) {
+      if (passwordSetupRequired && verified.payload.aud === 'unauthorized' && isPasswordSetupAllowedRequest(c.req.path, c.req.method)) {
+        await next();
+        return;
+      }
+
+      c.set('authError', '认证令牌权限范围无效。');
+      c.set('user', null);
+      return c.json({ error: '认证令牌权限范围无效。' }, 403);
+    }
 
     if (passwordSetupRequired && !isPasswordSetupAllowedRequest(c.req.path, c.req.method)) {
       return c.json({ error: '请设置密码。' }, 403);

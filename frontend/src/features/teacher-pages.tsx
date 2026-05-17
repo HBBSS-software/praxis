@@ -1,5 +1,5 @@
-import { ArrowDown, ArrowUp, CheckCircle2, Clock3, FilePenLine, RefreshCw, UserRoundCog, Users } from 'lucide-react';
-import { memo, useEffect, useEffectEvent, useMemo, useState } from 'react';
+import { ArrowDown, ArrowUp, CheckCircle2, Clock3, FilePenLine, RefreshCw, UserRoundCog, Users, X } from 'lucide-react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 
 import { useSession } from '@/lib/auth';
@@ -13,6 +13,19 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Combobox,
+  ComboboxChip,
+  ComboboxChips,
+  ComboboxChipsInput,
+  ComboboxCollection,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxGroup,
+  ComboboxItem,
+  ComboboxList,
+  useComboboxAnchor
+} from '@/components/ui/combobox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,6 +36,7 @@ import { ApiResponseError, createApiClient, unwrapResponse } from '@/lib/api';
 import { toastError, toastSuccess } from '@/lib/feedback';
 import { formatDate, formatDateTime, formatDuration, normalizeDateInputValue, statusLabel } from '@/lib/format';
 import { useShiftMultiSelect } from '@/lib/shift-selection';
+import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { CreatedUser, StudentSummary, TeacherRecord, TeacherRecordSummary, TeacherStatistics, UserSummary } from '@/lib/types';
 import { UserCredentialsResult } from '@/shared/user-credentials-result';
 import { AccountCard } from './student-pages';
@@ -53,8 +67,8 @@ function PageFrame({
 }
 
 const defaultFilters = {
-  student_id: '',
-  teacher_id: '',
+  student_ids: [] as number[],
+  teacher_ids: [] as number[],
   status: '',
   practice_after: '',
   practice_before: '',
@@ -62,13 +76,24 @@ const defaultFilters = {
   created_before: ''
 };
 
+const comboboxPageSize = 40;
+
+interface UserOption {
+  label: string;
+  value: string;
+}
+
+function toUserOption(user: Pick<UserSummary, 'id' | 'name' | 'uid'>): UserOption {
+  return {
+    label: `${user.name} (${user.uid})`,
+    value: String(user.id)
+  };
+}
+
 export function TeacherDashboardPage() {
   const { token, signOut, user } = useSession();
   const { captureShiftKey, resetSelectionAnchor, updateSelection } = useShiftMultiSelect();
   const [students, setStudents] = useState<StudentSummary[]>([]);
-  const [studentsLoading, setStudentsLoading] = useState(false);
-  const [teachers, setTeachers] = useState<UserSummary[]>([]);
-  const [teachersLoading, setTeachersLoading] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
   const [records, setRecords] = useState<TeacherRecordSummary[]>([]);
   const [statistics, setStatistics] = useState<TeacherStatistics | null>(null);
@@ -93,25 +118,11 @@ export function TeacherDashboardPage() {
 
   const recordIds = useMemo(() => records.map((record) => record.id), [records]);
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
-  const teacherFilterOptions = useMemo(
-    () => [{ label: '全部老师', value: '' }, ...teachers.map((teacher) => ({ label: `${teacher.name} (${teacher.uid})`, value: String(teacher.id) }))],
-    [teachers]
-  );
-  const studentFilterOptions = useMemo(
-    () => [{ label: '全部学生', value: '' }, ...students.map((student) => ({ label: `${student.name} (${student.uid})`, value: String(student.id) }))],
-    [students]
-  );
   const allSelected = records.length > 0 && selectedIds.length === records.length;
-  const openTeacherFilter = useEffectEvent(() => {
-    void loadTeachers();
-  });
-  const openStudentFilter = useEffectEvent(() => {
-    void loadStudents();
-  });
   const query = useMemo(() => {
     const params = new URLSearchParams();
-    if (filters.student_id) params.set('student_id', filters.student_id);
-    if (filters.teacher_id) params.set('teacher_id', filters.teacher_id);
+    if (filters.student_ids.length > 0) params.set('student_ids', filters.student_ids.join(','));
+    if (filters.teacher_ids.length > 0) params.set('teacher_ids', filters.teacher_ids.join(','));
     if (filters.status) params.set('status', filters.status);
     if (filters.practice_after) params.set('practice_after', filters.practice_after);
     if (filters.practice_before) params.set('practice_before', filters.practice_before);
@@ -124,31 +135,38 @@ export function TeacherDashboardPage() {
     return params.toString();
   }, [filters]);
 
-  async function loadStudents() {
-    if (!token || studentsLoading || students.length > 0) return;
-    setStudentsLoading(true);
-    try {
-      const data = await unwrapResponse<{ students: StudentSummary[] }>(createApiClient(token).teacher.students.get());
-      setStudents(data.students);
-    } catch (nextError) {
-      if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
-    } finally {
-      setStudentsLoading(false);
-    }
-  }
+  const searchStudents = useCallback(async (searchQuery: string) => {
+    if (!token) return [];
 
-  async function loadTeachers() {
-    if (!token || user?.role !== 'admin' || teachersLoading || teachers.length > 0) return;
-    setTeachersLoading(true);
     try {
-      const data = await unwrapResponse<{ users: UserSummary[] }>(createApiClient(token).admin.users.get({ query: { role: 'teacher' } }));
-      setTeachers(data.users);
+      const data = await unwrapResponse<{ students: StudentSummary[] }>(
+        createApiClient(token).teacher.students.search({
+          query: {
+            q: searchQuery.trim() || undefined,
+            teacher_ids: user?.role === 'admin' && filters.teacher_ids.length > 0 ? filters.teacher_ids.join(',') : undefined
+          }
+        })
+      );
+      return data.students.map(toUserOption);
     } catch (nextError) {
       if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
-    } finally {
-      setTeachersLoading(false);
+      return [];
     }
-  }
+  }, [filters.teacher_ids, signOut, token, user?.role]);
+
+  const searchTeachers = useCallback(async (searchQuery: string) => {
+    if (!token || user?.role !== 'admin') return [];
+
+    try {
+      const data = await unwrapResponse<{ users: UserSummary[] }>(
+        createApiClient(token).admin.users.search({ query: { role: 'teacher', q: searchQuery.trim() || undefined } })
+      );
+      return data.users.map(toUserOption);
+    } catch (nextError) {
+      if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
+      return [];
+    }
+  }, [signOut, token, user?.role]);
 
   async function loadRecords() {
     if (!token) return;
@@ -158,8 +176,8 @@ export function TeacherDashboardPage() {
       const data = await unwrapResponse<{ records: TeacherRecordSummary[] }>(
         createApiClient(token).teacher.records.get({
           query: {
-            student_id: filters.student_id || undefined,
-            teacher_id: filters.teacher_id || undefined,
+            student_ids: filters.student_ids.length > 0 ? filters.student_ids.join(',') : undefined,
+            teacher_ids: filters.teacher_ids.length > 0 ? filters.teacher_ids.join(',') : undefined,
             status: filters.status ? (filters.status as 'approved' | 'pending' | 'rejected') : undefined,
             practice_after: filters.practice_after || undefined,
             practice_before: filters.practice_before || undefined,
@@ -291,22 +309,18 @@ export function TeacherDashboardPage() {
           <CardContent className="space-y-5">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {user?.role === 'admin' ? (
-                <FilterSelect
+                <UserMultiCombobox
                   label="管理老师"
-                  value={filters.teacher_id}
-                  options={teacherFilterOptions}
-                  loading={teachersLoading}
-                  onOpen={openTeacherFilter}
-                  onChange={(value) => setFilters((current) => ({ ...current, teacher_id: value }))}
+                  value={filters.teacher_ids}
+                  loadOptions={searchTeachers}
+                  onChange={(value) => setFilters((current) => ({ ...current, teacher_ids: value, student_ids: [] }))}
                 />
               ) : null}
-              <FilterSelect
+              <UserMultiCombobox
                 label="学生"
-                value={filters.student_id}
-                options={studentFilterOptions}
-                loading={studentsLoading}
-                onOpen={openStudentFilter}
-                onChange={(value) => setFilters((current) => ({ ...current, student_id: value }))}
+                value={filters.student_ids}
+                loadOptions={searchStudents}
+                onChange={(value) => setFilters((current) => ({ ...current, student_ids: value }))}
               />
               <FilterSelect
                 label="状态"
@@ -910,6 +924,125 @@ const FilterSelect = memo(function FilterSelect({
           )}
         </SelectContent>
       </Select>
+    </Field>
+  );
+});
+
+const UserMultiCombobox = memo(function UserMultiCombobox({
+  label,
+  value,
+  loadOptions,
+  onChange
+}: {
+  label: string;
+  value: number[];
+  loadOptions: (query: string) => Promise<UserOption[]>;
+  onChange: (value: number[]) => void;
+}) {
+  const anchorRef = useComboboxAnchor();
+  const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query);
+  const [options, setOptions] = useState<UserOption[]>([]);
+  const [selectedOptionMap, setSelectedOptionMap] = useState(() => new Map<string, UserOption>());
+  const [visibleCount, setVisibleCount] = useState(comboboxPageSize);
+  const [loading, setLoading] = useState(false);
+  const selectedOptions = useMemo(() => value.map((id) => selectedOptionMap.get(String(id))).filter((option): option is UserOption => Boolean(option)), [selectedOptionMap, value]);
+  const visibleOptions = useMemo(() => options.slice(0, visibleCount), [options, visibleCount]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMatchedOptions() {
+      setLoading(true);
+      const nextOptions = await loadOptions(debouncedQuery);
+
+      if (cancelled) return;
+
+      setOptions(nextOptions);
+      setLoading(false);
+      setSelectedOptionMap((current) => {
+        const next = new Map(current);
+        for (const option of nextOptions) {
+          next.set(option.value, option);
+        }
+        return next;
+      });
+    }
+
+    void loadMatchedOptions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedQuery, loadOptions]);
+
+  useEffect(() => {
+    setVisibleCount(comboboxPageSize);
+  }, [debouncedQuery]);
+
+  function loadMoreOptions(event: React.UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+
+    if (element.scrollTop + element.clientHeight < element.scrollHeight - 24) {
+      return;
+    }
+
+    setVisibleCount((current) => Math.min(current + comboboxPageSize, options.length));
+  }
+
+  return (
+    <Field label={label}>
+      <Combobox
+        multiple
+        items={options}
+        inputValue={query}
+        value={selectedOptions}
+        onInputValueChange={setQuery}
+        filter={null}
+        onValueChange={(nextValue) => {
+          setSelectedOptionMap((current) => {
+            const next = new Map(current);
+            for (const option of nextValue) {
+              next.set(option.value, option);
+            }
+            return next;
+          });
+          onChange(nextValue.map((item) => Number(item.value)).filter((id) => Number.isInteger(id) && id > 0));
+        }}
+        itemToStringLabel={(item) => item.label}
+        itemToStringValue={(item) => item.value}
+        isItemEqualToValue={(item, selected) => item.value === selected.value}
+      >
+        <ComboboxChips ref={anchorRef} className="min-h-9 w-full">
+          {selectedOptions.map((option) => (
+            <ComboboxChip key={option.value}>{option.label}</ComboboxChip>
+          ))}
+          <ComboboxChipsInput placeholder={selectedOptions.length > 0 ? '' : `筛选${label}`} />
+          {selectedOptions.length > 0 ? (
+            <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange([])}>
+              <X className="size-3" />
+            </Button>
+          ) : null}
+        </ComboboxChips>
+        <ComboboxContent anchor={anchorRef} className="max-h-80">
+          <ComboboxEmpty>暂无可选项</ComboboxEmpty>
+          <ComboboxList onScroll={loadMoreOptions}>
+            {loading ? (
+              <div className="px-2 py-2 text-sm text-muted-foreground">加载中...</div>
+            ) : visibleOptions.length > 0 ? (
+              <ComboboxGroup items={visibleOptions}>
+                <ComboboxCollection>
+                  {(option: UserOption) => (
+                    <ComboboxItem key={option.value} value={option}>
+                      {option.label}
+                    </ComboboxItem>
+                  )}
+                </ComboboxCollection>
+              </ComboboxGroup>
+            ) : null}
+          </ComboboxList>
+        </ComboboxContent>
+      </Combobox>
     </Field>
   );
 });

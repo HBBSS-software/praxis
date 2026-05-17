@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { appConfig } from './config';
 import database from './database';
 import { apiError, requireAuthenticatedUser } from './http';
 import { authMiddleware, type AppBindings } from './plugins/auth';
@@ -18,10 +19,7 @@ const uploadDir = path.resolve(process.cwd(), 'backend/uploads');
 
 fs.mkdirSync(uploadDir, { recursive: true });
 
-const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+const allowedOrigins = appConfig.cors_origins;
 
 const mimeByExtension: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',

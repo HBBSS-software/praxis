@@ -16,12 +16,19 @@ export function ensureDatabaseSchema() {
       password text not null,
       role text not null,
       name text not null,
+      name_initials text not null default '',
       created_at text not null,
       deleted_at text
     )
   `);
 
+  const userColumns = db.all<{ name: string }>(sql`pragma table_info(users)`);
+  if (!userColumns.some((column) => column.name === 'name_initials')) {
+    db.run(sql`alter table users add column name_initials text not null default ''`);
+  }
+
   db.run(sql`create index if not exists users_role_idx on users(role)`);
+  db.run(sql`create index if not exists users_name_initials_idx on users(name_initials)`);
   db.run(sql`create index if not exists users_deleted_at_idx on users(deleted_at)`);
 
   db.run(sql`

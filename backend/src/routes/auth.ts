@@ -152,7 +152,16 @@ export const authRoutes = new Hono<AppBindings>()
     }
 
     database.updateUserPassword(userRecord.id, await hashPassword(body.new_password));
-    return c.json({ message: '密码修改成功。' });
+    const authUser = {
+      ...currentUser,
+      password_setup_required: false
+    };
+
+    return c.json({
+      message: '密码修改成功。',
+      token: await signAccessToken(authUser),
+      user: authUser
+    });
   })
   .put('/profile', zValidator('json', profileBodySchema, validationHook), async (c) => {
     const authFailure = requireAuthenticatedUser(c);

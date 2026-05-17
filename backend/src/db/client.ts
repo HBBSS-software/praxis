@@ -4,11 +4,10 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { drizzle } from 'drizzle-orm/node-sqlite';
 
+import { appConfig } from '../config';
 import * as schema from './schema';
 
-const databaseFile = process.env.DATABASE_FILE
-  ? path.resolve(process.env.DATABASE_FILE)
-  : path.resolve(process.cwd(), 'backend/data/app.db');
+const databaseFile = path.resolve(appConfig.database_file);
 
 fs.mkdirSync(path.dirname(databaseFile), { recursive: true });
 

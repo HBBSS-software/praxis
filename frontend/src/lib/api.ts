@@ -234,6 +234,13 @@ export function createApiClient(token?: string | null) {
       users: Object.assign(adminUserRoute, {
         get: ({ query }: { query?: { role?: UserRole } } = {}) =>
           wrapRpcResponse(query ? client.admin.users.$get({ query }) : client.admin.users.$get({ query: {} })),
+        search: ({ query }: { query: { role: UserRole; q?: string } }) =>
+          wrapRpcResponse(client.admin.users.search.$get({
+            query: {
+              role: query.role,
+              q: query.q
+            }
+          })),
         post: (body?: any) => wrapRpcResponse(client.admin.users.$post({ json: body })),
         delete: (body?: any) => wrapRpcResponse(client.admin.users.$delete({ json: body })),
         batch: {
@@ -257,6 +264,14 @@ export function createApiClient(token?: string | null) {
       }),
       assignments: {
         get: () => wrapRpcResponse(client.admin['teacher-student-assignments'].$get()),
+        students: {
+          get: ({ query }: { query?: { q?: string } } = {}) =>
+            wrapRpcResponse(client.admin['teacher-student-assignments'].students.$get({
+              query: {
+                q: query?.q
+              }
+            }))
+        },
         post: ({ teacher_id, student_ids }: { teacher_id: number; student_ids: number[] }) =>
           wrapRpcResponse(client.admin.teachers[':teacherId'].students.$put({
             param: { teacherId: toPathParam(teacher_id) },
@@ -291,6 +306,13 @@ export function createApiClient(token?: string | null) {
       }),
       students: Object.assign(teacherStudentRoute, {
         get: () => wrapRpcResponse(client.teacher.students.$get()),
+        search: ({ query }: { query?: { q?: string; teacher_ids?: string } } = {}) =>
+          wrapRpcResponse(client.teacher.students.search.$get({
+            query: {
+              q: query?.q,
+              teacher_ids: query?.teacher_ids
+            }
+          })),
         password: {
           patch: (body?: any) => wrapRpcResponse(client.teacher.students['password-reset'].$patch({ json: body }))
         }

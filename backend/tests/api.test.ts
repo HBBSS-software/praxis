@@ -2,16 +2,31 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { decodeJwt, SignJWT } from 'jose';
 
 const testDbPath = `/tmp/social-practice-test-db-${Date.now()}.db`;
+const testConfigPath = `/tmp/social-practice-test-config-${Date.now()}.toml`;
 const testUploadDir = fileURLToPath(new URL('../uploads', import.meta.url));
 const cleanupUploadFiles = new Set<string>();
+const testJwtSecret = 'test-jwt-secret-12345678901234567890';
+const testJwtIssuer = 'social-practice-system';
 
-process.env.DATABASE_FILE = testDbPath;
-process.env.JWT_SECRET = 'test-jwt-secret-12345678901234567890';
-process.env.LOGIN_MAX_ATTEMPTS = '3';
-process.env.LOGIN_LOCKOUT_MS = '60000';
-process.env.TRUST_PROXY = 'true';
+globalThis.__socialPracticeConfigFile = testConfigPath;
+
+fs.writeFileSync(testConfigPath, [
+  'port = 3000',
+  'vite_port = 5173',
+  'host = "0.0.0.0"',
+  `database_file = "${testDbPath}"`,
+  `jwt_secret = "${testJwtSecret}"`,
+  `jwt_issuer = "${testJwtIssuer}"`,
+  'jwt_expires_in = "8h"',
+  'login_max_attempts = 3',
+  'login_lockout_ms = 60000',
+  'trust_proxy = true',
+  'is_production = false',
+  'cors_origins = []'
+].join('\n'));
 
 type DatabaseModule = typeof import('../src/database');
 type LoginAttemptsModule = typeof import('../src/auth/login-attempts');
@@ -47,11 +62,22 @@ beforeAll(async () => {
   parseUserImportCsvText = csvImportModule.parseUserImportCsvText;
   hashPassword = passwordModule.hashPassword;
   isLowCostPasswordHash = passwordModule.isLowCostPasswordHash;
+
+  await database.createUsers([
+    { name: '测试教师', role: 'teacher' },
+    { name: '测试学生一', role: 'student' },
+    { name: '测试学生二', role: 'student' }
+  ]);
 });
 
 afterAll(() => {
   try {
     fs.unlinkSync(testDbPath);
+  } catch {
+  }
+
+  try {
+    fs.unlinkSync(testConfigPath);
   } catch {
   }
 
@@ -103,6 +129,28 @@ async function loginAs(uid: string, password: string) {
   return payload.token as string;
 }
 
+async function signTokenWithAudience(uid: string, audience: string) {
+  const user = database.findUserByUid(uid);
+
+  if (!user) {
+    throw new Error(`user not found: ${uid}`);
+  }
+
+  return await new SignJWT({
+    id: user.id,
+    uid: user.uid,
+    role: user.role,
+    name: user.name,
+    password_setup_required: false
+  })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setIssuer(testJwtIssuer)
+    .setAudience(audience)
+    .setExpirationTime('8h')
+    .sign(new TextEncoder().encode(testJwtSecret));
+}
+
 async function setNormalPassword(uid: string, password: string) {
   const user = database.findUserByUid(uid);
 
@@ -114,13 +162,9 @@ async function setNormalPassword(uid: string, password: string) {
 }
 
 describe('database bootstrap and users', () => {
-  test('seeds default admin, teacher and student accounts', () => {
+  test('seeds the default admin account', () => {
     expect(database.findUserByUid('A00001')?.role).toBe('admin');
-    expect(database.findUserByUid('T00001')?.role).toBe('teacher');
-    expect(database.findUserByUid('S00001')?.role).toBe('student');
-    expect(database.findUserByUid('S00002')?.role).toBe('student');
-    expect(isLowCostPasswordHash(database.findUserByUid('S00001')?.password ?? '')).toBe(false);
-    expect(database.getUsersByRole('student')).toHaveLength(2);
+    expect(isLowCostPasswordHash(database.findUserByUid('A00001')?.password ?? '')).toBe(false);
   });
 
   test('creates users and filters by role', async () => {
@@ -314,6 +358,7 @@ describe('route behavior', () => {
     });
 
     const token = payload.token as string;
+    expect(decodeJwt(token).aud).toBe('unauthorized');
     const blockedResponse = await apiRequest('/api/students/me/records', {
       headers: {
         authorization: `Bearer ${token}`
@@ -334,11 +379,14 @@ describe('route behavior', () => {
     });
 
     expect(changePasswordResponse.status).toBe(200);
+    const changePasswordPayload = await readJson(changePasswordResponse);
+    expect(decodeJwt(changePasswordPayload.token as string).aud).toBe('student');
 
     const reloginResponse = await jsonRequest('/api/auth/login', { uid: createdUser.uid, password: 'new-password-01' }, { method: 'POST' });
     const reloginPayload = await readJson(reloginResponse);
 
     expect(reloginResponse.status).toBe(200);
+    expect(decodeJwt(reloginPayload.token as string).aud).toBe('student');
     expect(reloginPayload.user).toMatchObject({
       uid: createdUser.uid,
       password_setup_required: false
@@ -348,6 +396,7 @@ describe('route behavior', () => {
   test('rejects passwords longer than 32 characters in the backend', async () => {
     await setNormalPassword('T00001', 'teacher-pass-01');
     const token = await loginAs('T00001', 'teacher-pass-01');
+    expect(decodeJwt(token).aud).toBe('teacher');
     const response = await jsonRequest('/api/auth/password', {
       current_password: 'teacher-pass-01',
       new_password: '123456789012345678901234567890123'
@@ -365,6 +414,7 @@ describe('route behavior', () => {
   test('rejects non-image content during upload even if the declared type is allowed', async () => {
     await setNormalPassword('S00001', 'student-pass-01');
     const token = await loginAs('S00001', 'student-pass-01');
+    expect(decodeJwt(token).aud).toBe('student');
     const formData = new FormData();
     formData.set('image', new File(['not really an image'], 'fake.png', { type: 'image/png' }));
 
@@ -535,6 +585,7 @@ describe('route behavior', () => {
   test('prevents admins from deleting themselves', async () => {
     await setNormalPassword('A00001', 'admin-pass-01');
     const token = await loginAs('A00001', 'admin-pass-01');
+    expect(decodeJwt(token).aud).toBe('admin');
 
     const response = await jsonRequest('/api/admin/users/1', undefined, {
       method: 'DELETE',
@@ -545,6 +596,19 @@ describe('route behavior', () => {
 
     expect(response.status).toBe(400);
     expect((await readJson(response)).error).toBe('不能删除自己的账号。');
+  });
+
+  test('rejects tokens whose audience does not match the user role', async () => {
+    await setNormalPassword('S00001', 'student-pass-01');
+    const token = await signTokenWithAudience('S00001', 'admin');
+    const response = await apiRequest('/api/students/me/records', {
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+
+    expect(response.status).toBe(403);
+    expect((await readJson(response)).error).toBe('认证令牌权限范围无效。');
   });
 
   test('rejects oversized csv imports in the backend', async () => {

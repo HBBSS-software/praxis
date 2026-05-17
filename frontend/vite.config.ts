@@ -4,20 +4,24 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
+import { appConfig } from '../backend/src/config';
+
+const backendTarget = `http://127.0.0.1:${appConfig.port}`;
+
 export default defineConfig({
   root: __dirname,
   plugins: [react(), tailwindcss()],
   server: {
     host: '0.0.0.0',
-    port: 5173,
+    port: appConfig.vite_port,
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:3000',
+        target: backendTarget,
         changeOrigin: true
       },
       '/uploads': {
-        target: 'http://127.0.0.1:3000',
+        target: backendTarget,
         changeOrigin: true
       }
     }

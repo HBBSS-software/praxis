@@ -6,11 +6,13 @@ export const users = sqliteTable('users', {
   password: text('password').notNull(),
   role: text('role').notNull(),
   name: text('name').notNull(),
+  nameInitials: text('name_initials').notNull().default(''),
   createdAt: text('created_at').notNull(),
   deletedAt: text('deleted_at')
 }, (table) => [
   uniqueIndex('users_uid_unique').on(table.uid),
   index('users_role_idx').on(table.role),
+  index('users_name_initials_idx').on(table.nameInitials),
   index('users_deleted_at_idx').on(table.deletedAt)
 ]);
 

@@ -38,6 +38,11 @@ export const roleQuerySchema = z.object({
   role: userRoleSchema.optional()
 });
 
+export const userSearchQuerySchema = z.object({
+  q: z.string().max(64).optional(),
+  teacher_ids: z.string().regex(/^([1-9]\d*)(,[1-9]\d*)*$/).optional()
+});
+
 export const loginBodySchema = z.object({
   uid: z.string().min(1).max(UID_MAX_LENGTH),
   password: requiredPasswordSchema
@@ -101,7 +106,9 @@ export const batchReviewBodySchema = z.object({
 
 export const recordQuerySchema = z.object({
   student_id: z.string().regex(positiveIdPattern).optional(),
+  student_ids: z.string().optional(),
   teacher_id: z.string().regex(positiveIdPattern).optional(),
+  teacher_ids: z.string().optional(),
   status: recordStatusSchema.optional(),
   practice_after: z.string().optional(),
   practice_before: z.string().optional(),
@@ -306,13 +313,27 @@ export function validateRecordFilters(query: Record<string, unknown>) {
     }
   }
 
+  for (const field of ['student_ids', 'teacher_ids'] as const) {
+    const value = query[field];
+
+    if (typeof value === 'string' && value) {
+      const values = value.split(',');
+
+      if (values.some((item) => !positiveIdPattern.test(item))) {
+        return field === 'student_ids' ? '筛选学生无效。' : '筛选老师无效。';
+      }
+    }
+  }
+
   return null;
 }
 
 export function normalizeRecordFilters(query: RecordFilters): RecordFilters {
   return {
     student_id: query.student_id ?? null,
+    student_ids: query.student_ids ?? null,
     teacher_id: query.teacher_id ?? null,
+    teacher_ids: query.teacher_ids ?? null,
     status: query.status ?? null,
     practice_after: query.practice_after ?? null,
     practice_before: query.practice_before ?? null,

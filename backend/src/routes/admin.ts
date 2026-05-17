@@ -12,6 +12,7 @@ import {
   requireRole,
   roleQuerySchema,
   updateUserBodySchema,
+  userSearchQuerySchema,
   userRoleSchema,
   validateName,
   validatePassword,
@@ -252,6 +253,13 @@ export const adminRoutes = new Hono<AppBindings>()
       users: database.getUsersByRole(query.role)
     });
   })
+  .get('/users/search', zValidator('query', userSearchQuerySchema.extend({ role: userRoleSchema }), validationHook), (c) => {
+    const { role, ...query } = c.req.valid('query');
+
+    return c.json({
+      users: database.searchUsersByRole(role, query.q?.trim() ?? '')
+    });
+  })
   .put('/users/:id', zValidator('param', z.object({ id: z.string().regex(/^[1-9]\d*$/) }), validationHook), zValidator('json', updateUserBodySchema, validationHook), async (c) => {
     const id = Number(c.req.valid('param').id);
     const body = c.req.valid('json');
@@ -326,8 +334,14 @@ export const adminRoutes = new Hono<AppBindings>()
   .get('/teacher-student-assignments', (c) => {
     return c.json({
       assignments: database.getAllAssignments(),
-      teachers: database.getUsersByRole('teacher'),
-      students: database.getAllStudents()
+      teachers: database.getUsersByRole('teacher')
+    });
+  })
+  .get('/teacher-student-assignments/students', zValidator('query', userSearchQuerySchema, validationHook), (c) => {
+    const query = c.req.valid('query');
+
+    return c.json({
+      students: database.searchStudents(query.q?.trim() ?? '')
     });
   })
   .put('/teachers/:teacherId/students', zValidator('param', teacherIdParamSchema, validationHook), zValidator('json', teacherStudentsBodySchema, validationHook), (c) => {

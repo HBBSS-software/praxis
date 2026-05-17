@@ -1,9 +1,10 @@
 import { serve } from '@hono/node-server';
 
 import { app } from './app';
+import { appConfig } from './config';
 
-const port = Number(process.env.PORT ?? 3000);
-const hostname = process.env.HOST ?? '0.0.0.0';
+const port = appConfig.port;
+const hostname = appConfig.host;
 
 serve({
   fetch: app.fetch,

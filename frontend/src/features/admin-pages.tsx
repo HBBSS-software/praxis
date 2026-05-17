@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, FileUp, Plus, Trash2, UserPlus } from 'lucide-react';
+import { ArrowDown, ArrowUp, FileUp, Plus, Trash2, UserPlus, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 
@@ -7,6 +7,21 @@ import { DataTable } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Combobox,
+  ComboboxChip,
+  ComboboxChips,
+  ComboboxChipsInput,
+  ComboboxCollection,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxGroup,
+  ComboboxItem,
+  ComboboxLabel,
+  ComboboxList,
+  ComboboxSeparator,
+  useComboboxAnchor
+} from '@/components/ui/combobox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,9 +33,16 @@ import { ApiResponseError, createApiClient, importUserCsv, unwrapResponse } from
 import { toastError, toastSuccess } from '@/lib/feedback';
 import { formatDateTime, formatDuration } from '@/lib/format';
 import { useShiftMultiSelect } from '@/lib/shift-selection';
+import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { Assignment, CreatedUser, CsvImportEntry, CsvImportPreview, StudentSummary, TeacherStatistics, UserRole, UserSummary } from '@/lib/types';
 import { EmptyState } from '@/shared/empty-state';
 import { UserCredentialsResult } from '@/shared/user-credentials-result';
+
+interface StudentWithTeacherSummary extends StudentSummary {
+  teacher_id: number | null;
+}
+
+const comboboxPageSize = 40;
 
 function AdminPageFrame({
   title,
@@ -306,20 +328,24 @@ export function AdminAssignmentsPage() {
   const { token, signOut } = useSession();
   const { captureShiftKey, resetSelectionAnchor, updateSelection } = useShiftMultiSelect();
   const [teachers, setTeachers] = useState<UserSummary[]>([]);
-  const [students, setStudents] = useState<StudentSummary[]>([]);
+  const [students, setStudents] = useState<StudentWithTeacherSummary[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [targetTeacherId, setTargetTeacherId] = useState('');
-  const [filterTeacherId, setFilterTeacherId] = useState('__all__');
+  const [filterStudentIds, setFilterStudentIds] = useState<number[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   async function loadData() {
     if (!token) return;
 
     try {
-      const data = await unwrapResponse<{ assignments: Assignment[]; teachers: UserSummary[]; students: StudentSummary[] }>(createApiClient(token).admin.assignments.get());
-      setAssignments(data.assignments);
-      setTeachers(data.teachers);
-      setStudents(data.students);
+      const api = createApiClient(token);
+      const [assignmentData, studentData] = await Promise.all([
+        unwrapResponse<{ assignments: Assignment[]; teachers: UserSummary[] }>(api.admin.assignments.get()),
+        unwrapResponse<{ students: StudentWithTeacherSummary[] }>(api.admin.assignments.students.get())
+      ]);
+      setAssignments(assignmentData.assignments);
+      setTeachers(assignmentData.teachers);
+      setStudents(studentData.students);
       setSelectedIds([]);
       resetSelectionAnchor();
     } catch (error) {
@@ -337,25 +363,25 @@ export function AdminAssignmentsPage() {
   }, [token]);
 
   const teacherMap = useMemo(() => new Map(teachers.map((teacher) => [teacher.id, teacher])), [teachers]);
-  const assignmentMap = useMemo(() => new Map(assignments.map((assignment) => [assignment.student_id, assignment.teacher_id])), [assignments]);
+  const assignmentMap = useMemo(() => new Map([
+    ...assignments.map((assignment) => [assignment.student_id, assignment.teacher_id] as const),
+    ...students.map((student) => [student.id, student.teacher_id] as const)
+  ]), [assignments, students]);
   const filteredStudents = useMemo(() => {
-    if (filterTeacherId === '__all__') {
+    if (filterStudentIds.length === 0) {
       return students;
     }
 
-    if (filterTeacherId === '__unassigned__') {
-      return students.filter((student) => !assignmentMap.has(student.id));
-    }
-
-    return students.filter((student) => assignmentMap.get(student.id) === Number(filterTeacherId));
-  }, [assignmentMap, filterTeacherId, students]);
+    const filterSet = new Set(filterStudentIds);
+    return students.filter((student) => filterSet.has(student.id));
+  }, [filterStudentIds, students]);
 
   const tableStudentIds = useMemo(() => filteredStudents.map((student) => student.id), [filteredStudents]);
   const tableStudentIdSet = useMemo(() => new Set(tableStudentIds), [tableStudentIds]);
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const allSelected = filteredStudents.length > 0 && filteredStudents.every((student) => selectedIdSet.has(student.id));
 
-  const columns = useMemo<Array<ColumnDef<StudentSummary>>>(() => [
+  const columns = useMemo<Array<ColumnDef<StudentWithTeacherSummary>>>(() => [
     {
       id: 'select',
       header: () => (
@@ -425,22 +451,22 @@ export function AdminAssignmentsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 xl:grid-cols-[minmax(240px,320px)_minmax(240px,320px)_auto_auto] xl:items-end">
-            <Field label="按老师筛选">
-              <Select value={filterTeacherId} onValueChange={setFilterTeacherId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="选择筛选范围" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">全部老师</SelectItem>
-                  <SelectItem value="__unassigned__">未分配</SelectItem>
-                  {teachers.map((teacher) => (
-                    <SelectItem key={teacher.id} value={String(teacher.id)}>
-                      {teacher.name} ({teacher.uid})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
+            <AssignmentStudentFilter
+              token={token}
+              signOut={signOut}
+              teachers={teachers}
+              value={filterStudentIds}
+              onChange={(nextIds, selectedStudents) => {
+                setFilterStudentIds(nextIds);
+                setStudents((current) => {
+                  const currentMap = new Map(current.map((student) => [student.id, student]));
+                  for (const student of selectedStudents) {
+                    currentMap.set(student.id, student);
+                  }
+                  return [...currentMap.values()];
+                });
+              }}
+            />
 
             <Field label="操作教师">
               <Select value={targetTeacherId || '__none__'} onValueChange={(value) => setTargetTeacherId(value === '__none__' ? '' : value)}>
@@ -834,6 +860,155 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <Label>{label}</Label>
       {children}
     </div>
+  );
+}
+
+function AssignmentStudentFilter({
+  token,
+  signOut,
+  teachers,
+  value,
+  onChange
+}: {
+  token: string | null;
+  signOut: () => void;
+  teachers: UserSummary[];
+  value: number[];
+  onChange: (value: number[], selectedStudents: StudentWithTeacherSummary[]) => void;
+}) {
+  const anchorRef = useComboboxAnchor();
+  const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query);
+  const [students, setStudents] = useState<StudentWithTeacherSummary[]>([]);
+  const [selectedStudentMap, setSelectedStudentMap] = useState(() => new Map<number, StudentWithTeacherSummary>());
+  const [visibleCount, setVisibleCount] = useState(comboboxPageSize);
+  const [loading, setLoading] = useState(false);
+  const visibleStudents = useMemo(() => students.slice(0, visibleCount), [students, visibleCount]);
+  const studentGroups = useMemo(
+    () => [
+      ...teachers.map((teacher) => ({
+        value: `${teacher.name} (${teacher.uid})`,
+        items: visibleStudents.filter((student) => student.teacher_id === teacher.id)
+      })).filter((group) => group.items.length > 0),
+      ...(visibleStudents.some((student) => !student.teacher_id)
+        ? [{ value: '未分配', items: visibleStudents.filter((student) => !student.teacher_id) }]
+        : [])
+    ],
+    [teachers, visibleStudents]
+  );
+  const selectedStudents = useMemo(
+    () => value.map((id) => selectedStudentMap.get(id)).filter((student): student is StudentWithTeacherSummary => Boolean(student)),
+    [selectedStudentMap, value]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMatchedStudents() {
+      if (!token) return;
+      setLoading(true);
+      try {
+        const data = await unwrapResponse<{ students: StudentWithTeacherSummary[] }>(
+          createApiClient(token).admin.assignments.students.get({ query: { q: debouncedQuery.trim() || undefined } })
+        );
+
+        if (cancelled) return;
+
+        setStudents(data.students);
+        setSelectedStudentMap((current) => {
+          const next = new Map(current);
+          for (const student of data.students) {
+            next.set(student.id, student);
+          }
+          return next;
+        });
+      } catch (error) {
+        if (error instanceof ApiResponseError && error.status === 401) signOut();
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadMatchedStudents();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedQuery, signOut, token]);
+
+  useEffect(() => {
+    setVisibleCount(comboboxPageSize);
+  }, [debouncedQuery]);
+
+  function loadMoreStudents(event: React.UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+
+    if (element.scrollTop + element.clientHeight < element.scrollHeight - 24) {
+      return;
+    }
+
+    setVisibleCount((current) => Math.min(current + comboboxPageSize, students.length));
+  }
+
+  return (
+    <Field label="筛选学生">
+      <Combobox
+        multiple
+        items={students}
+        filteredItems={studentGroups.length > 0 ? studentGroups : visibleStudents}
+        inputValue={query}
+        value={selectedStudents}
+        onInputValueChange={setQuery}
+        filter={null}
+        onValueChange={(nextValue) => {
+          setSelectedStudentMap((current) => {
+            const next = new Map(current);
+            for (const student of nextValue) {
+              next.set(student.id, student);
+            }
+            return next;
+          });
+          onChange(nextValue.map((student) => student.id), nextValue);
+        }}
+        itemToStringLabel={(student) => `${student.name} ${student.uid}`}
+        itemToStringValue={(student) => String(student.id)}
+        isItemEqualToValue={(item, selected) => item.id === selected.id}
+      >
+        <ComboboxChips ref={anchorRef} className="min-h-9 w-full">
+          {selectedStudents.map((student) => (
+            <ComboboxChip key={student.id}>{student.name} ({student.uid})</ComboboxChip>
+          ))}
+          <ComboboxChipsInput placeholder={selectedStudents.length > 0 ? '' : 'UID / 姓名'} />
+          {selectedStudents.length > 0 ? (
+            <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange([], [])}>
+              <X className="size-3" />
+            </Button>
+          ) : null}
+        </ComboboxChips>
+        <ComboboxContent anchor={anchorRef} className="max-h-80">
+          <ComboboxEmpty>暂无学生</ComboboxEmpty>
+          {loading && students.length === 0 ? (
+            <div className="px-2 py-2 text-sm text-muted-foreground">加载中...</div>
+          ) : (
+            <ComboboxList onScroll={loadMoreStudents}>
+              {((group: { value: string; items: StudentWithTeacherSummary[] }, index: number) => (
+              <ComboboxGroup key={group.value} items={group.items}>
+                <ComboboxLabel>{group.value}</ComboboxLabel>
+                <ComboboxCollection>
+                  {(student: StudentWithTeacherSummary) => (
+                    <ComboboxItem key={student.id} value={student}>
+                      {student.name} ({student.uid})
+                    </ComboboxItem>
+                  )}
+                </ComboboxCollection>
+                {index < studentGroups.length - 1 && <ComboboxSeparator />}
+              </ComboboxGroup>
+              )) as unknown as React.ReactNode}
+            </ComboboxList>
+          )}
+        </ComboboxContent>
+      </Combobox>
+    </Field>
   );
 }
 

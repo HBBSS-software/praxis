@@ -18,9 +18,7 @@ import type {
   UserSummary
 } from '../../../backend/src/models';
 
-const envApiUrl = import.meta.env.VITE_API_URL?.trim().replace(/\/$/, '');
-
-export const API_URL = envApiUrl || '/api';
+export const API_URL = '/api';
 
 export type {
   AppNotification,

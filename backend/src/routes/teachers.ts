@@ -18,6 +18,7 @@ import {
   reviewRecordBodySchema,
   updateRecordBodySchema,
   updateUserBodySchema,
+  userSearchQuerySchema,
   validateComment,
   validateContent,
   validateDuration,
@@ -35,6 +36,14 @@ import type { RecordFilters, UpdateRecordInput, UserRole } from '../models';
 const recordIdParamSchema = z.object({
   id: z.string().regex(/^[1-9]\d*$/)
 });
+
+function parseIdList(value?: string) {
+  if (!value) {
+    return undefined;
+  }
+
+  return value.split(',').map(Number).filter((id) => Number.isInteger(id) && id > 0);
+}
 
 function getVisibleStudentIds(userId: number, role: UserRole) {
   if (role === 'admin') {
@@ -55,7 +64,9 @@ function canManageStudent(studentId: number, userId: number, role: UserRole) {
 function parseRecordFilters(query: Record<string, unknown>): RecordFilters {
   return normalizeRecordFilters({
     student_id: typeof query.student_id === 'string' ? Number(query.student_id) : null,
+    student_ids: typeof query.student_ids === 'string' && query.student_ids ? query.student_ids.split(',').map(Number) : null,
     teacher_id: typeof query.teacher_id === 'string' ? Number(query.teacher_id) : null,
+    teacher_ids: typeof query.teacher_ids === 'string' && query.teacher_ids ? query.teacher_ids.split(',').map(Number) : null,
     status: typeof query.status === 'string' ? query.status as RecordFilters['status'] : null,
     practice_after: typeof query.practice_after === 'string' && query.practice_after ? query.practice_after : null,
     practice_before: typeof query.practice_before === 'string' && query.practice_before ? query.practice_before : null,
@@ -246,6 +257,15 @@ export const teacherRoutes = new Hono<AppBindings>()
       students: user.role === 'admin'
         ? database.getAllStudents()
         : database.getTeacherStudents(user.id)
+    });
+  })
+  .get('/teacher/students/search', zValidator('query', userSearchQuerySchema, validationHook), (c) => {
+    const user = c.get('user')!;
+    const query = c.req.valid('query');
+    const teacherIds = user.role === 'admin' ? parseIdList(query.teacher_ids) : undefined;
+
+    return c.json({
+      students: database.searchStudents(query.q?.trim() ?? '', getVisibleStudentIds(user.id, user.role), teacherIds)
     });
   })
   .get('/teacher/students/:id/records', zValidator('param', recordIdParamSchema, validationHook), (c) => {

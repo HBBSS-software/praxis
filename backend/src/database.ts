@@ -18,6 +18,7 @@ import type {
   RecordStatistics,
   StudentRecord,
   StudentSummary,
+  StudentWithTeacherSummary,
   TeacherRecord,
   TeacherRecordSummary,
   TeacherStatistics,
@@ -28,6 +29,7 @@ import type {
   UserSummary
 } from './models';
 import { userRoles } from './models';
+import { getPinyinInitials } from './pinyin';
 
 const uploadDir = path.resolve(process.cwd(), 'backend/uploads');
 const uploadPathPattern = /^\/uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -140,8 +142,20 @@ function buildRecordWhere(filters: RecordFilters = {}, visibleStudentIds?: Set<n
     conditions.push(eq(practiceRecords.studentId, filters.student_id));
   }
 
+  if (filters.student_ids) {
+    conditions.push(filters.student_ids.length > 0 ? inArray(practiceRecords.studentId, filters.student_ids) : sql`1 = 0`);
+  }
+
   if (filters.teacher_id) {
     conditions.push(sql`${practiceRecords.studentId} in (select ${teacherStudents.studentId} from ${teacherStudents} where ${teacherStudents.teacherId} = ${filters.teacher_id})`);
+  }
+
+  if (filters.teacher_ids) {
+    conditions.push(
+      filters.teacher_ids.length > 0
+        ? sql`${practiceRecords.studentId} in (select ${teacherStudents.studentId} from ${teacherStudents} where ${inArray(teacherStudents.teacherId, filters.teacher_ids)})`
+        : sql`1 = 0`
+    );
   }
 
   if (filters.status) {
@@ -172,6 +186,21 @@ function recordIdentitySelect() {
     student_name: sql<string>`case when ${users.id} is null or ${users.deletedAt} is not null then ${deletedUserName} else ${users.name} end`,
     student_uid: sql<string>`case when ${users.id} is null then coalesce(${practiceRecords.studentUidSnapshot}, '') else ${users.uid} end`
   };
+}
+
+function normalizeSearchQuery(query: string) {
+  return query.trim().replace(/[%_]/g, (value) => `\\${value}`);
+}
+
+function userSearchCondition(query: string) {
+  const normalized = normalizeSearchQuery(query);
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  const pattern = `%${normalized}%`;
+  return sql`(${users.uid} like ${pattern} escape '\\' or ${users.name} like ${pattern} escape '\\' or ${users.nameInitials} like ${pattern} escape '\\')`;
 }
 
 class SQLiteDatabase {
@@ -231,6 +260,27 @@ class SQLiteDatabase {
       .map(toUserSummary);
   }
 
+  searchUsersByRole(role: UserRole, query: string) {
+    const searchCondition = userSearchCondition(query);
+    const where = searchCondition
+      ? and(eq(users.role, role), isNull(users.deletedAt), searchCondition)
+      : and(eq(users.role, role), isNull(users.deletedAt));
+
+    return db
+      .select({
+        id: users.id,
+        uid: users.uid,
+        role: users.role,
+        name: users.name,
+        createdAt: users.createdAt
+      })
+      .from(users)
+      .where(where)
+      .orderBy(desc(users.id))
+      .all()
+      .map(toUserSummary);
+  }
+
   getAllStudents() {
     return db
       .select({
@@ -256,6 +306,7 @@ class SQLiteDatabase {
       password: hashedPassword,
       role,
       name,
+      nameInitials: getPinyinInitials(name),
       createdAt,
       deletedAt: null
     }).run();
@@ -283,6 +334,7 @@ class SQLiteDatabase {
       password: hashes[index]!,
       role: entry.role,
       name: entry.name,
+      nameInitials: getPinyinInitials(entry.name),
       createdAt,
       deletedAt: null as null
     }));
@@ -322,7 +374,7 @@ class SQLiteDatabase {
   }
 
   updateUserName(id: number, name: string) {
-    const result = db.update(users).set({ name }).where(activeUserById(id)).run();
+    const result = db.update(users).set({ name, nameInitials: getPinyinInitials(name) }).where(activeUserById(id)).run();
     return result.changes > 0;
   }
 
@@ -406,6 +458,45 @@ class SQLiteDatabase {
       .orderBy(desc(users.id))
       .all()
       .map(toStudentSummary);
+  }
+
+  searchStudents(query: string, visibleStudentIds?: Set<number>, teacherIds?: number[]): StudentWithTeacherSummary[] {
+    const conditions = [eq(users.role, 'student'), isNull(users.deletedAt)];
+    const searchCondition = userSearchCondition(query);
+
+    if (searchCondition) {
+      conditions.push(searchCondition);
+    }
+
+    if (visibleStudentIds) {
+      const ids = [...visibleStudentIds];
+      conditions.push(ids.length > 0 ? inArray(users.id, ids) : sql`1 = 0`);
+    }
+
+    if (teacherIds) {
+      conditions.push(teacherIds.length > 0 ? inArray(teacherStudents.teacherId, teacherIds) : sql`1 = 0`);
+    }
+
+    return db
+      .select({
+        id: users.id,
+        uid: users.uid,
+        name: users.name,
+        createdAt: users.createdAt,
+        teacher_id: teacherStudents.teacherId
+      })
+      .from(users)
+      .leftJoin(teacherStudents, eq(teacherStudents.studentId, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(users.id))
+      .all()
+      .map((row) => ({
+        id: row.id,
+        uid: row.uid,
+        name: row.name,
+        created_at: row.createdAt,
+        teacher_id: row.teacher_id
+      }));
   }
 
   getTeacherStudentIds(teacherId: number) {
@@ -777,43 +868,21 @@ class SQLiteDatabase {
       return;
     }
 
-    const password = hashPasswordSync('12345678');
-    const createdAt = nowIso();
+    const INITIAL_USER_PASSWORD = '12345678';
 
     db.insert(users).values([
       {
         uid: 'A00001',
-        password,
+        password: hashPasswordSync(INITIAL_USER_PASSWORD),
         role: 'admin',
         name: '超级奶龙',
-        createdAt,
-        deletedAt: null
-      },
-      {
-        uid: 'T00001',
-        password,
-        role: 'teacher',
-        name: '教师一',
-        createdAt,
-        deletedAt: null
-      },
-      {
-        uid: 'S00001',
-        password,
-        role: 'student',
-        name: '学生一',
-        createdAt,
-        deletedAt: null
-      },
-      {
-        uid: 'S00002',
-        password,
-        role: 'student',
-        name: '学生二',
-        createdAt,
+        nameInitials: getPinyinInitials('超级奶龙'),
+        createdAt: nowIso(),
         deletedAt: null
       }
     ]).run();
+
+    console.log("欢迎使用可爱奶龙社会实践系统，初始 uid：A00001，初始密码：", INITIAL_USER_PASSWORD);
   }
 
   private allocateUids(roles: UserRole[]) {

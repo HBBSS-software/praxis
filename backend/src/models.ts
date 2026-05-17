@@ -107,7 +107,9 @@ export interface UpdateRecordInput {
 
 export interface RecordFilters {
   student_id?: number | null;
+  student_ids?: number[] | null;
   teacher_id?: number | null;
+  teacher_ids?: number[] | null;
   status?: RecordStatus | null;
   practice_after?: string | null;
   practice_before?: string | null;
@@ -136,6 +138,10 @@ export interface TeacherStatistics extends RecordStatistics {
 export interface TeacherStudentAssignment {
   teacher_id: number;
   student_id: number;
+}
+
+export interface StudentWithTeacherSummary extends StudentSummary {
+  teacher_id: number | null;
 }
 
 export interface CreateUserResult {
