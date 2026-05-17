@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { z } from 'zod';
 
 import type { PublicUser, RecordFilters, RecordStatus, UserRole } from './models';
-import { notificationTypes, recordStatuses, userRoles } from './models';
+import { MAX_RECORD_IMAGES, notificationTypes, recordStatuses, userRoles } from './models';
 import type { AppBindings } from './plugins/auth';
 
 const positiveIdPattern = /^[1-9]\d*$/;
@@ -84,7 +84,8 @@ export const createRecordBodySchema = z.object({
   practice_date: z.string().min(1).max(10),
   location: z.string().max(LOCATION_MAX_LENGTH).nullable().optional(),
   duration: z.union([z.string().min(1).max(16), z.number()]),
-  image_path: z.string().nullable().optional()
+  image_paths: z.array(z.string()).max(MAX_RECORD_IMAGES).optional(),
+  cover_image_path: z.string().nullable().optional()
 });
 
 export const updateRecordBodySchema = z.object({
@@ -93,7 +94,8 @@ export const updateRecordBodySchema = z.object({
   practice_date: z.string().min(1).max(10).optional(),
   location: z.string().max(LOCATION_MAX_LENGTH).nullable().optional(),
   duration: z.union([z.string().min(1).max(16), z.number()]).optional(),
-  image_path: z.string().nullable().optional()
+  image_paths: z.array(z.string()).max(MAX_RECORD_IMAGES).optional(),
+  cover_image_path: z.string().nullable().optional()
 });
 
 export const reviewRecordBodySchema = z.object({

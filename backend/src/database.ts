@@ -29,7 +29,7 @@ import type {
   UserRole,
   UserSummary
 } from './models';
-import { userRoles } from './models';
+import { MAX_RECORD_IMAGES, userRoles } from './models';
 import { getPinyinInitials } from './pinyin';
 
 const uploadDir = path.resolve(process.cwd(), 'backend/uploads');
@@ -69,6 +69,8 @@ function toUser(row: UserRow): User {
 }
 
 function toPracticeRecord(row: PracticeRecordRow): PracticeRecord {
+  const imagePaths = normalizeRecordImagePaths(row.imagePaths);
+
   return {
     id: row.id,
     student_id: row.studentId,
@@ -78,7 +80,8 @@ function toPracticeRecord(row: PracticeRecordRow): PracticeRecord {
     practice_date: row.practiceDate,
     location: row.location,
     duration: row.duration,
-    image_path: row.imagePath,
+    image_paths: imagePaths,
+    cover_image_path: row.coverImagePath && imagePaths.includes(row.coverImagePath) ? row.coverImagePath : imagePaths[0] ?? null,
     status: row.status as PracticeRecord['status'],
     teacher_comment: row.teacherComment,
     created_at: row.createdAt
@@ -201,6 +204,32 @@ function recordIdentitySelect() {
 
 function normalizeSearchQuery(query: string) {
   return query.trim().replace(/[%_]/g, (value) => `\\${value}`);
+}
+
+function parseImagePaths(value: string | null) {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string' && uploadPathPattern.test(item)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeRecordImagePaths(value: string | null) {
+  const imagePaths = parseImagePaths(value);
+  return [...new Set(imagePaths)].slice(0, MAX_RECORD_IMAGES);
+}
+
+function serializeImagePaths(imagePaths: string[]) {
+  return JSON.stringify([...new Set(imagePaths)].slice(0, MAX_RECORD_IMAGES));
+}
+
+function recordHasImagePathCondition(imagePath: string) {
+  return sql`(${practiceRecords.coverImagePath} = ${imagePath} or ${practiceRecords.imagePaths} like ${`%"${imagePath}"%`})`;
 }
 
 function userSearchCondition(query: string) {
@@ -789,6 +818,10 @@ class SQLiteDatabase {
   createRecord(input: CreateRecordInput) {
     const student = db.select({ uid: users.uid }).from(users).where(eq(users.id, input.student_id)).get();
     const createdAt = nowIso();
+    const imagePaths = normalizeRecordImagePaths(JSON.stringify(input.image_paths));
+    const coverImagePath = input.cover_image_path && imagePaths.includes(input.cover_image_path)
+      ? input.cover_image_path
+      : imagePaths[0] ?? null;
     const result = db.insert(practiceRecords).values({
       studentId: input.student_id,
       studentUidSnapshot: student?.uid ?? null,
@@ -797,7 +830,8 @@ class SQLiteDatabase {
       practiceDate: input.practice_date,
       location: input.location,
       duration: input.duration,
-      imagePath: input.image_path,
+      imagePaths: serializeImagePaths(imagePaths),
+      coverImagePath,
       status: 'pending',
       teacherComment: null,
       createdAt
@@ -812,12 +846,14 @@ class SQLiteDatabase {
   }
 
   canAccessUpload(imagePath: string, userId: number, role: UserRole) {
+    const pathCondition = recordHasImagePathCondition(imagePath);
+
     if (role === 'admin') {
       return Boolean(
         db
           .select({ id: practiceRecords.id })
           .from(practiceRecords)
-          .where(eq(practiceRecords.imagePath, imagePath))
+          .where(pathCondition)
           .limit(1)
           .get()
       );
@@ -828,7 +864,7 @@ class SQLiteDatabase {
         db
           .select({ id: practiceRecords.id })
           .from(practiceRecords)
-          .where(and(eq(practiceRecords.imagePath, imagePath), eq(practiceRecords.studentId, userId)))
+          .where(and(pathCondition, eq(practiceRecords.studentId, userId)))
           .limit(1)
           .get()
       );
@@ -840,7 +876,7 @@ class SQLiteDatabase {
         .from(practiceRecords)
         .innerJoin(classStudents, eq(practiceRecords.studentId, classStudents.studentId))
         .innerJoin(classTeachers, eq(classStudents.classId, classTeachers.classId))
-        .where(and(eq(practiceRecords.imagePath, imagePath), eq(classTeachers.teacherId, userId)))
+        .where(and(pathCondition, eq(classTeachers.teacherId, userId)))
         .limit(1)
         .get()
     );
@@ -930,7 +966,18 @@ class SQLiteDatabase {
     if (updates.practice_date !== undefined) nextValues.practiceDate = updates.practice_date;
     if (updates.location !== undefined) nextValues.location = updates.location;
     if (updates.duration !== undefined) nextValues.duration = updates.duration;
-    if (updates.image_path !== undefined) nextValues.imagePath = updates.image_path;
+    if (updates.image_paths !== undefined || updates.cover_image_path !== undefined) {
+      const imagePaths = updates.image_paths !== undefined
+        ? normalizeRecordImagePaths(JSON.stringify(updates.image_paths))
+        : current.image_paths;
+      const coverImagePath = updates.cover_image_path !== undefined
+        ? updates.cover_image_path
+        : current.cover_image_path;
+      const nextCoverImagePath = coverImagePath && imagePaths.includes(coverImagePath) ? coverImagePath : imagePaths[0] ?? null;
+
+      nextValues.imagePaths = serializeImagePaths(imagePaths);
+      nextValues.coverImagePath = nextCoverImagePath;
+    }
     if (updates.status !== undefined) nextValues.status = updates.status;
     if (updates.teacher_comment !== undefined) nextValues.teacherComment = updates.teacher_comment;
 
@@ -938,8 +985,10 @@ class SQLiteDatabase {
 
     const updated = this.getRecordById(id);
 
-    if (current.image_path !== updated?.image_path) {
-      this.removeUnusedUpload(current.image_path, id);
+    const staleImagePaths = current.image_paths.filter((imagePath) => !updated?.image_paths.includes(imagePath));
+
+    for (const imagePath of staleImagePaths) {
+      this.removeUnusedUpload(imagePath, id);
     }
 
     return updated;
@@ -953,7 +1002,9 @@ class SQLiteDatabase {
     }
 
     db.delete(practiceRecords).where(eq(practiceRecords.id, id)).run();
-    this.removeUnusedUpload(current.image_path);
+    for (const imagePath of current.image_paths) {
+      this.removeUnusedUpload(imagePath);
+    }
     return true;
   }
 
@@ -1181,7 +1232,7 @@ class SQLiteDatabase {
       return;
     }
 
-    const conditions = [eq(practiceRecords.imagePath, imagePath)];
+    const conditions = [recordHasImagePathCondition(imagePath)];
 
     if (ignoredRecordId !== undefined) {
       conditions.push(sql`${practiceRecords.id} != ${ignoredRecordId}`);

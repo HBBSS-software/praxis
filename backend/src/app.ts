@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import fs from 'node:fs';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 
 import { appConfig } from './config';
 import database from './database';
@@ -30,6 +31,7 @@ const mimeByExtension: Record<string, string> = {
   '.jpeg': 'image/jpeg',
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
+  '.webp': 'image/webp',
   '.svg': 'image/svg+xml; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',
   '.woff': 'font/woff',
@@ -52,7 +54,7 @@ function resolveSafeFile(baseDir: string, requestPath: string) {
 }
 
 function fileResponse(filePath: string) {
-  return new Response(fs.readFileSync(filePath), {
+  return new Response(Readable.toWeb(fs.createReadStream(filePath)) as ReadableStream, {
     headers: {
       'content-type': mimeByExtension[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream'
     }

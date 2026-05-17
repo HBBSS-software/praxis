@@ -37,6 +37,7 @@
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tabs": "^1.1.13",
     "@tanstack/react-table": "^8.21.3",
+    "busboy": "^1.6.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
@@ -50,6 +51,7 @@
     "react-day-picker": "^9.14.0",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.13.1",
+    "sharp": "^0.34.5",
     "smol-toml": "^1.6.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
@@ -59,6 +61,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",
+    "@types/busboy": "^1.5.4",
     "@types/node": "^24.6.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

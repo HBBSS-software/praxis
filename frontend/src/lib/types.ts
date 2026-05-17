@@ -23,6 +23,7 @@ import type {
 } from '../../../backend/src/models';
 
 export const API_URL = '/api';
+export const MAX_RECORD_IMAGES = 9;
 
 export type {
   AppNotification,

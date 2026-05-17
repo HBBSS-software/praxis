@@ -88,15 +88,25 @@ export function ensureDatabaseSchema() {
       practice_date text not null,
       location text,
       duration real not null,
-      image_path text,
+      image_paths text not null default '[]',
+      cover_image_path text,
       status text not null,
       teacher_comment text,
       created_at text not null
     )
   `);
 
+  const recordColumns = db.all<{ name: string }>(sql`pragma table_info(practice_records)`);
+  if (!recordColumns.some((column) => column.name === 'image_paths')) {
+    db.run(sql`alter table practice_records add column image_paths text not null default '[]'`);
+  }
+
+  if (!recordColumns.some((column) => column.name === 'cover_image_path')) {
+    db.run(sql`alter table practice_records add column cover_image_path text`);
+  }
+
   db.run(sql`create index if not exists practice_records_student_idx on practice_records(student_id)`);
-  db.run(sql`create index if not exists practice_records_image_path_idx on practice_records(image_path)`);
+  db.run(sql`create index if not exists practice_records_cover_image_path_idx on practice_records(cover_image_path)`);
   db.run(sql`create index if not exists practice_records_status_idx on practice_records(status)`);
   db.run(sql`create index if not exists practice_records_practice_date_idx on practice_records(practice_date)`);
   db.run(sql`create index if not exists practice_records_created_at_idx on practice_records(created_at)`);

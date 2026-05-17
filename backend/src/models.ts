@@ -1,6 +1,7 @@
 export const userRoles = ['admin', 'teacher', 'student'] as const;
 export const recordStatuses = ['approved', 'pending', 'rejected'] as const;
 export const notificationTypes = ['approved', 'rejected', 'deleted', 'other'] as const;
+export const MAX_RECORD_IMAGES = 9;
 
 export type UserRole = typeof userRoles[number];
 export type RecordStatus = typeof recordStatuses[number];
@@ -59,7 +60,8 @@ export interface PracticeRecord {
   practice_date: string;
   location: string | null;
   duration: number;
-  image_path: string | null;
+  image_paths: string[];
+  cover_image_path: string | null;
   status: RecordStatus;
   teacher_comment: string | null;
   created_at: string;
@@ -91,7 +93,8 @@ export interface CreateRecordInput {
   practice_date: string;
   location: string | null;
   duration: number;
-  image_path: string | null;
+  image_paths: string[];
+  cover_image_path: string | null;
 }
 
 export interface UpdateRecordInput {
@@ -100,7 +103,8 @@ export interface UpdateRecordInput {
   practice_date?: string;
   location?: string | null;
   duration?: number;
-  image_path?: string | null;
+  image_paths?: string[];
+  cover_image_path?: string | null;
   status?: RecordStatus;
   teacher_comment?: string | null;
 }

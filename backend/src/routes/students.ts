@@ -20,6 +20,7 @@ import {
 } from '../http';
 import { authMiddleware, type AppBindings } from '../plugins/auth';
 import type { UpdateRecordInput } from '../models';
+import { MAX_RECORD_IMAGES } from '../models';
 
 const recordIdParamSchema = z.object({
   id: z.string().regex(/^[1-9]\d*$/)
@@ -31,7 +32,8 @@ function buildRecordPayload(body: Record<string, unknown>) {
   const practiceDate = typeof body.practice_date === 'string' ? body.practice_date.trim() : '';
   const location = body.location === undefined ? undefined : normalizeOptionalString(body.location);
   const duration = body.duration === undefined ? undefined : parseDuration(body.duration);
-  const imagePath = body.image_path === undefined ? undefined : normalizeOptionalString(body.image_path);
+  const imagePaths = Array.isArray(body.image_paths) ? body.image_paths.filter((item): item is string => typeof item === 'string') : undefined;
+  const coverImagePath = body.cover_image_path === undefined ? undefined : normalizeOptionalString(body.cover_image_path);
 
   return {
     title,
@@ -39,8 +41,33 @@ function buildRecordPayload(body: Record<string, unknown>) {
     practiceDate,
     location,
     duration,
-    imagePath
+    imagePaths,
+    coverImagePath
   };
+}
+
+function validateRecordImages(imagePaths: string[] | undefined, coverImagePath: string | null | undefined) {
+  if (!imagePaths) {
+    return null;
+  }
+
+  if (imagePaths.length > MAX_RECORD_IMAGES) {
+    return `每条记录最多上传 ${MAX_RECORD_IMAGES} 张图片。`;
+  }
+
+  if (new Set(imagePaths).size !== imagePaths.length) {
+    return '图片不能重复。';
+  }
+
+  if (imagePaths.some((imagePath) => !isValidUploadPath(imagePath))) {
+    return '图片路径无效。';
+  }
+
+  if (coverImagePath && !imagePaths.includes(coverImagePath)) {
+    return '封面图必须从已上传图片中选择。';
+  }
+
+  return null;
 }
 
 export const studentRoutes = new Hono<AppBindings>()
@@ -78,9 +105,9 @@ export const studentRoutes = new Hono<AppBindings>()
     if (durationError) return apiError(c, 400, durationError);
     if (locationError) return apiError(c, 400, locationError);
 
-    if (payload.imagePath && !isValidUploadPath(payload.imagePath)) {
-      return apiError(c, 400, '图片路径无效。');
-    }
+    const imagePaths = payload.imagePaths ?? [];
+    const imageError = validateRecordImages(imagePaths, payload.coverImagePath ?? null);
+    if (imageError) return apiError(c, 400, imageError);
 
     if (database.countStudentRecordsToday(user.id) >= database.MAX_DAILY_RECORDS) {
       return apiError(c, 429, `每天最多创建 ${database.MAX_DAILY_RECORDS} 条实践记录。`);
@@ -93,7 +120,8 @@ export const studentRoutes = new Hono<AppBindings>()
       practice_date: payload.practiceDate,
       location: payload.location ?? null,
       duration: payload.duration!,
-      image_path: payload.imagePath ?? null
+      image_paths: imagePaths,
+      cover_image_path: payload.coverImagePath ?? imagePaths[0] ?? null
     });
 
     return c.json({
@@ -148,12 +176,14 @@ export const studentRoutes = new Hono<AppBindings>()
       updates.duration = payload.duration!;
     }
 
-    if (body.image_path !== undefined) {
-      if (payload.imagePath && !isValidUploadPath(payload.imagePath)) {
-        return apiError(c, 400, '图片路径无效。');
-      }
+    if (body.image_paths !== undefined || body.cover_image_path !== undefined) {
+      const imagePaths = payload.imagePaths ?? record.image_paths;
+      const coverImagePath = payload.coverImagePath ?? imagePaths[0] ?? null;
+      const imageError = validateRecordImages(imagePaths, coverImagePath);
+      if (imageError) return apiError(c, 400, imageError);
 
-      updates.image_path = payload.imagePath ?? null;
+      updates.image_paths = imagePaths;
+      updates.cover_image_path = coverImagePath;
     }
 
     if (record.status === 'rejected') {

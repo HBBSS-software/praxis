@@ -33,6 +33,7 @@ import {
 } from '../http';
 import { authMiddleware, type AppBindings } from '../plugins/auth';
 import type { RecordFilters, UpdateRecordInput, UserRole } from '../models';
+import { MAX_RECORD_IMAGES } from '../models';
 
 const recordIdParamSchema = z.object({
   id: z.string().regex(/^[1-9]\d*$/)
@@ -86,6 +87,26 @@ function parseRecordFilters(query: Record<string, unknown>): RecordFilters {
     created_after: typeof query.created_after === 'string' && query.created_after ? query.created_after : null,
     created_before: typeof query.created_before === 'string' && query.created_before ? query.created_before : null
   });
+}
+
+function validateRecordImages(imagePaths: string[], coverImagePath: string | null) {
+  if (imagePaths.length > MAX_RECORD_IMAGES) {
+    return `每条记录最多上传 ${MAX_RECORD_IMAGES} 张图片。`;
+  }
+
+  if (new Set(imagePaths).size !== imagePaths.length) {
+    return '图片不能重复。';
+  }
+
+  if (imagePaths.some((imagePath) => !isValidUploadPath(imagePath))) {
+    return '图片路径无效。';
+  }
+
+  if (coverImagePath && !imagePaths.includes(coverImagePath)) {
+    return '封面图必须从已上传图片中选择。';
+  }
+
+  return null;
 }
 
 export const teacherRoutes = new Hono<AppBindings>()
@@ -237,14 +258,14 @@ export const teacherRoutes = new Hono<AppBindings>()
       updates.duration = value;
     }
 
-    if (body.image_path !== undefined) {
-      const value = normalizeOptionalString(body.image_path);
+    if (body.image_paths !== undefined || body.cover_image_path !== undefined) {
+      const imagePaths = Array.isArray(body.image_paths) ? body.image_paths : record.image_paths;
+      const coverImagePath = body.cover_image_path !== undefined ? normalizeOptionalString(body.cover_image_path) : imagePaths[0] ?? null;
+      const imageError = validateRecordImages(imagePaths, coverImagePath);
+      if (imageError) return apiError(c, 400, imageError);
 
-      if (value && !isValidUploadPath(value)) {
-        return apiError(c, 400, '图片路径无效。');
-      }
-
-      updates.image_path = value;
+      updates.image_paths = imagePaths;
+      updates.cover_image_path = coverImagePath;
     }
 
     database.updateRecord(record.id, updates);

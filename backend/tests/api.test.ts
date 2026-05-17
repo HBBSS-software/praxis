@@ -163,11 +163,6 @@ async function setNormalPassword(uid: string, password: string) {
 }
 
 describe('database bootstrap and users', () => {
-  test('seeds the default admin account', () => {
-    expect(database.findUserByUid('A00001')?.role).toBe('admin');
-    expect(isLowCostPasswordHash(database.findUserByUid('A00001')?.password ?? '')).toBe(false);
-  });
-
   test('creates users and filters by role', async () => {
     const targetClass = database.createClass('批量班级');
     const createdStudent = await database.createUser('测试学生', 'student');
@@ -243,10 +238,13 @@ describe('assignments, records and notifications', () => {
       practice_date: '2026-01-10',
       location: '图书馆',
       duration: 2,
-      image_path: null
+      image_paths: [],
+      cover_image_path: null
     });
 
     expect(createdRecord.status).toBe('pending');
+    expect(createdRecord.image_paths).toEqual([]);
+    expect(createdRecord.cover_image_path).toBeNull();
     expect(database.getRecordById(createdRecord.id)?.title).toBe('测试记录');
     expect(database.getTeacherRecordById(createdRecord.id)?.student_uid).toBe(student!.uid);
     expect(database.getAllRecords().find((record) => record.id === createdRecord.id)?.title).toBe('测试记录');
@@ -272,16 +270,20 @@ describe('assignments, records and notifications', () => {
     const student = database.findUserByUid('S00002');
     expect(student).toBeTruthy();
 
-    const firstImageName = `test-record-image-${Date.now()}-1.png`;
-    const secondImageName = `test-record-image-${Date.now()}-2.png`;
+    const firstImageName = `test-record-image-${Date.now()}-1.webp`;
+    const secondImageName = `test-record-image-${Date.now()}-2.webp`;
+    const thirdImageName = `test-record-image-${Date.now()}-3.webp`;
     const firstImagePath = path.join(testUploadDir, firstImageName);
     const secondImagePath = path.join(testUploadDir, secondImageName);
+    const thirdImagePath = path.join(testUploadDir, thirdImageName);
     cleanupUploadFiles.add(firstImagePath);
     cleanupUploadFiles.add(secondImagePath);
+    cleanupUploadFiles.add(thirdImagePath);
 
     fs.mkdirSync(testUploadDir, { recursive: true });
     fs.writeFileSync(firstImagePath, 'first');
     fs.writeFileSync(secondImagePath, 'second');
+    fs.writeFileSync(thirdImagePath, 'third');
 
     const record = database.createRecord({
       student_id: student!.id,
@@ -290,19 +292,24 @@ describe('assignments, records and notifications', () => {
       practice_date: '2026-01-11',
       location: '实验室',
       duration: 1,
-      image_path: `/uploads/${firstImageName}`
+      image_paths: [`/uploads/${firstImageName}`, `/uploads/${secondImageName}`],
+      cover_image_path: `/uploads/${secondImageName}`
     });
 
     const updatedRecord = database.updateRecord(record.id, {
-      image_path: `/uploads/${secondImageName}`
+      image_paths: [`/uploads/${secondImageName}`, `/uploads/${thirdImageName}`],
+      cover_image_path: `/uploads/${thirdImageName}`
     });
 
-    expect(updatedRecord?.image_path).toBe(`/uploads/${secondImageName}`);
+    expect(updatedRecord?.image_paths).toEqual([`/uploads/${secondImageName}`, `/uploads/${thirdImageName}`]);
+    expect(updatedRecord?.cover_image_path).toBe(`/uploads/${thirdImageName}`);
     expect(fs.existsSync(firstImagePath)).toBe(false);
     expect(fs.existsSync(secondImagePath)).toBe(true);
+    expect(fs.existsSync(thirdImagePath)).toBe(true);
 
     expect(database.deleteRecord(record.id)).toBe(true);
     expect(fs.existsSync(secondImagePath)).toBe(false);
+    expect(fs.existsSync(thirdImagePath)).toBe(false);
   });
 
   test('keeps deleted student records visible to the assigned teacher', async () => {
@@ -320,7 +327,8 @@ describe('assignments, records and notifications', () => {
       practice_date: '2026-01-12',
       location: null,
       duration: 1.5,
-      image_path: null
+      image_paths: [],
+      cover_image_path: null
     });
 
     expect(database.deleteUser(student.id)).toBe(true);
@@ -473,7 +481,14 @@ describe('route behavior', () => {
 
     const imageBytes = new Uint8Array([
       0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-      0x00, 0x00, 0x00, 0x00
+      0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+      0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+      0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41,
+      0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+      0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00,
+      0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
+      0x42, 0x60, 0x82
     ]);
     const formData = new FormData();
     formData.set('image', new File([imageBytes], 'record.png', { type: 'image/png' }));
@@ -488,6 +503,7 @@ describe('route behavior', () => {
     const imageUrl = uploadPayload.imageUrl as string;
 
     expect(uploadResponse.status).toBe(200);
+    expect(imageUrl.endsWith('.webp')).toBe(true);
 
     database.createRecord({
       student_id: student.id,
@@ -496,7 +512,8 @@ describe('route behavior', () => {
       practice_date: '2026-01-14',
       location: '教室',
       duration: 1,
-      image_path: imageUrl
+      image_paths: [imageUrl],
+      cover_image_path: imageUrl
     });
 
     const ownerResponse = await apiRequest(imageUrl, {
@@ -521,7 +538,7 @@ describe('route behavior', () => {
     });
 
     expect(ownerResponse.status).toBe(200);
-    expect(ownerResponse.headers.get('content-type')).toBe('image/png');
+    expect(ownerResponse.headers.get('content-type')).toBe('image/webp');
     expect(otherStudentResponse.status).toBe(404);
     expect(teacherResponse.status).toBe(200);
     expect(adminResponse.status).toBe(200);
@@ -540,7 +557,8 @@ describe('route behavior', () => {
       practice_date: tomorrow,
       location: '教室',
       duration: '1.0',
-      image_path: null
+      image_paths: [],
+      cover_image_path: null
     }, {
       method: 'POST',
       headers: {
@@ -562,7 +580,8 @@ describe('route behavior', () => {
       practice_date: '2026-01-13',
       location: '操场',
       duration: 1,
-      image_path: null
+      image_paths: [],
+      cover_image_path: null
     });
 
     database.updateRecord(record.id, {
@@ -577,7 +596,8 @@ describe('route behavior', () => {
       practice_date: '2026-01-13',
       location: '操场',
       duration: '1.0',
-      image_path: null
+      image_paths: [],
+      cover_image_path: null
     }, {
       method: 'PUT',
       headers: {

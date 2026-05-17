@@ -1,7 +1,7 @@
 import { hc } from 'hono/client';
 
 import type { Api } from '../../../backend/src/app';
-import { API_URL, type CreatedUser, type CsvImportPreview, type StoredUser, type UploadResult, type UserRole } from './types';
+import { API_URL, MAX_RECORD_IMAGES, type CreatedUser, type CsvImportPreview, type StoredUser, type UploadResult, type UserRole } from './types';
 
 export class ApiResponseError extends Error {
   status: number;
@@ -397,6 +397,16 @@ export function validateUploadImageFile(file: File) {
   }
 
   throw new Error('仅支持上传 JPG、PNG、GIF 格式的图片。');
+}
+
+export function validateUploadImageFiles(files: File[]) {
+  if (files.length > MAX_RECORD_IMAGES) {
+    throw new Error(`每条记录最多上传 ${MAX_RECORD_IMAGES} 张图片。`);
+  }
+
+  for (const file of files) {
+    validateUploadImageFile(file);
+  }
 }
 
 export async function uploadImage(file: File, token: string): Promise<UploadResult> {

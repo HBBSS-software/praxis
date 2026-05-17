@@ -65,13 +65,14 @@ export const practiceRecords = sqliteTable('practice_records', {
   practiceDate: text('practice_date').notNull(),
   location: text('location'),
   duration: real('duration').notNull(),
-  imagePath: text('image_path'),
+  imagePaths: text('image_paths').notNull().default('[]'),
+  coverImagePath: text('cover_image_path'),
   status: text('status').notNull(),
   teacherComment: text('teacher_comment'),
   createdAt: text('created_at').notNull()
 }, (table) => [
   index('practice_records_student_idx').on(table.studentId),
-  index('practice_records_image_path_idx').on(table.imagePath),
+  index('practice_records_cover_image_path_idx').on(table.coverImagePath),
   index('practice_records_status_idx').on(table.status),
   index('practice_records_practice_date_idx').on(table.practiceDate),
   index('practice_records_created_at_idx').on(table.createdAt)

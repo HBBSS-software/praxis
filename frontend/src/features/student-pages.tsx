@@ -1,5 +1,5 @@
 import { CalendarDays, CheckCircle2, Clock3, Eye, ImagePlus, MapPin, Pencil, PlusCircle, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useSession } from '@/lib/auth';
@@ -16,10 +16,25 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
-import { ApiResponseError, createApiClient, unwrapResponse, uploadImage, validateUploadImageFile } from '@/lib/api';
+import { ApiResponseError, createApiClient, unwrapResponse, uploadImage, validateUploadImageFiles } from '@/lib/api';
 import { toastError, toastSuccess } from '@/lib/feedback';
 import { formatDate, formatDateTime, formatDuration, normalizeDateInputValue, notificationLabel, statusLabel } from '@/lib/format';
-import type { AppNotification, RecordStatistics, StudentRecord } from '@/lib/types';
+import { MAX_RECORD_IMAGES, type AppNotification, type RecordStatistics, type StudentRecord } from '@/lib/types';
+
+type UploadImageItem = {
+  id: string;
+  file?: File;
+  path?: string;
+  preview: string;
+};
+
+function createLocalImageItem(file: File): UploadImageItem {
+  return {
+    id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
+    file,
+    preview: URL.createObjectURL(file)
+  };
+}
 
 function StudentPageFrame({
   title,
@@ -115,11 +130,11 @@ export function StudentDashboardPage() {
               <CardContent className="p-0">
                 <div className="grid min-h-full md:grid-cols-[180px_minmax(0,1fr)]">
                   <div className="relative min-h-40 overflow-hidden bg-muted">
-                    {record.image_path ? (
+                    {record.cover_image_path ? (
                       <AuthenticatedImage
                         className="h-full w-full object-cover"
                         placeholderClassName="flex h-full w-full items-center justify-center bg-muted/40"
-                        src={record.image_path}
+                        src={record.cover_image_path}
                         alt={record.title}
                       />
                     ) : (
@@ -188,13 +203,18 @@ export function StudentDashboardPage() {
                 <DialogDescription>{formatDate(selectedRecord.practice_date)} · {formatDuration(selectedRecord.duration)} 小时</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
-                {selectedRecord.image_path ? (
-                  <AuthenticatedImage
-                    className="max-h-80 w-full rounded-2xl object-cover"
-                    placeholderClassName="flex min-h-52 w-full items-center justify-center rounded-2xl bg-muted/40"
-                    src={selectedRecord.image_path}
-                    alt={selectedRecord.title}
-                  />
+                {selectedRecord.image_paths.length > 0 ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {selectedRecord.image_paths.map((imagePath) => (
+                      <AuthenticatedImage
+                        key={imagePath}
+                        className="max-h-80 w-full rounded-2xl object-cover"
+                        placeholderClassName="flex min-h-52 w-full items-center justify-center rounded-2xl bg-muted/40"
+                        src={imagePath}
+                        alt={selectedRecord.title}
+                      />
+                    ))}
+                  </div>
                 ) : null}
                 <div className="flex flex-wrap gap-2">
                   <StatusBadge status={selectedRecord.status} />
@@ -257,9 +277,9 @@ export function StudentUploadPage() {
   const [loading, setLoading] = useState(Boolean(editId));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState('');
-  const [originalImagePath, setOriginalImagePath] = useState<string | null>(null);
+  const [images, setImages] = useState<UploadImageItem[]>([]);
+  const [coverImageId, setCoverImageId] = useState('');
+  const localPreviewUrls = useRef(new Set<string>());
   const [form, setForm] = useState({
     title: '',
     content: '',
@@ -286,8 +306,13 @@ export function StudentUploadPage() {
           location: record.location ?? '',
           duration: String(record.duration)
         });
-        setOriginalImagePath(record.image_path);
-        setImagePreview('');
+        const recordImages = record.image_paths.map((imagePath) => ({
+          id: imagePath,
+          path: imagePath,
+          preview: imagePath
+        }));
+        setImages(recordImages);
+        setCoverImageId(record.cover_image_path ?? recordImages[0]?.id ?? '');
       })
       .catch((nextError) => {
         if (nextError instanceof ApiResponseError && nextError.status === 401) {
@@ -299,7 +324,14 @@ export function StudentUploadPage() {
       .finally(() => setLoading(false));
   }, [editId, navigate, signOut, token]);
 
-  const previewUrl = useMemo(() => imagePreview, [imagePreview]);
+  useEffect(() => () => {
+    for (const previewUrl of localPreviewUrls.current) {
+      URL.revokeObjectURL(previewUrl);
+    }
+    localPreviewUrls.current.clear();
+  }, []);
+
+  const remainingImageSlots = MAX_RECORD_IMAGES - images.length;
 
   return (
     <StudentPageFrame
@@ -326,11 +358,26 @@ export function StudentUploadPage() {
                 setSubmitting(true);
 
                 try {
-                  let imagePath = originalImagePath;
-                  if (selectedImage) {
-                    const uploadResult = await uploadImage(selectedImage, token);
-                    imagePath = uploadResult.imageUrl;
+                  if (images.length > MAX_RECORD_IMAGES) {
+                    throw new Error(`每条记录最多上传 ${MAX_RECORD_IMAGES} 张图片。`);
                   }
+
+                  const uploadedImages = await Promise.all(images.map(async (image) => {
+                    if (image.path) {
+                      return {
+                        id: image.id,
+                        path: image.path
+                      };
+                    }
+
+                    const uploadResult = await uploadImage(image.file!, token);
+                    return {
+                      id: image.id,
+                      path: uploadResult.imageUrl
+                    };
+                  }));
+                  const imagePaths = uploadedImages.map((image) => image.path);
+                  const coverImagePath = uploadedImages.find((image) => image.id === coverImageId)?.path ?? imagePaths[0] ?? null;
 
                   const api = createApiClient(token);
                   const payload = {
@@ -339,7 +386,8 @@ export function StudentUploadPage() {
                     content: form.content.trim(),
                     location: form.location.trim() || null,
                     duration: form.duration.trim(),
-                    image_path: imagePath
+                    image_paths: imagePaths,
+                    cover_image_path: coverImagePath
                   };
 
                   if (editId) {
@@ -392,55 +440,97 @@ export function StudentUploadPage() {
 
               <div className="space-y-4">
                 <Field label="实践图片">
-                  <label className="group flex min-h-72 cursor-pointer flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-border bg-muted/20 p-5 text-center transition hover:border-primary hover:bg-background">
-                    {previewUrl ? (
-                      <AuthenticatedImage className="max-h-72 w-full rounded-2xl object-cover" src={previewUrl} alt="预览" />
-                    ) : originalImagePath ? (
-                      <AuthenticatedImage
-                        className="max-h-72 w-full rounded-2xl object-cover"
-                        placeholderClassName="flex min-h-72 w-full items-center justify-center rounded-xl bg-muted/40"
-                        src={originalImagePath}
-                        alt="预览"
-                      />
-                    ) : (
-                      <>
-                        <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                          <ImagePlus className="size-6" />
-                        </div>
-                        <div>
-                          <p className="text-base font-medium">点击上传图片</p>
-                          <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">支持 jpg、png、gif，最大 5 MiB</p>
-                        </div>
-                      </>
-                    )}
+                  <label className="group flex min-h-28 cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/20 p-4 text-center transition hover:border-primary hover:bg-background has-disabled:pointer-events-none has-disabled:opacity-60">
+                    <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <ImagePlus className="size-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">选择图片</p>
+                      <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">最多 {MAX_RECORD_IMAGES} 张，单张最大 5 MiB</p>
+                    </div>
                     <input
                       className="hidden"
                       type="file"
                       accept="image/jpeg,image/png,image/gif"
+                      disabled={remainingImageSlots <= 0}
+                      multiple
                       onChange={(event) => {
-                        const file = event.target.files?.[0] ?? null;
-                        if (!file) {
-                          setSelectedImage(null);
-                          setImagePreview('');
+                        const files = Array.from(event.target.files ?? []);
+                        if (files.length === 0) {
                           return;
                         }
 
                         try {
-                          validateUploadImageFile(file);
+                          if (files.length > remainingImageSlots) {
+                            throw new Error(`还能选择 ${remainingImageSlots} 张图片。`);
+                          }
+                          validateUploadImageFiles(files);
                         } catch (nextError) {
-                          setSelectedImage(null);
                           event.target.value = '';
-                          setImagePreview('');
                           toastError(nextError);
                           return;
                         }
 
-                        setSelectedImage(file);
-                        setImagePreview(URL.createObjectURL(file));
+                        const nextImages = files.map(createLocalImageItem);
+                        for (const image of nextImages) {
+                          localPreviewUrls.current.add(image.preview);
+                        }
+                        setImages((current) => {
+                          const merged = [...current, ...nextImages];
+                          if (!coverImageId && merged[0]) {
+                            setCoverImageId(merged[0].id);
+                          }
+                          return merged;
+                        });
+                        event.target.value = '';
                       }}
                     />
                   </label>
                 </Field>
+                {images.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {images.map((image) => (
+                      <div key={image.id} className="space-y-2 rounded-lg border bg-card p-2">
+                        <AuthenticatedImage
+                          className="aspect-square w-full rounded-md object-cover"
+                          placeholderClassName="flex aspect-square w-full items-center justify-center rounded-md bg-muted/40"
+                          src={image.preview}
+                          alt="实践图片"
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            size="sm"
+                            type="button"
+                            variant={coverImageId === image.id ? 'default' : 'outline'}
+                            onClick={() => setCoverImageId(image.id)}
+                          >
+                            封面
+                          </Button>
+                          <Button
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                            onClick={() => {
+                              if (image.file) {
+                                URL.revokeObjectURL(image.preview);
+                                localPreviewUrls.current.delete(image.preview);
+                              }
+                              setImages((current) => {
+                                const nextImages = current.filter((item) => item.id !== image.id);
+                                if (coverImageId === image.id) {
+                                  setCoverImageId(nextImages[0]?.id ?? '');
+                                }
+                                return nextImages;
+                              });
+                            }}
+                          >
+                            移除
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </form>
           )}

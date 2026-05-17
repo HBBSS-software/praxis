@@ -1330,13 +1330,18 @@ function RecordPreview({ record }: { record: TeacherRecord }) {
       <div className="rounded-xl bg-muted/40 p-4 text-sm leading-7 text-muted-foreground">
         {record.content}
       </div>
-      {record.image_path ? (
-        <AuthenticatedImage
-          className="max-h-72 w-full rounded-2xl object-cover"
-          placeholderClassName="flex min-h-52 w-full items-center justify-center rounded-2xl bg-muted/40"
-          src={record.image_path}
-          alt={record.title}
-        />
+      {record.image_paths.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {record.image_paths.map((imagePath) => (
+            <AuthenticatedImage
+              key={imagePath}
+              className="max-h-72 w-full rounded-2xl object-cover"
+              placeholderClassName="flex min-h-52 w-full items-center justify-center rounded-2xl bg-muted/40"
+              src={imagePath}
+              alt={record.title}
+            />
+          ))}
+        </div>
       ) : null}
     </div>
   );
