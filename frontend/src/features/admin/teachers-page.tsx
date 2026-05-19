@@ -4,6 +4,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 
 import { ConfirmActionDialog } from '@/components/confirm-action-dialog';
 import { DataTable } from '@/components/data-table';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -55,6 +56,8 @@ function UserListPage({
   const { token, signOut } = useSession();
   const { captureShiftKey, resetSelectionAnchor, updateSelection } = useShiftMultiSelect();
   const [users, setUsers] = useState<UserSummary[]>([]);
+  const [classes, setClasses] = useState<ClassSummary[]>([]);
+  const [assignments, setAssignments] = useState<ClassAssignments>({ teachers: [], students: [] });
   const [sortBy, setSortBy] = useState<'uid-asc' | 'uid-desc' | 'name-asc' | 'name-desc'>('uid-asc');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editing, setEditing] = useState<UserSummary | null>(null);
@@ -70,8 +73,16 @@ function UserListPage({
     if (!token) return;
 
     try {
-      const data = await unwrapResponse<{ users: UserSummary[] }>(createApiClient(token).admin.users.get({ query: { role } }));
-      setUsers(data.users);
+      const api = createApiClient(token);
+      const [usersData, classData] = await Promise.all([
+        unwrapResponse<{ users: UserSummary[] }>(api.admin.users.get({ query: { role } })),
+        role === 'teacher'
+          ? unwrapResponse<{ classes: ClassSummary[]; assignments: ClassAssignments }>(api.admin.classes.get())
+          : Promise.resolve({ classes: [], assignments: { teachers: [], students: [] } })
+      ]);
+      setUsers(usersData.users);
+      setClasses(classData.classes);
+      setAssignments(classData.assignments);
       setSelectedIds([]);
       resetSelectionAnchor();
     } catch (error) {
@@ -100,6 +111,18 @@ function UserListPage({
   const userIds = useMemo(() => sortedUsers.map((user) => user.id), [sortedUsers]);
   const selectedUserIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const allSelected = sortedUsers.length > 0 && selectedIds.length === sortedUsers.length;
+  const classMap = useMemo(() => new Map(classes.map((item) => [item.id, item])), [classes]);
+  const teacherClassMap = useMemo(() => {
+    const next = new Map<number, ClassSummary[]>();
+
+    for (const assignment of assignments.teachers) {
+      const classItem = classMap.get(assignment.class_id);
+      if (!classItem) continue;
+      next.set(assignment.teacher_id, [...(next.get(assignment.teacher_id) ?? []), classItem]);
+    }
+
+    return next;
+  }, [assignments.teachers, classMap]);
 
   const columns = useMemo<Array<ColumnDef<UserSummary>>>(() => [
     {
@@ -150,6 +173,21 @@ function UserListPage({
       header: '创建时间',
       cell: ({ row }) => <span className="text-muted-foreground">{formatDateTime(row.original.created_at)}</span>
     },
+    ...(role === 'teacher' ? [{
+      id: 'classes',
+      header: '管理班级',
+      cell: ({ row }) => {
+        const managedClasses = teacherClassMap.get(row.original.id) ?? [];
+
+        return managedClasses.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {managedClasses.map((item) => (
+              <Badge key={item.id} variant="secondary">{item.name} ({item.cid})</Badge>
+            ))}
+          </div>
+        ) : <span className="text-muted-foreground">未分配</span>;
+      }
+    } satisfies ColumnDef<UserSummary>] : []),
     {
       id: 'actions',
       header: '操作',
@@ -171,7 +209,7 @@ function UserListPage({
         </div>
       )
     }
-  ], [allSelected, captureShiftKey, selectedUserIdSet, sortBy, updateSelection, userIds]);
+  ], [allSelected, captureShiftKey, role, selectedUserIdSet, sortBy, teacherClassMap, updateSelection, userIds]);
 
   return (
     <AdminPageFrame title={title} description={description}>
