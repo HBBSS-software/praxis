@@ -23,17 +23,17 @@ function lazyPage<TModule extends Record<string, unknown>>(
 
 const LoginPage = lazyPage(() => import('@/features/auth-page'), 'LoginPage');
 const SetupPasswordPage = lazyPage(() => import('@/features/setup-password-page'), 'SetupPasswordPage');
-const StudentDashboardPage = lazyPage(() => import('@/features/student-pages'), 'StudentDashboardPage');
-const StudentUploadPage = lazyPage(() => import('@/features/student-pages'), 'StudentUploadPage');
-const StudentNotificationsPage = lazyPage(() => import('@/features/student-pages'), 'StudentNotificationsPage');
-const StudentAccountPage = lazyPage(() => import('@/features/student-pages'), 'StudentAccountPage');
-const TeacherDashboardPage = lazyPage(() => import('@/features/teacher-pages'), 'TeacherDashboardPage');
-const TeacherStudentsPage = lazyPage(() => import('@/features/teacher-pages'), 'TeacherStudentsPage');
-const AccountSettingsPage = lazyPage(() => import('@/features/teacher-pages'), 'AccountSettingsPage');
-const AdminAssignmentsPage = lazyPage(() => import('@/features/admin-pages'), 'AdminAssignmentsPage');
-const AdminTeachersPage = lazyPage(() => import('@/features/admin-pages'), 'AdminTeachersPage');
-const AdminUsersPage = lazyPage(() => import('@/features/admin-pages'), 'AdminUsersPage');
-const AdminStudentsPage = lazyPage(() => import('@/features/admin-pages'), 'AdminStudentsPage');
+const StudentDashboardPage = lazyPage(() => import('@/features/student'), 'StudentDashboardPage');
+const StudentUploadPage = lazyPage(() => import('@/features/student'), 'StudentUploadPage');
+const StudentNotificationsPage = lazyPage(() => import('@/features/student'), 'StudentNotificationsPage');
+const StudentAccountPage = lazyPage(() => import('@/features/student'), 'StudentAccountPage');
+const TeacherDashboardPage = lazyPage(() => import('@/features/teacher'), 'TeacherDashboardPage');
+const TeacherStudentsPage = lazyPage(() => import('@/features/teacher'), 'TeacherStudentsPage');
+const AccountSettingsPage = lazyPage(() => import('@/features/teacher'), 'AccountSettingsPage');
+const AdminAssignmentsPage = lazyPage(() => import('@/features/admin'), 'AdminAssignmentsPage');
+const AdminTeachersPage = lazyPage(() => import('@/features/admin'), 'AdminTeachersPage');
+const AdminUsersPage = lazyPage(() => import('@/features/admin'), 'AdminUsersPage');
+const AdminStudentsPage = lazyPage(() => import('@/features/admin'), 'AdminStudentsPage');
 
 function RouteFallback() {
   return (
