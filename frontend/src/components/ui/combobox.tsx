@@ -102,10 +102,17 @@ function ComboboxContent({
     ComboboxPrimitive.Positioner.Props,
     "side" | "align" | "sideOffset" | "alignOffset" | "anchor"
   >) {
-  const dialogContent = anchor && "current" in anchor
-    ? anchor.current?.closest("[data-slot=dialog-content]")
-    : null
-  const portalContainer = dialogContent instanceof HTMLElement ? dialogContent : undefined
+  const [portalContainer, setPortalContainer] = React.useState<HTMLElement | undefined>()
+
+  React.useLayoutEffect(() => {
+    if (!anchor || !("current" in anchor)) {
+      setPortalContainer(undefined)
+      return
+    }
+
+    const dialogContent = anchor.current?.closest("[data-slot=dialog-content]")
+    setPortalContainer(dialogContent instanceof HTMLElement ? dialogContent : undefined)
+  }, [anchor])
 
   return (
     <ComboboxPrimitive.Portal container={portalContainer} className="relative z-[60]">
