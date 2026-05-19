@@ -9,13 +9,13 @@ export interface AppConfig {
   vite_port: number;
   backend_host: string;
   frontend_host: string;
-  database_file: string;
   jwt_secret: string;
   jwt_issuer: string;
   jwt_expires_in: string;
   login_max_attempts: number;
   login_lockout_ms: number;
   upload_image_max_size_bytes: number;
+  temp_upload_cleanup_interval_ms: number;
   trust_proxy: boolean;
   is_production: boolean;
   cors_origins: string[];
@@ -37,13 +37,13 @@ function createDefaultConfig(): AppConfig {
     vite_port: 5173,
     backend_host: '127.0.0.1',
     frontend_host: '127.0.0.1',
-    database_file: 'backend/data/app.db',
     jwt_secret: randomSecret(),
     jwt_issuer: 'social-practice-system',
     jwt_expires_in: '8h',
     login_max_attempts: 5,
     login_lockout_ms: 15 * 60 * 1000,
     upload_image_max_size_bytes: 5 * 1024 * 1024,
+    temp_upload_cleanup_interval_ms: 5000,
     trust_proxy: false,
     is_production: false,
     cors_origins: []
@@ -90,13 +90,13 @@ function normalizeConfig(source: unknown): AppConfig {
     vite_port: getPositiveInteger(config, 'vite_port', fallback.vite_port),
     backend_host: getString(config, 'backend_host', fallback.backend_host),
     frontend_host: getString(config, 'frontend_host', fallback.frontend_host),
-    database_file: getString(config, 'database_file', fallback.database_file),
     jwt_secret: getString(config, 'jwt_secret', fallback.jwt_secret),
     jwt_issuer: getString(config, 'jwt_issuer', fallback.jwt_issuer),
     jwt_expires_in: getString(config, 'jwt_expires_in', fallback.jwt_expires_in),
     login_max_attempts: getPositiveInteger(config, 'login_max_attempts', fallback.login_max_attempts),
     login_lockout_ms: getPositiveInteger(config, 'login_lockout_ms', fallback.login_lockout_ms),
     upload_image_max_size_bytes: getPositiveInteger(config, 'upload_image_max_size_bytes', fallback.upload_image_max_size_bytes),
+    temp_upload_cleanup_interval_ms: getPositiveInteger(config, 'temp_upload_cleanup_interval_ms', fallback.temp_upload_cleanup_interval_ms),
     trust_proxy: getBoolean(config, 'trust_proxy', fallback.trust_proxy),
     is_production: getBoolean(config, 'is_production', fallback.is_production),
     cors_origins: getStringArray(config, 'cors_origins')

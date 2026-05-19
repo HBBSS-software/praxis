@@ -7,6 +7,7 @@ import type { AppBindings } from './plugins/auth';
 
 const positiveIdPattern = /^[1-9]\d*$/;
 const uploadPathPattern = /^\/uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const tmpUploadPathPattern = /^\/tmp-uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
 
 export const USER_NAME_MAX_LENGTH = 40;
@@ -241,6 +242,14 @@ export function validateComment(comment: string | null) {
 
 export function isValidUploadPath(value: string) {
   return uploadPathPattern.test(value);
+}
+
+export function isValidTmpUploadPath(value: string) {
+  return tmpUploadPathPattern.test(value);
+}
+
+export function isValidRecordImagePath(value: string) {
+  return isValidTmpUploadPath(value);
 }
 
 export function validatePracticeDate(value: string) {

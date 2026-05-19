@@ -2,9 +2,12 @@ import { serve } from '@hono/node-server';
 
 import { app } from './app';
 import { appConfig } from './config';
+import database from './database';
 
 const port = appConfig.port;
 const hostname = appConfig.backend_host;
+
+database.startTempUploadCleanupWorker();
 
 serve({
   fetch: app.fetch,

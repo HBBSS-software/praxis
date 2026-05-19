@@ -11,7 +11,7 @@ import {
   batchUpdateStudentClassBodySchema,
   batchReviewBodySchema,
   buildReviewNotificationMessage,
-  isValidUploadPath,
+  isValidRecordImagePath,
   normalizeOptionalString,
   normalizeRecordFilters,
   parseDuration,
@@ -99,7 +99,7 @@ function validateRecordImages(imagePaths: string[], coverImagePath: string | nul
     return '图片不能重复。';
   }
 
-  if (imagePaths.some((imagePath) => !isValidUploadPath(imagePath))) {
+  if (imagePaths.some((imagePath) => !isValidRecordImagePath(imagePath))) {
     return '图片路径无效。';
   }
 
@@ -200,7 +200,7 @@ export const teacherRoutes = new Hono<AppBindings>()
       }
 
       if (body.action === 'deleted') {
-        database.deleteRecord(record.id);
+        database.deleteRecord(record.id, record.image_paths);
         database.createNotification(record.student_id, 'deleted', `你的实践记录 "${record.title}" 已被删除。`);
       } else {
         database.updateRecord(record.id, {
@@ -266,17 +266,20 @@ export const teacherRoutes = new Hono<AppBindings>()
       updates.duration = value;
     }
 
-    if (body.image_paths !== undefined || body.cover_image_path !== undefined) {
-      const imagePaths = Array.isArray(body.image_paths) ? body.image_paths : record.image_paths;
-      const coverImagePath = body.cover_image_path !== undefined ? normalizeOptionalString(body.cover_image_path) : imagePaths[0] ?? null;
-      const imageError = validateRecordImages(imagePaths, coverImagePath);
-      if (imageError) return apiError(c, 400, imageError);
+    const imagePaths = Array.isArray(body.image_paths) ? body.image_paths : [];
+    const coverImagePath = body.cover_image_path !== undefined ? normalizeOptionalString(body.cover_image_path) : imagePaths[0] ?? null;
+    const imageError = validateRecordImages(imagePaths, coverImagePath);
+    if (imageError) return apiError(c, 400, imageError);
 
-      updates.image_paths = imagePaths;
-      updates.cover_image_path = coverImagePath;
+    updates.image_paths = imagePaths;
+    updates.cover_image_path = coverImagePath;
+
+    try {
+      database.updateRecord(record.id, updates);
+    } catch (error) {
+      return apiError(c, 400, error instanceof Error ? error.message : '图片处理失败。');
     }
 
-    database.updateRecord(record.id, updates);
     return c.json({ message: '记录更新成功。' });
   })
   .delete('/teacher/records/:id', zValidator('param', recordIdParamSchema, validationHook), (c) => {
@@ -288,7 +291,7 @@ export const teacherRoutes = new Hono<AppBindings>()
       return apiError(c, 404, '记录不存在。');
     }
 
-    database.deleteRecord(record.id);
+    database.deleteRecord(record.id, record.image_paths);
     database.createNotification(record.student_id, 'deleted', `你的实践记录 "${record.title}" 已被删除。`);
     return c.json({ message: '记录删除成功。' });
   })

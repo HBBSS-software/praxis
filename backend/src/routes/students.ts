@@ -6,7 +6,7 @@ import database from '../database';
 import {
   apiError,
   createRecordBodySchema,
-  isValidUploadPath,
+  isValidRecordImagePath,
   normalizeOptionalString,
   requireRole,
   updateRecordBodySchema,
@@ -59,7 +59,7 @@ function validateRecordImages(imagePaths: string[] | undefined, coverImagePath: 
     return '图片不能重复。';
   }
 
-  if (imagePaths.some((imagePath) => !isValidUploadPath(imagePath))) {
+  if (imagePaths.some((imagePath) => !isValidRecordImagePath(imagePath))) {
     return '图片路径无效。';
   }
 
@@ -113,16 +113,22 @@ export const studentRoutes = new Hono<AppBindings>()
       return apiError(c, 429, `每天最多创建 ${database.MAX_DAILY_RECORDS} 条实践记录。`);
     }
 
-    const record = database.createRecord({
-      student_id: user.id,
-      title: payload.title,
-      content: payload.content,
-      practice_date: payload.practiceDate,
-      location: payload.location ?? null,
-      duration: payload.duration!,
-      image_paths: imagePaths,
-      cover_image_path: payload.coverImagePath ?? imagePaths[0] ?? null
-    });
+    let record;
+
+    try {
+      record = database.createRecord({
+        student_id: user.id,
+        title: payload.title,
+        content: payload.content,
+        practice_date: payload.practiceDate,
+        location: payload.location ?? null,
+        duration: payload.duration!,
+        image_paths: imagePaths,
+        cover_image_path: payload.coverImagePath ?? imagePaths[0] ?? null
+      });
+    } catch (error) {
+      return apiError(c, 400, error instanceof Error ? error.message : '图片处理失败。');
+    }
 
     return c.json({
       message: '记录创建成功。',
@@ -176,22 +182,25 @@ export const studentRoutes = new Hono<AppBindings>()
       updates.duration = payload.duration!;
     }
 
-    if (body.image_paths !== undefined || body.cover_image_path !== undefined) {
-      const imagePaths = payload.imagePaths ?? record.image_paths;
-      const coverImagePath = payload.coverImagePath ?? imagePaths[0] ?? null;
-      const imageError = validateRecordImages(imagePaths, coverImagePath);
-      if (imageError) return apiError(c, 400, imageError);
+    const imagePaths = payload.imagePaths ?? [];
+    const coverImagePath = payload.coverImagePath ?? imagePaths[0] ?? null;
+    const imageError = validateRecordImages(imagePaths, coverImagePath);
+    if (imageError) return apiError(c, 400, imageError);
 
-      updates.image_paths = imagePaths;
-      updates.cover_image_path = coverImagePath;
-    }
+    updates.image_paths = imagePaths;
+    updates.cover_image_path = coverImagePath;
 
     if (record.status === 'rejected') {
       updates.status = 'pending';
       updates.teacher_comment = null;
     }
 
-    database.updateRecord(record.id, updates);
+    try {
+      database.updateRecord(record.id, updates);
+    } catch (error) {
+      return apiError(c, 400, error instanceof Error ? error.message : '图片处理失败。');
+    }
+
     return c.json({ message: '记录更新成功。' });
   })
   .delete('/students/me/records/:id', zValidator('param', recordIdParamSchema, validationHook), (c) => {
@@ -207,7 +216,7 @@ export const studentRoutes = new Hono<AppBindings>()
       return apiError(c, 403, '只能删除待审核的记录。');
     }
 
-    database.deleteRecord(record.id);
+    database.deleteRecord(record.id, record.image_paths);
     return c.json({ message: '记录删除成功。' });
   })
   .get('/students/me/notifications', (c) => {

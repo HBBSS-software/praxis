@@ -92,7 +92,8 @@ export function StudentUploadPage() {
     localPreviewUrls.current.clear();
   }, []);
 
-  const remainingImageSlots = MAX_RECORD_IMAGES - images.length;
+  const replacingStoredImages = Boolean(editId && images.some((image) => image.path));
+  const remainingImageSlots = replacingStoredImages ? MAX_RECORD_IMAGES : MAX_RECORD_IMAGES - images.length;
 
   return (
     <StudentPageFrame
@@ -123,7 +124,8 @@ export function StudentUploadPage() {
                     throw new Error(`每条记录最多上传 ${MAX_RECORD_IMAGES} 张图片。`);
                   }
 
-                  const uploadedImages = await Promise.all(images.map(async (image) => {
+                  const submitImages = editId ? images.filter((image) => image.file) : images;
+                  const uploadedImages = await Promise.all(submitImages.map(async (image) => {
                     if (image.path) {
                       return {
                         id: image.id,
@@ -146,15 +148,21 @@ export function StudentUploadPage() {
                     title: form.title.trim(),
                     content: form.content.trim(),
                     location: form.location.trim() || null,
-                    duration: form.duration.trim(),
-                    image_paths: imagePaths,
-                    cover_image_path: coverImagePath
+                    duration: form.duration.trim()
                   };
 
                   if (editId) {
-                    await unwrapResponse(api.student.records({ id: Number(editId) }).put(payload));
+                    await unwrapResponse(api.student.records({ id: Number(editId) }).put({
+                      ...payload,
+                      image_paths: imagePaths,
+                      cover_image_path: coverImagePath
+                    }));
                   } else {
-                    await unwrapResponse(api.student.records.post(payload));
+                    await unwrapResponse(api.student.records.post({
+                      ...payload,
+                      image_paths: imagePaths,
+                      cover_image_path: coverImagePath
+                    }));
                   }
 
                   toastSuccess(editId ? '记录更新成功。' : '记录提交成功。');
@@ -237,9 +245,13 @@ export function StudentUploadPage() {
                           localPreviewUrls.current.add(image.preview);
                         }
                         setImages((current) => {
-                          const merged = [...current, ...nextImages];
+                          const hasStoredImages = editId && current.some((image) => image.path);
+                          const merged = hasStoredImages ? nextImages : [...current, ...nextImages];
                           if (!coverImageId && merged[0]) {
                             setCoverImageId(merged[0].id);
+                          }
+                          if (hasStoredImages) {
+                            setCoverImageId(merged[0]?.id ?? '');
                           }
                           return merged;
                         });

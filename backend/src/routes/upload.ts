@@ -8,12 +8,13 @@ import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import sharp from 'sharp';
 
 import { appConfig } from '../config';
+import database from '../database';
 import { apiError, requireAuthenticatedUser } from '../http';
 import { authMiddleware, type AppBindings } from '../plugins/auth';
 
-const uploadDir = path.resolve(process.cwd(), 'backend/uploads');
+const tmpUploadDir = path.resolve(process.cwd(), 'backend/tmp-uploads');
 
-fs.mkdirSync(uploadDir, { recursive: true });
+fs.mkdirSync(tmpUploadDir, { recursive: true });
 
 const webpQuality = 76;
 const maxImageDimension = 1920;
@@ -96,7 +97,7 @@ function parseImageUpload(request: Request): Promise<UploadedImageFile> {
         fileSize: appConfig.upload_image_max_size_bytes + 1
       }
     });
-    const tempFilePath = path.join(uploadDir, `${randomUUID()}.upload`);
+    const tempFilePath = path.join(tmpUploadDir, `${randomUUID()}.upload`);
     let writeStream: fs.WriteStream | null = null;
     let settled = false;
     let sawImage = false;
@@ -211,7 +212,8 @@ export const uploadRoutes = new Hono<AppBindings>()
 
     let uploaded: UploadedImageFile;
     const filename = `${randomUUID()}.webp`;
-    const filePath = path.join(uploadDir, filename);
+    const imagePath = `/tmp-uploads/${filename}`;
+    const filePath = path.join(tmpUploadDir, filename);
 
     try {
       uploaded = await parseImageUpload(c.req.raw);
@@ -240,10 +242,11 @@ export const uploadRoutes = new Hono<AppBindings>()
     }
 
     await removeFileIfExists(uploaded.filePath);
+    database.enqueueTempUpload(imagePath);
 
     return c.json({
       message: '上传成功。',
       filename,
-      imageUrl: `/uploads/${filename}`
+      imageUrl: imagePath
     });
   });

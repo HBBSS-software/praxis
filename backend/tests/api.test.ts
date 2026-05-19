@@ -7,24 +7,26 @@ import { decodeJwt, SignJWT } from 'jose';
 const testDbPath = `/tmp/social-practice-test-db-${Date.now()}.db`;
 const testConfigPath = `/tmp/social-practice-test-config-${Date.now()}.toml`;
 const testUploadDir = fileURLToPath(new URL('../uploads', import.meta.url));
+const testTmpUploadDir = fileURLToPath(new URL('../tmp-uploads', import.meta.url));
 const cleanupUploadFiles = new Set<string>();
 const testJwtSecret = 'test-jwt-secret-12345678901234567890';
 const testJwtIssuer = 'social-practice-system';
 
 globalThis.__socialPracticeConfigFile = testConfigPath;
+globalThis.__socialPracticeDatabaseFile = testDbPath;
 
 fs.writeFileSync(testConfigPath, [
   'port = 3000',
   'vite_port = 5173',
   'backend_host = "127.0.0.1"',
   'frontend_host = "127.0.0.1"',
-  `database_file = "${testDbPath}"`,
   `jwt_secret = "${testJwtSecret}"`,
   `jwt_issuer = "${testJwtIssuer}"`,
   'jwt_expires_in = "8h"',
   'login_max_attempts = 3',
   'login_lockout_ms = 60000',
   'upload_image_max_size_bytes = 5242880',
+  'temp_upload_cleanup_interval_ms = 5000',
   'trust_proxy = true',
   'is_production = false',
   'cors_origins = []'
@@ -165,6 +167,21 @@ async function setNormalPassword(uid: string, password: string) {
   database.updateUserPassword(user.id, await hashPassword(password));
 }
 
+function createTempUpload(name: string, content: string) {
+  const filePath = path.join(testTmpUploadDir, name);
+  const imagePath = `/tmp-uploads/${name}`;
+
+  cleanupUploadFiles.add(filePath);
+  fs.mkdirSync(testTmpUploadDir, { recursive: true });
+  fs.writeFileSync(filePath, content);
+  database.enqueueTempUpload(imagePath);
+
+  return {
+    filePath,
+    imagePath
+  };
+}
+
 describe('database bootstrap and users', () => {
   test('creates users and filters by role', async () => {
     const targetClass = database.createClass('批量班级');
@@ -273,20 +290,9 @@ describe('assignments, records and notifications', () => {
     const student = database.findUserByUid('S00002');
     expect(student).toBeTruthy();
 
-    const firstImageName = `test-record-image-${Date.now()}-1.webp`;
-    const secondImageName = `test-record-image-${Date.now()}-2.webp`;
-    const thirdImageName = `test-record-image-${Date.now()}-3.webp`;
-    const firstImagePath = path.join(testUploadDir, firstImageName);
-    const secondImagePath = path.join(testUploadDir, secondImageName);
-    const thirdImagePath = path.join(testUploadDir, thirdImageName);
-    cleanupUploadFiles.add(firstImagePath);
-    cleanupUploadFiles.add(secondImagePath);
-    cleanupUploadFiles.add(thirdImagePath);
-
-    fs.mkdirSync(testUploadDir, { recursive: true });
-    fs.writeFileSync(firstImagePath, 'first');
-    fs.writeFileSync(secondImagePath, 'second');
-    fs.writeFileSync(thirdImagePath, 'third');
+    const firstImage = createTempUpload(`test-record-image-${Date.now()}-1.webp`, 'first');
+    const secondImage = createTempUpload(`test-record-image-${Date.now()}-2.webp`, 'second');
+    const thirdImage = createTempUpload(`test-record-image-${Date.now()}-3.webp`, 'third');
 
     const record = database.createRecord({
       student_id: student!.id,
@@ -295,24 +301,33 @@ describe('assignments, records and notifications', () => {
       practice_date: '2026-01-11',
       location: '实验室',
       duration: 1,
-      image_paths: [`/uploads/${firstImageName}`, `/uploads/${secondImageName}`],
-      cover_image_path: `/uploads/${secondImageName}`
+      image_paths: [firstImage.imagePath, secondImage.imagePath],
+      cover_image_path: secondImage.imagePath
     });
+    const createdImagePaths = record.image_paths.map((imagePath) => path.join(testUploadDir, path.basename(imagePath)));
+    createdImagePaths.forEach((filePath) => cleanupUploadFiles.add(filePath));
 
     const updatedRecord = database.updateRecord(record.id, {
-      image_paths: [`/uploads/${secondImageName}`, `/uploads/${thirdImageName}`],
-      cover_image_path: `/uploads/${thirdImageName}`
+      image_paths: [thirdImage.imagePath],
+      cover_image_path: thirdImage.imagePath
     });
+    const updatedImagePaths = updatedRecord?.image_paths.map((imagePath) => path.join(testUploadDir, path.basename(imagePath))) ?? [];
+    updatedImagePaths.forEach((filePath) => cleanupUploadFiles.add(filePath));
 
-    expect(updatedRecord?.image_paths).toEqual([`/uploads/${secondImageName}`, `/uploads/${thirdImageName}`]);
-    expect(updatedRecord?.cover_image_path).toBe(`/uploads/${thirdImageName}`);
-    expect(fs.existsSync(firstImagePath)).toBe(false);
-    expect(fs.existsSync(secondImagePath)).toBe(true);
-    expect(fs.existsSync(thirdImagePath)).toBe(true);
+    expect(record.image_paths).toHaveLength(2);
+    expect(record.image_paths.every((imagePath) => imagePath.startsWith('/uploads/'))).toBe(true);
+    expect(fs.existsSync(firstImage.filePath)).toBe(false);
+    expect(fs.existsSync(secondImage.filePath)).toBe(false);
+    expect(updatedRecord?.image_paths).toHaveLength(1);
+    expect(updatedRecord?.image_paths[0]).toMatch(/^\/uploads\/.+\.webp$/);
+    expect(updatedRecord?.cover_image_path).toBe(updatedRecord?.image_paths[0]);
+    expect(fs.existsSync(createdImagePaths[0]!)).toBe(false);
+    expect(fs.existsSync(createdImagePaths[1]!)).toBe(false);
+    expect(fs.existsSync(thirdImage.filePath)).toBe(false);
+    expect(fs.existsSync(updatedImagePaths[0]!)).toBe(true);
 
-    expect(database.deleteRecord(record.id)).toBe(true);
-    expect(fs.existsSync(secondImagePath)).toBe(false);
-    expect(fs.existsSync(thirdImagePath)).toBe(false);
+    expect(database.deleteRecord(record.id, updatedRecord?.image_paths)).toBe(true);
+    expect(fs.existsSync(updatedImagePaths[0]!)).toBe(false);
   });
 
   test('keeps deleted student records visible to the assigned teacher', async () => {
@@ -516,7 +531,7 @@ describe('route behavior', () => {
     expect(uploadResponse.status).toBe(200);
     expect(imageUrl.endsWith('.webp')).toBe(true);
 
-    database.createRecord({
+    const record = database.createRecord({
       student_id: student.id,
       title: '图片访问测试',
       content: '用于验证图片权限。',
@@ -526,23 +541,25 @@ describe('route behavior', () => {
       image_paths: [imageUrl],
       cover_image_path: imageUrl
     });
+    const storedImageUrl = record.cover_image_path!;
+    cleanupUploadFiles.add(path.join(testUploadDir, path.basename(storedImageUrl)));
 
-    const ownerResponse = await apiRequest(imageUrl, {
+    const ownerResponse = await apiRequest(storedImageUrl, {
       headers: {
         authorization: `Bearer ${studentToken}`
       }
     });
-    const otherStudentResponse = await apiRequest(imageUrl, {
+    const otherStudentResponse = await apiRequest(storedImageUrl, {
       headers: {
         authorization: `Bearer ${otherStudentToken}`
       }
     });
-    const teacherResponse = await apiRequest(imageUrl, {
+    const teacherResponse = await apiRequest(storedImageUrl, {
       headers: {
         authorization: `Bearer ${teacherToken}`
       }
     });
-    const adminResponse = await apiRequest(imageUrl, {
+    const adminResponse = await apiRequest(storedImageUrl, {
       headers: {
         authorization: `Bearer ${adminToken}`
       }

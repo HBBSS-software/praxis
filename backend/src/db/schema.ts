@@ -89,3 +89,13 @@ export const notifications = sqliteTable('notifications', {
   index('notifications_student_idx').on(table.studentId),
   index('notifications_created_at_idx').on(table.createdAt)
 ]);
+
+export const tempUploadDeletions = sqliteTable('temp_upload_deletions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  filePath: text('file_path').notNull(),
+  expiresAt: text('expires_at').notNull(),
+  createdAt: text('created_at').notNull()
+}, (table) => [
+  uniqueIndex('temp_upload_deletions_file_path_unique').on(table.filePath),
+  index('temp_upload_deletions_expires_at_idx').on(table.expiresAt)
+]);

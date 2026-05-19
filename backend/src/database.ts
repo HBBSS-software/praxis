@@ -5,9 +5,10 @@ import path from 'node:path';
 import { and, desc, eq, getTableColumns, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 
 import { hashPassword, hashPasswordSync, hashPasswords } from './auth/password';
+import { appConfig } from './config';
 import { db } from './db/client';
 import { ensureDatabaseSchema } from './db/setup';
-import { classes, classStudents, classTeachers, notifications, practiceRecords, users } from './db/schema';
+import { classes, classStudents, classTeachers, notifications, practiceRecords, tempUploadDeletions, users } from './db/schema';
 import type {
   AppNotification,
   ClassAssignments,
@@ -33,7 +34,10 @@ import { MAX_RECORD_IMAGES, userRoles } from './models';
 import { getPinyinInitials } from './pinyin';
 
 const uploadDir = path.resolve(process.cwd(), 'backend/uploads');
+const tmpUploadDir = path.resolve(process.cwd(), 'backend/tmp-uploads');
 const uploadPathPattern = /^\/uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const tmpUploadPathPattern = /^\/tmp-uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const tempUploadTtlMs = 30 * 60 * 1000;
 const deletedUserName = '已删除用户';
 const generatedPasswordLength = 8;
 const rolePrefixes: Record<UserRole, string> = {
@@ -219,8 +223,28 @@ function parseImagePaths(value: string | null) {
   }
 }
 
+function parseRecordImagePaths(value: string | null) {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string' && tmpUploadPathPattern.test(item))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function normalizeRecordImagePaths(value: string | null) {
   const imagePaths = parseImagePaths(value);
+  return [...new Set(imagePaths)].slice(0, MAX_RECORD_IMAGES);
+}
+
+function normalizeIncomingRecordImagePaths(value: string | null) {
+  const imagePaths = parseRecordImagePaths(value);
   return [...new Set(imagePaths)].slice(0, MAX_RECORD_IMAGES);
 }
 
@@ -248,6 +272,8 @@ class SQLiteDatabase {
 
   constructor() {
     ensureDatabaseSchema();
+    fs.mkdirSync(uploadDir, { recursive: true });
+    fs.mkdirSync(tmpUploadDir, { recursive: true });
     this.seedDefaults();
   }
 
@@ -840,10 +866,7 @@ class SQLiteDatabase {
   createRecord(input: CreateRecordInput) {
     const student = db.select({ uid: users.uid }).from(users).where(eq(users.id, input.student_id)).get();
     const createdAt = nowIso();
-    const imagePaths = normalizeRecordImagePaths(JSON.stringify(input.image_paths));
-    const coverImagePath = input.cover_image_path && imagePaths.includes(input.cover_image_path)
-      ? input.cover_image_path
-      : imagePaths[0] ?? null;
+    const images = this.prepareRecordImages(input.image_paths, input.cover_image_path);
     const result = db.insert(practiceRecords).values({
       studentId: input.student_id,
       studentUidSnapshot: student?.uid ?? null,
@@ -852,8 +875,8 @@ class SQLiteDatabase {
       practiceDate: input.practice_date,
       location: input.location,
       duration: input.duration,
-      imagePaths: serializeImagePaths(imagePaths),
-      coverImagePath,
+      imagePaths: serializeImagePaths(images.imagePaths),
+      coverImagePath: images.coverImagePath,
       status: 'pending',
       teacherComment: null,
       createdAt
@@ -989,16 +1012,17 @@ class SQLiteDatabase {
     if (updates.location !== undefined) nextValues.location = updates.location;
     if (updates.duration !== undefined) nextValues.duration = updates.duration;
     if (updates.image_paths !== undefined || updates.cover_image_path !== undefined) {
-      const imagePaths = updates.image_paths !== undefined
-        ? normalizeRecordImagePaths(JSON.stringify(updates.image_paths))
-        : current.image_paths;
-      const coverImagePath = updates.cover_image_path !== undefined
-        ? updates.cover_image_path
-        : current.cover_image_path;
-      const nextCoverImagePath = coverImagePath && imagePaths.includes(coverImagePath) ? coverImagePath : imagePaths[0] ?? null;
+      for (const imagePath of current.image_paths) {
+        this.removeUploadFile(imagePath);
+      }
 
-      nextValues.imagePaths = serializeImagePaths(imagePaths);
-      nextValues.coverImagePath = nextCoverImagePath;
+      const images = this.prepareRecordImages(
+        updates.image_paths !== undefined ? updates.image_paths : current.image_paths,
+        updates.cover_image_path !== undefined ? updates.cover_image_path : current.cover_image_path
+      );
+
+      nextValues.imagePaths = serializeImagePaths(images.imagePaths);
+      nextValues.coverImagePath = images.coverImagePath;
     }
     if (updates.status !== undefined) nextValues.status = updates.status;
     if (updates.teacher_comment !== undefined) nextValues.teacherComment = updates.teacher_comment;
@@ -1007,17 +1031,11 @@ class SQLiteDatabase {
 
     const updated = this.getRecordById(id);
 
-    const staleImagePaths = current.image_paths.filter((imagePath) => !updated?.image_paths.includes(imagePath));
-
-    for (const imagePath of staleImagePaths) {
-      this.removeUnusedUpload(imagePath, id);
-    }
-
     return updated;
   }
 
-  deleteRecord(id: number) {
-    const current = this.getRecordById(id);
+  deleteRecord(id: number, imagePaths?: string[]) {
+    const current = imagePaths ? { image_paths: imagePaths } : this.getRecordById(id);
 
     if (!current) {
       return false;
@@ -1025,7 +1043,7 @@ class SQLiteDatabase {
 
     db.delete(practiceRecords).where(eq(practiceRecords.id, id)).run();
     for (const imagePath of current.image_paths) {
-      this.removeUnusedUpload(imagePath);
+      this.removeUploadFile(imagePath);
     }
     return true;
   }
@@ -1085,6 +1103,62 @@ class SQLiteDatabase {
 
   markNotificationsAsRead(studentId: number) {
     db.update(notifications).set({ isRead: true }).where(and(eq(notifications.studentId, studentId), eq(notifications.isRead, false))).run();
+  }
+
+  enqueueTempUpload(filePath: string) {
+    if (!tmpUploadPathPattern.test(filePath)) {
+      throw new Error('图片路径无效。');
+    }
+
+    const createdAt = nowIso();
+    const expiresAt = new Date(Date.now() + tempUploadTtlMs).toISOString();
+
+    db.insert(tempUploadDeletions)
+      .values({
+        filePath,
+        expiresAt,
+        createdAt
+      })
+      .onConflictDoUpdate({
+        target: tempUploadDeletions.filePath,
+        set: {
+          expiresAt,
+          createdAt
+        }
+      })
+      .run();
+  }
+
+  cleanupExpiredTempUploads() {
+    const now = nowIso();
+
+    while (true) {
+      const item = db
+        .select()
+        .from(tempUploadDeletions)
+        .orderBy(tempUploadDeletions.id)
+        .limit(1)
+        .get();
+
+      if (!item || item.expiresAt > now) {
+        return;
+      }
+
+      const filePath = this.resolveTmpUploadFilePath(item.filePath);
+
+      if (filePath && fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+
+      db.delete(tempUploadDeletions).where(eq(tempUploadDeletions.id, item.id)).run();
+    }
+  }
+
+  startTempUploadCleanupWorker() {
+    this.cleanupExpiredTempUploads();
+    const timer = setInterval(() => this.cleanupExpiredTempUploads(), appConfig.temp_upload_cleanup_interval_ms);
+    timer.unref?.();
+    return timer;
   }
 
   getStudentStatistics(studentId: number) {
@@ -1237,6 +1311,60 @@ class SQLiteDatabase {
     return filePath.startsWith(uploadDir) ? filePath : null;
   }
 
+  private resolveTmpUploadFilePath(imagePath: string) {
+    if (!tmpUploadPathPattern.test(imagePath)) {
+      return null;
+    }
+
+    const filePath = path.join(tmpUploadDir, path.basename(imagePath));
+    return filePath.startsWith(tmpUploadDir) ? filePath : null;
+  }
+
+  private createUploadPathFromSource(sourcePath: string) {
+    const filename = `${crypto.randomUUID()}${path.extname(sourcePath) || '.webp'}`;
+    const targetPath = path.join(uploadDir, filename);
+
+    if (!targetPath.startsWith(uploadDir)) {
+      throw new Error('图片路径无效。');
+    }
+
+    return {
+      filePath: targetPath,
+      imagePath: `/uploads/${filename}`
+    };
+  }
+
+  private prepareRecordImages(imagePathsInput: string[], coverImagePathInput: string | null | undefined) {
+    const sourceImagePaths = normalizeIncomingRecordImagePaths(JSON.stringify(imagePathsInput));
+    const movedImagePaths = new Map<string, string>();
+    const imagePaths: string[] = [];
+
+    for (const sourceImagePath of sourceImagePaths) {
+      const sourceFilePath = this.resolveTmpUploadFilePath(sourceImagePath);
+
+      if (!sourceFilePath || !fs.existsSync(sourceFilePath)) {
+        throw new Error('图片文件不存在或已过期。');
+      }
+
+      const target = this.createUploadPathFromSource(sourceFilePath);
+
+      fs.renameSync(sourceFilePath, target.filePath);
+      db.delete(tempUploadDeletions).where(eq(tempUploadDeletions.filePath, sourceImagePath)).run();
+
+      movedImagePaths.set(sourceImagePath, target.imagePath);
+      imagePaths.push(target.imagePath);
+    }
+
+    const coverImagePath = coverImagePathInput && movedImagePaths.has(coverImagePathInput)
+      ? movedImagePaths.get(coverImagePathInput)!
+      : imagePaths[0] ?? null;
+
+    return {
+      imagePaths,
+      coverImagePath
+    };
+  }
+
   private removeUploadFile(imagePath: string | null) {
     if (!imagePath) {
       return;
@@ -1246,28 +1374,6 @@ class SQLiteDatabase {
 
     if (filePath && fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
-    }
-  }
-
-  private removeUnusedUpload(imagePath: string | null, ignoredRecordId?: number) {
-    if (!imagePath) {
-      return;
-    }
-
-    const conditions = [recordHasImagePathCondition(imagePath)];
-
-    if (ignoredRecordId !== undefined) {
-      conditions.push(sql`${practiceRecords.id} != ${ignoredRecordId}`);
-    }
-
-    const row = db
-      .select({ count: sql<number>`count(*)` })
-      .from(practiceRecords)
-      .where(and(...conditions))
-      .get();
-
-    if (toFiniteNumber(row?.count) === 0) {
-      this.removeUploadFile(imagePath);
     }
   }
 }

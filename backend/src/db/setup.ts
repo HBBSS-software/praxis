@@ -125,5 +125,16 @@ export function ensureDatabaseSchema() {
   db.run(sql`create index if not exists notifications_student_idx on notifications(student_id)`);
   db.run(sql`create index if not exists notifications_created_at_idx on notifications(created_at)`);
 
+  db.run(sql`
+    create table if not exists temp_upload_deletions (
+      id integer primary key autoincrement,
+      file_path text not null unique,
+      expires_at text not null,
+      created_at text not null
+    )
+  `);
+
+  db.run(sql`create index if not exists temp_upload_deletions_expires_at_idx on temp_upload_deletions(expires_at)`);
+
   initialized = true;
 }

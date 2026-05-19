@@ -4,10 +4,14 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { drizzle } from 'drizzle-orm/node-sqlite';
 
-import { appConfig } from '../config';
 import * as schema from './schema';
 
-const databaseFile = path.resolve(appConfig.database_file);
+declare global {
+  var __socialPracticeDatabaseFile: string | undefined;
+}
+
+const defaultDatabaseFile = 'backend/data/app.db';
+const databaseFile = path.resolve(globalThis.__socialPracticeDatabaseFile ?? defaultDatabaseFile);
 
 fs.mkdirSync(path.dirname(databaseFile), { recursive: true });
 
