@@ -669,12 +669,12 @@ describe('route behavior', () => {
     expect((await readJson(response)).error).toBe('CSV 文件大小不能超过 50 MiB。');
   });
 
-  test('imports csv users with optional student class cid', async () => {
+  test('imports csv users with optional student and teacher class cid', async () => {
     await setNormalPassword('A00001', 'admin-pass-01');
     const token = await loginAs('A00001', 'admin-pass-01');
     const targetClass = database.createClass('CSV 导入班级');
     const formData = new FormData();
-    formData.set('file', new File([`CSV 学生,student,${targetClass.cid}\nCSV 教师,teacher,\nCSV 管理员,admin,\n`], 'users.csv', { type: 'text/csv' }));
+    formData.set('file', new File([`CSV 学生,student,${targetClass.cid}\nCSV 教师,teacher,${targetClass.cid}\nCSV 管理员,admin,\n`], 'users.csv', { type: 'text/csv' }));
 
     const response = await formRequest('/api/admin/users/import', formData, {
       method: 'POST',
@@ -688,24 +688,26 @@ describe('route behavior', () => {
     expect((payload.users as Array<{ id: number; role: string }>)).toHaveLength(3);
     expect(payload.credentialsCsv).toContain('"name","uid","role","password"');
     const student = (payload.users as Array<{ id: number; role: string }>).find((user) => user.role === 'student');
+    const teacher = (payload.users as Array<{ id: number; role: string }>).find((user) => user.role === 'teacher');
     expect(student ? database.getStudentClassId(student.id) : null).toBe(targetClass.id);
+    expect(teacher ? database.getTeacherClassIds(teacher.id) : []).toContain(targetClass.id);
   });
 
   test('rejects csv class cid problems by role', async () => {
     await setNormalPassword('A00001', 'admin-pass-01');
     const token = await loginAs('A00001', 'admin-pass-01');
-    const teacherClassData = new FormData();
-    teacherClassData.set('file', new File(['CSV 教师,teacher,C0001\n'], 'users.csv', { type: 'text/csv' }));
+    const adminClassData = new FormData();
+    adminClassData.set('file', new File(['CSV 管理员,admin,C0001\n'], 'users.csv', { type: 'text/csv' }));
 
-    const teacherClassResponse = await formRequest('/api/admin/users/import/preview', teacherClassData, {
+    const adminClassResponse = await formRequest('/api/admin/users/import/preview', adminClassData, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${token}`
       }
     });
 
-    expect(teacherClassResponse.status).toBe(400);
-    expect((await readJson(teacherClassResponse)).error).toBe('第 1 行错误：非学生不能填写班级 ID。');
+    expect(adminClassResponse.status).toBe(400);
+    expect((await readJson(adminClassResponse)).error).toBe('第 1 行错误：管理员不能填写班级 ID。');
 
     const missingClassData = new FormData();
     missingClassData.set('file', new File(['CSV 学生,student,Cffff\n'], 'users.csv', { type: 'text/csv' }));

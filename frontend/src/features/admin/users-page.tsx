@@ -186,11 +186,6 @@ export function AdminUsersPage() {
                   {csvImporting ? <Spinner className="size-4 text-current" /> : <FileUp className="size-4" />}
                   {csvImporting ? '导入中...' : '选择 CSV 并导入'}
                 </Button>
-                {csvFileName ? (
-                  <p className="text-sm text-muted-foreground">
-                    最近导入：{csvFileName}{csvEncoding ? ` · ${formatCsvEncoding(csvEncoding)}` : ''}
-                  </p>
-                ) : null}
               </div>
               {csvResult ? <UserCredentialsResult users={csvResult.users} credentialsCsv={csvResult.credentialsCsv} filename="imported_users.csv" summary={`成功生成 ${csvResult.users.length} 个账号。`} /> : null}
             </CardContent>
@@ -336,23 +331,13 @@ function CsvFormatDialog({ children }: { children: React.ReactNode }) {
         <DialogHeader>
           <DialogTitle>CSV 格式</DialogTitle>
           <DialogDescription>
-            <div>导入文件不包含表头，格式为 <code>姓名,用户类型,班级ID</code>，其中用户类型可以为 <code>student</code>、<code>teacher</code> 或 <code>admin</code>。</div>
-            <div>班级 ID 选填。注意不要给 <code>admin</code> 填写班级 ID。</div>
-            <div>以下是一个示例：</div>
+            导入文件不包含表头，格式为 <code>姓名,用户类型,班级 ID</code>。用户类型可以为 <code>student</code>、<code>teacher</code> 或 <code>admin</code>。学生和教师可选填班级 ID，注意不要给 <code>admin</code> 填写班级 ID。以下是一个示例：
           </DialogDescription>
         </DialogHeader>
         <pre className="overflow-x-auto rounded-xl border border-border/70 bg-muted/30 p-4 text-sm leading-6">
-          {`小奶龙,student,C0001
-大奶龙,teacher,C0001
-超级奶龙,admin,`}
+          {`小奶龙,student,C0001\n大奶龙,teacher,C0001\n超级奶龙,admin,`}
         </pre>
       </DialogContent>
     </Dialog>
   );
-}
-
-function formatCsvEncoding(encoding: CsvImportPreview['encoding']) {
-  if (encoding === 'utf-16') return 'UTF-16';
-  if (encoding === 'gbk') return 'GBK';
-  return 'UTF-8';
 }

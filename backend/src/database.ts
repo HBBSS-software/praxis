@@ -385,7 +385,7 @@ class SQLiteDatabase {
       const firstInsertedId = lastInsertedId - rows.length + 1;
 
       const createdAt = nowIso();
-      const assignments = entries.flatMap((entry, index) => {
+      const studentAssignments = entries.flatMap((entry, index) => {
         const classId = entry.classId;
 
         if (entry.role !== 'student' || !classId) {
@@ -398,9 +398,26 @@ class SQLiteDatabase {
           createdAt
         }];
       });
+      const teacherAssignments = entries.flatMap((entry, index) => {
+        const classId = entry.classId;
 
-      if (assignments.length > 0) {
-        tx.insert(classStudents).values(assignments).run();
+        if (entry.role !== 'teacher' || !classId) {
+          return [];
+        }
+
+        return [{
+          classId,
+          teacherId: firstInsertedId + index,
+          createdAt
+        }];
+      });
+
+      if (studentAssignments.length > 0) {
+        tx.insert(classStudents).values(studentAssignments).run();
+      }
+
+      if (teacherAssignments.length > 0) {
+        tx.insert(classTeachers).values(teacherAssignments).run();
       }
 
       return rows.map((row, index) => ({

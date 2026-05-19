@@ -92,13 +92,13 @@ function validateImportEntries(entries: CsvUserImportEntry[]) {
       throw new Error(`第 ${entry.lineNumber} 行错误：${nameError}`);
     }
 
-    if (entry.role !== 'student' && classCid) {
-      throw new Error(`第 ${entry.lineNumber} 行错误：非学生不能填写班级 ID。`);
+    if (entry.role === 'admin' && classCid) {
+      throw new Error(`第 ${entry.lineNumber} 行错误：管理员不能填写班级 ID。`);
     }
 
     const targetClass = classCid ? database.findClassByCid(classCid) : null;
 
-    if (entry.role === 'student' && classCid && !targetClass) {
+    if ((entry.role === 'student' || entry.role === 'teacher') && classCid && !targetClass) {
       throw new Error(`第 ${entry.lineNumber} 行错误：班级 ID 不存在或错误。`);
     }
 
