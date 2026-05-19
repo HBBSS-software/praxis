@@ -88,6 +88,8 @@ export function TeacherDashboardPage() {
     return params.toString();
   }, [filters]);
 
+  const shouldShowClassFilter = user?.role === 'admin' || classes.length > 1;
+
   const searchStudents = useCallback(async (searchQuery: string) => {
     if (!token) return [];
 
@@ -96,7 +98,7 @@ export function TeacherDashboardPage() {
         createApiClient(token).teacher.students.search({
           query: {
             q: searchQuery.trim() || undefined,
-            class_ids: user?.role === 'admin' && filters.class_ids.length > 0 ? filters.class_ids.join(',') : undefined
+            class_ids: filters.class_ids.length > 0 ? filters.class_ids.join(',') : undefined
           }
         })
       );
@@ -105,16 +107,16 @@ export function TeacherDashboardPage() {
       if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
       return [];
     }
-  }, [filters.class_ids, signOut, token, user?.role]);
+  }, [filters.class_ids, signOut, token]);
 
   const searchClasses = useCallback(async (searchQuery: string) => {
-    if (!token || user?.role !== 'admin') return [];
+    if (!token) return [];
 
     try {
       const normalized = searchQuery.trim().toLowerCase();
       const nextClasses = classes.length > 0
         ? classes
-        : (await unwrapResponse<{ classes: ClassSummary[] }>(createApiClient(token).admin.classes.get())).classes;
+        : (await unwrapResponse<{ classes: ClassSummary[] }>(createApiClient(token).teacher.classes.get())).classes;
 
       if (classes.length === 0) {
         setClasses(nextClasses);
@@ -130,7 +132,7 @@ export function TeacherDashboardPage() {
       if (nextError instanceof ApiResponseError && nextError.status === 401) signOut();
       return [];
     }
-  }, [classes, signOut, token, user?.role]);
+  }, [classes, signOut, token]);
 
   async function loadRecords() {
     if (!token) return;
@@ -188,6 +190,21 @@ export function TeacherDashboardPage() {
   useEffect(() => {
     void loadStatistics();
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    unwrapResponse<{ classes: ClassSummary[] }>(createApiClient(token).teacher.classes.get())
+      .then((data) => setClasses(data.classes))
+      .catch((nextError) => {
+        if (nextError instanceof ApiResponseError && nextError.status === 401) {
+          signOut();
+          return;
+        }
+
+        toastError(nextError, '加载班级列表失败。');
+      });
+  }, [signOut, token]);
 
   const columns = useMemo<Array<ColumnDef<TeacherRecordSummary>>>(() => [
     {
@@ -272,7 +289,7 @@ export function TeacherDashboardPage() {
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {user?.role === 'admin' ? (
+              {shouldShowClassFilter ? (
                 <UserMultiCombobox
                   label="班级"
                   value={filters.class_ids}

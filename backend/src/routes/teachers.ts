@@ -145,6 +145,13 @@ export const teacherRoutes = new Hono<AppBindings>()
 
     return c.json({ record });
   })
+  .get('/teacher/classes', (c) => {
+    const user = c.get('user')!;
+
+    return c.json({
+      classes: user.role === 'admin' ? database.getClasses() : database.getTeacherClasses(user.id)
+    });
+  })
   .put('/teacher/records/:id/review', zValidator('param', recordIdParamSchema, validationHook), zValidator('json', reviewRecordBodySchema, validationHook), (c) => {
     const id = Number(c.req.valid('param').id);
     const body = c.req.valid('json');
@@ -297,7 +304,7 @@ export const teacherRoutes = new Hono<AppBindings>()
   .get('/teacher/students/search', zValidator('query', userSearchQuerySchema, validationHook), (c) => {
     const user = c.get('user')!;
     const query = c.req.valid('query');
-    const classIds = user.role === 'admin' ? parseIdList(query.class_ids) : undefined;
+    const classIds = parseIdList(query.class_ids);
 
     return c.json({
       students: database.searchStudents(query.q?.trim() ?? '', getVisibleStudentIds(user.id, user.role), classIds)

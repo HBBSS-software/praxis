@@ -366,6 +366,9 @@ export function createApiClient(token?: string | null) {
           patch: (body?: any) => wrapRpcResponse(client.teacher.students.class.$patch({ json: body }))
         }
       }),
+      classes: {
+        get: () => wrapRpcResponse(client.teacher.classes.$get())
+      },
       statistics: {
         get: () => wrapRpcResponse(client.teacher.statistics.$get())
       }
