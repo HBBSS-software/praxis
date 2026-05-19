@@ -269,19 +269,22 @@ export const UserMultiCombobox = memo(function UserMultiCombobox({
 
     async function loadMatchedOptions() {
       setLoading(true);
-      const nextOptions = await loadOptions(debouncedQuery);
+      try {
+        const nextOptions = await loadOptions(debouncedQuery);
 
-      if (cancelled) return;
+        if (cancelled) return;
 
-      setOptions(nextOptions);
-      setLoading(false);
-      setSelectedOptionMap((current) => {
-        const next = new Map(current);
-        for (const option of nextOptions) {
-          next.set(option.value, option);
-        }
-        return next;
-      });
+        setOptions(nextOptions);
+        setSelectedOptionMap((current) => {
+          const next = new Map(current);
+          for (const option of nextOptions) {
+            next.set(option.value, option);
+          }
+          return next;
+        });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
 
     void loadMatchedOptions();
@@ -309,7 +312,7 @@ export const UserMultiCombobox = memo(function UserMultiCombobox({
     <Field label={label}>
       <Combobox
         multiple
-        items={options}
+        items={visibleOptions}
         inputValue={query}
         value={selectedOptions}
         onInputValueChange={setQuery}
@@ -344,7 +347,7 @@ export const UserMultiCombobox = memo(function UserMultiCombobox({
           <ComboboxList onScroll={loadMoreOptions}>
             {loading ? (
               <div className="px-2 py-2 text-sm text-muted-foreground">加载中...</div>
-            ) : visibleOptions.length > 0 ? (
+            ) : (
               <ComboboxGroup items={visibleOptions}>
                 <ComboboxCollection>
                   {(option: UserOption) => (
@@ -354,7 +357,7 @@ export const UserMultiCombobox = memo(function UserMultiCombobox({
                   )}
                 </ComboboxCollection>
               </ComboboxGroup>
-            ) : null}
+            )}
           </ComboboxList>
         </ComboboxContent>
       </Combobox>

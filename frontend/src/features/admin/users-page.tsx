@@ -335,11 +335,15 @@ function CsvFormatDialog({ children }: { children: React.ReactNode }) {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>CSV 格式</DialogTitle>
-          <DialogDescription>导入文件不包含表头，格式为 <code>姓名,用户类型,班级ID</code>，其中用户类型可以为 <code>student</code>、<code>teacher</code> 或 <code>admin</code>。对于 <code>student</code>，班级 ID 选填；对于 <code>teacher</code> 和 <code>admin</code>，不要填写班级 ID。以下是一个示例：</DialogDescription>
+          <DialogDescription>
+            <div>导入文件不包含表头，格式为 <code>姓名,用户类型,班级ID</code>，其中用户类型可以为 <code>student</code>、<code>teacher</code> 或 <code>admin</code>。</div>
+            <div>班级 ID 选填。注意不要给 <code>admin</code> 填写班级 ID。</div>
+            <div>以下是一个示例：</div>
+          </DialogDescription>
         </DialogHeader>
         <pre className="overflow-x-auto rounded-xl border border-border/70 bg-muted/30 p-4 text-sm leading-6">
           {`小奶龙,student,C0001
-大奶龙,teacher,
+大奶龙,teacher,C0001
 超级奶龙,admin,`}
         </pre>
       </DialogContent>

@@ -361,15 +361,71 @@ function TeacherMultiSelect({
   onChange: (value: number[]) => void;
 }) {
   const anchorRef = useComboboxAnchor();
-  const selectedTeachers = useMemo(() => teachers.filter((teacher) => value.includes(teacher.id)), [teachers, value]);
+  const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query);
+  const [selectedTeacherMap, setSelectedTeacherMap] = useState(() => new Map(teachers.map((teacher) => [teacher.id, teacher])));
+  const [visibleCount, setVisibleCount] = useState(comboboxPageSize);
+  const matchedTeachers = useMemo(() => {
+    const normalizedQuery = debouncedQuery.trim().toLowerCase();
+
+    if (!normalizedQuery) {
+      return teachers;
+    }
+
+    return teachers.filter((teacher) =>
+      teacher.name.toLowerCase().includes(normalizedQuery) ||
+      teacher.uid.toLowerCase().includes(normalizedQuery)
+    );
+  }, [debouncedQuery, teachers]);
+  const selectedTeachers = useMemo(
+    () => value.map((id) => selectedTeacherMap.get(id)).filter((teacher): teacher is UserSummary => Boolean(teacher)),
+    [selectedTeacherMap, value]
+  );
+  const visibleTeachers = useMemo(() => matchedTeachers.slice(0, visibleCount), [matchedTeachers, visibleCount]);
+
+  useEffect(() => {
+    setSelectedTeacherMap((current) => {
+      const next = new Map(current);
+      for (const teacher of teachers) {
+        next.set(teacher.id, teacher);
+      }
+      return next;
+    });
+  }, [teachers]);
+
+  useEffect(() => {
+    setVisibleCount(comboboxPageSize);
+  }, [debouncedQuery, matchedTeachers]);
+
+  function loadMoreTeachers(event: React.UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+
+    if (element.scrollTop + element.clientHeight < element.scrollHeight - 24) {
+      return;
+    }
+
+    setVisibleCount((current) => Math.min(current + comboboxPageSize, matchedTeachers.length));
+  }
 
   return (
     <Field label="教师">
       <Combobox
         multiple
-        items={teachers}
+        items={matchedTeachers}
+        inputValue={query}
         value={selectedTeachers}
-        onValueChange={(nextValue) => onChange(nextValue.map((teacher) => teacher.id))}
+        onInputValueChange={setQuery}
+        filter={null}
+        onValueChange={(nextValue) => {
+          setSelectedTeacherMap((current) => {
+            const next = new Map(current);
+            for (const teacher of nextValue) {
+              next.set(teacher.id, teacher);
+            }
+            return next;
+          });
+          onChange(nextValue.map((teacher) => teacher.id));
+        }}
         itemToStringLabel={(teacher) => `${teacher.name} ${teacher.uid}`}
         itemToStringValue={(teacher) => String(teacher.id)}
         isItemEqualToValue={(item, selected) => item.id === selected.id}
@@ -387,8 +443,8 @@ function TeacherMultiSelect({
         </ComboboxChips>
         <ComboboxContent anchor={anchorRef} className="max-h-80">
           <ComboboxEmpty>暂无教师</ComboboxEmpty>
-          <ComboboxList>
-            <ComboboxGroup items={teachers}>
+          <ComboboxList onScroll={loadMoreTeachers}>
+            <ComboboxGroup items={visibleTeachers}>
               <ComboboxCollection>
                 {(teacher: UserSummary) => (
                   <ComboboxItem key={teacher.id} value={teacher}>
