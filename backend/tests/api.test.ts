@@ -6,8 +6,8 @@ import { decodeJwt, SignJWT } from 'jose';
 
 const testDbPath = `/tmp/social-practice-test-db-${Date.now()}.db`;
 const testConfigPath = `/tmp/social-practice-test-config-${Date.now()}.toml`;
-const testUploadDir = fileURLToPath(new URL('../uploads', import.meta.url));
-const testTmpUploadDir = fileURLToPath(new URL('../tmp-uploads', import.meta.url));
+const testUploadDir = fileURLToPath(new URL('../data/uploads', import.meta.url));
+const testTmpUploadDir = fileURLToPath(new URL('../data/tmp-uploads', import.meta.url));
 const cleanupUploadFiles = new Set<string>();
 const testJwtSecret = 'test-jwt-secret-12345678901234567890';
 const testJwtIssuer = 'social-practice-system';

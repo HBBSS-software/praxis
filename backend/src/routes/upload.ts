@@ -12,7 +12,7 @@ import database from '../database';
 import { apiError, requireAuthenticatedUser } from '../http';
 import { authMiddleware, type AppBindings } from '../plugins/auth';
 
-const tmpUploadDir = path.resolve(process.cwd(), 'backend/tmp-uploads');
+const tmpUploadDir = path.resolve(process.cwd(), 'backend/data/tmp-uploads');
 
 fs.mkdirSync(tmpUploadDir, { recursive: true });
 

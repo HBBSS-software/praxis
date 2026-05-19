@@ -16,7 +16,7 @@ import { uploadRoutes } from './routes/upload';
 
 const frontendDir = path.resolve(process.cwd(), 'frontend/dist');
 const frontendIndexPath = path.join(frontendDir, 'index.html');
-const uploadDir = path.resolve(process.cwd(), 'backend/uploads');
+const uploadDir = path.resolve(process.cwd(), 'backend/data/uploads');
 
 fs.mkdirSync(uploadDir, { recursive: true });
 

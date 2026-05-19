@@ -1,7 +1,6 @@
 node_modules/
 config.toml
 
-backend/uploads/
 backend/data/
 
 frontend/dist/

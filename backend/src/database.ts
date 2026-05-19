@@ -33,8 +33,8 @@ import type {
 import { MAX_RECORD_IMAGES, userRoles } from './models';
 import { getPinyinInitials } from './pinyin';
 
-const uploadDir = path.resolve(process.cwd(), 'backend/uploads');
-const tmpUploadDir = path.resolve(process.cwd(), 'backend/tmp-uploads');
+const uploadDir = path.resolve(process.cwd(), 'backend/data/uploads');
+const tmpUploadDir = path.resolve(process.cwd(), 'backend/data/tmp-uploads');
 const uploadPathPattern = /^\/uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const tmpUploadPathPattern = /^\/tmp-uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const deletedUserName = '已删除用户';
