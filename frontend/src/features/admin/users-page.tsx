@@ -90,7 +90,7 @@ export function AdminUsersPage() {
                 <SelectClass
                   classes={classes}
                   value={singleForm.class_id}
-                  disabled={singleForm.role !== 'student'}
+                  disabled={singleForm.role === 'admin'}
                   onChange={(class_id) => setSingleForm((current) => ({ ...current, class_id }))}
                 />
               </div>
@@ -216,7 +216,7 @@ export function AdminUsersPage() {
                         setBatchEntries((current) =>
                           current.map((item, itemIndex) =>
                             itemIndex === index
-                              ? { ...item, role: value as UserRole, class_id: value === 'student' ? item.class_id : null }
+                              ? { ...item, role: value as UserRole, class_id: value === 'admin' ? null : item.class_id }
                               : item
                           )
                         )
@@ -233,7 +233,7 @@ export function AdminUsersPage() {
                     </Select>
                     <Select
                       value={entry.class_id ? String(entry.class_id) : '__none__'}
-                      disabled={entry.role !== 'student'}
+                      disabled={entry.role === 'admin'}
                       onValueChange={(value) =>
                         setBatchEntries((current) =>
                           current.map((item, itemIndex) => itemIndex === index ? { ...item, class_id: value === '__none__' ? null : Number(value) } : item)

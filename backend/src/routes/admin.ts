@@ -58,8 +58,8 @@ function resolveClassId(role: 'admin' | 'teacher' | 'student', classId: number |
     return null;
   }
 
-  if (role !== 'student') {
-    throw new Error('非学生不能分配班级。');
+  if (role === 'admin') {
+    throw new Error('管理员不能分配班级。');
   }
 
   const targetClass = database.findClassById(classId);
@@ -153,6 +153,8 @@ export const adminRoutes = new Hono<AppBindings>()
 
       if (classId && user.role === 'student') {
         database.assignStudentsToClass(classId, [user.id]);
+      } else if (classId && user.role === 'teacher') {
+        database.assignTeachersToClass(classId, [user.id]);
       }
 
       return c.json({

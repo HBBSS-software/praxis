@@ -668,6 +668,46 @@ describe('route behavior', () => {
     expect((await readJson(response)).error).toBe('认证令牌权限范围无效。');
   });
 
+  test('creates teachers with one selected class from single and batch forms', async () => {
+    await setNormalPassword('A00001', 'admin-pass-01');
+    const token = await loginAs('A00001', 'admin-pass-01');
+    const singleClass = database.createClass('单个教师班级');
+    const batchClass = database.createClass('批量教师班级');
+
+    const singleResponse = await jsonRequest('/api/admin/users', {
+      name: '单个创建教师',
+      role: 'teacher',
+      class_id: singleClass.id
+    }, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+    const singlePayload = await readJson(singleResponse);
+
+    expect(singleResponse.status).toBe(200);
+    expect(database.getTeacherClassIds((singlePayload.user as { id: number }).id)).toEqual([singleClass.id]);
+
+    const batchResponse = await jsonRequest('/api/admin/users/batch', {
+      entries: [{
+        name: '批量创建教师',
+        role: 'teacher',
+        class_id: batchClass.id
+      }]
+    }, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+    const batchPayload = await readJson(batchResponse);
+    const batchUser = (batchPayload.users as Array<{ id: number }>)[0]!;
+
+    expect(batchResponse.status).toBe(200);
+    expect(database.getTeacherClassIds(batchUser.id)).toEqual([batchClass.id]);
+  });
+
   test('rejects oversized csv imports in the backend', async () => {
     await setNormalPassword('A00001', 'admin-pass-01');
     const token = await loginAs('A00001', 'admin-pass-01');
