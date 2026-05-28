@@ -1,37 +1,34 @@
-import { CalendarDays, CheckCircle2, Clock3, Eye, ImagePlus, MapPin, Pencil, PlusCircle, Trash2 } from 'lucide-react';
+import { ImagePlus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { useSession } from '@/lib/auth';
-import { ConfirmActionDialog } from '@/components/confirm-action-dialog';
 import { AuthenticatedImage } from '@/shared/authenticated-image';
 import { DatePickerField } from '@/shared/date-picker-field';
-import { EmptyState } from '@/shared/empty-state';
-import { StatCard } from '@/shared/stat-card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { ApiResponseError, createApiClient, formatUploadImageMaxSize, getRuntimeConfig, unwrapResponse, uploadImage, validateUploadImageFiles } from '@/lib/api';
 import { toastError, toastSuccess } from '@/lib/feedback';
-import { formatDate, formatDateTime, formatDuration, normalizeDateInputValue, notificationLabel, statusLabel } from '@/lib/format';
-import { MAX_RECORD_IMAGES, type AppNotification, type RecordStatistics, type StudentRecord } from '@/lib/types';
+import { normalizeDateInputValue } from '@/lib/format';
+import { MAX_RECORD_IMAGES, type PracticeTaskSummary, type StudentRecord } from '@/lib/types';
 import { createLocalImageItem, type UploadImageItem } from './upload-types';
 import { ErrorCard, Field, LoadingCard, StudentPageFrame } from './shared';
 
 export function StudentUploadPage() {
   const { token, signOut } = useSession();
   const navigate = useNavigate();
+  const { taskId: taskIdParam } = useParams();
+  const taskId = Number(taskIdParam);
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('id');
-  const [loading, setLoading] = useState(Boolean(editId));
+  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [uploadImageMaxSizeBytes, setUploadImageMaxSizeBytes] = useState(5 * 1024 * 1024);
+  const [task, setTask] = useState<PracticeTaskSummary | null>(null);
   const [images, setImages] = useState<UploadImageItem[]>([]);
   const [coverImageId, setCoverImageId] = useState('');
   const localPreviewUrls = useRef(new Set<string>());
@@ -50,40 +47,43 @@ export function StudentUploadPage() {
   }, []);
 
   useEffect(() => {
-    if (!editId || !token) return;
+    if (!token || !Number.isInteger(taskId) || taskId <= 0) return;
 
-    unwrapResponse<{ records: StudentRecord[]; statistics: RecordStatistics }>(createApiClient(token).student.records.get())
+    unwrapResponse<{ task: PracticeTaskSummary; records: StudentRecord[] }>(createApiClient(token).student.tasks({ id: taskId }).get())
       .then((data) => {
-        const record = data.records.find((item) => String(item.id) === editId);
-        if (!record || (record.status !== 'pending' && record.status !== 'rejected')) {
-          toastError(new Error('无法编辑该记录或记录不存在。'));
-          navigate('/student/dashboard', { replace: true });
-          return;
+        setTask(data.task);
+        if (editId) {
+          const record = data.records.find((item) => String(item.id) === editId);
+          if (!record || (record.status !== 'pending' && record.status !== 'rejected')) {
+            toastError(new Error('无法编辑该记录或记录不存在。'));
+            navigate(`/student/tasks/${taskId}`, { replace: true });
+            return;
+          }
+          setForm({
+            title: record.title,
+            content: record.content,
+            practice_date: normalizeDateInputValue(record.practice_date),
+            location: record.location ?? '',
+            duration: String(record.duration)
+          });
+          const recordImages = record.image_paths.map((imagePath) => ({
+            id: imagePath,
+            path: imagePath,
+            preview: imagePath
+          }));
+          setImages(recordImages);
+          setCoverImageId(record.cover_image_path ?? recordImages[0]?.id ?? '');
         }
-        setForm({
-          title: record.title,
-          content: record.content,
-          practice_date: normalizeDateInputValue(record.practice_date),
-          location: record.location ?? '',
-          duration: String(record.duration)
-        });
-        const recordImages = record.image_paths.map((imagePath) => ({
-          id: imagePath,
-          path: imagePath,
-          preview: imagePath
-        }));
-        setImages(recordImages);
-        setCoverImageId(record.cover_image_path ?? recordImages[0]?.id ?? '');
       })
       .catch((nextError) => {
         if (nextError instanceof ApiResponseError && nextError.status === 401) {
           signOut();
           return;
         }
-        setError(nextError instanceof Error ? nextError.message : '加载记录失败。');
+        setError(nextError instanceof Error ? nextError.message : '加载任务失败。');
       })
       .finally(() => setLoading(false));
-  }, [editId, navigate, signOut, token]);
+  }, [editId, navigate, signOut, taskId, token]);
 
   useEffect(() => () => {
     for (const previewUrl of localPreviewUrls.current) {
@@ -97,7 +97,7 @@ export function StudentUploadPage() {
   return (
     <StudentPageFrame
       title={editId ? '编辑实践记录' : '上传实践记录'}
-      description="保留原有记录字段和校验规则，支持图片上传、编辑草稿和驳回后重新提交。"
+      description={task ? task.title : '提交任务记录。'}
     >
       <Card>
         <CardHeader>
@@ -122,6 +122,15 @@ export function StudentUploadPage() {
                   if (images.length > MAX_RECORD_IMAGES) {
                     throw new Error(`每条记录最多上传 ${MAX_RECORD_IMAGES} 张图片。`);
                   }
+                  if (!task) {
+                    throw new Error('任务不存在。');
+                  }
+                  if (form.content.trim().length < task.min_words) {
+                    throw new Error(`实践内容不能少于 ${task.min_words} 字。`);
+                  }
+                  if (images.length < task.min_images) {
+                    throw new Error(`至少需要上传 ${task.min_images} 张图片。`);
+                  }
 
                   const uploadedImages = await Promise.all(images.map(async (image) => {
                     if (image.path) {
@@ -143,6 +152,7 @@ export function StudentUploadPage() {
                   const api = createApiClient(token);
                   const payload = {
                     ...form,
+                    task_id: task.id,
                     title: form.title.trim(),
                     content: form.content.trim(),
                     location: form.location.trim() || null,
@@ -164,7 +174,7 @@ export function StudentUploadPage() {
                   }
 
                   toastSuccess(editId ? '记录更新成功。' : '记录提交成功。');
-                  navigate('/student/dashboard', { replace: true });
+                  navigate(`/student/tasks/${task.id}`, { replace: true });
                 } catch (nextError) {
                   if (nextError instanceof ApiResponseError && nextError.status === 401) {
                     signOut();
@@ -200,7 +210,7 @@ export function StudentUploadPage() {
                     {submitting ? '提交中...' : editId ? '保存修改' : '提交记录'}
                   </Button>
                   <Button variant="ghost" asChild>
-                    <Link to="/student/dashboard">返回概览</Link>
+                    <Link to={task ? `/student/tasks/${task.id}` : '/student/dashboard'}>返回任务</Link>
                   </Button>
                 </div>
               </div>

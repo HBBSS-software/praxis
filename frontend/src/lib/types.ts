@@ -3,14 +3,21 @@ import type {
   ClassAssignments,
   ClassStudentAssignment,
   ClassSummary,
+  ClassOverview,
   ClassTeacherAssignment,
   CreateUserResult,
   CsvImportEntry,
   CsvImportPreview,
   NotificationType,
+  OverviewData,
+  OverviewTrendPoint,
+  PracticeTask,
+  PracticeTaskDetail,
+  PracticeTaskSummary,
   PublicUser,
   RecordStatistics,
   RecordStatus,
+  StudentOverview,
   StudentRecord,
   StudentSummary,
   StudentWithClassSummary,
@@ -30,12 +37,19 @@ export type {
   ClassAssignments,
   ClassStudentAssignment,
   ClassSummary,
+  ClassOverview,
   ClassTeacherAssignment,
   CsvImportEntry,
   CsvImportPreview,
   NotificationType,
+  OverviewData,
+  OverviewTrendPoint,
+  PracticeTask,
+  PracticeTaskDetail,
+  PracticeTaskSummary,
   RecordStatistics,
   RecordStatus,
+  StudentOverview,
   StudentRecord,
   StudentSummary,
   StudentWithClassSummary,
@@ -64,6 +78,7 @@ export interface CreatedUserPayload {
 
 export interface AppRuntimeConfig {
   upload_image_max_size_bytes: number;
+  timezone: string;
 }
 
 export interface ApiError {

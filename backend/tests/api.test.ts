@@ -28,6 +28,7 @@ fs.writeFileSync(testConfigPath, [
   'upload_image_max_size_bytes = 5242880',
   'temp_upload_ttl_ms = 1800000',
   'temp_upload_cleanup_interval_ms = 5000',
+  'timezone = "UTC+8"',
   'trust_proxy = true',
   'is_production = false',
   'cors_origins = []'
@@ -181,6 +182,23 @@ function createTempUpload(name: string, content: string) {
     filePath,
     imagePath
   };
+}
+
+function createOpenTaskForStudent(studentId: number) {
+  const targetClass = database.createClass(`任务测试班级 ${Date.now()} ${Math.random()}`);
+  database.assignStudentsToClass(targetClass.id, [studentId]);
+
+  return database.createTask({
+    title: '测试任务',
+    description: null,
+    start_at: '2020-01-01T00:00:00.000Z',
+    end_at: '2099-01-01T00:00:00.000Z',
+    min_words: 0,
+    min_images: 0,
+    max_records_per_student: 10,
+    class_ids: [targetClass.id],
+    created_by_id: 1
+  });
 }
 
 describe('database bootstrap and users', () => {
@@ -618,6 +636,8 @@ describe('route behavior', () => {
 
   test('rejects future practice dates', async () => {
     await setNormalPassword('S00001', 'student-pass-01');
+    const student = database.findUserByUid('S00001')!;
+    const task = createOpenTaskForStudent(student.id);
     const token = await loginAs('S00001', 'student-pass-01');
     const tomorrowDate = new Date();
     tomorrowDate.setDate(tomorrowDate.getDate() + 1);
@@ -625,6 +645,7 @@ describe('route behavior', () => {
 
     const response = await jsonRequest('/api/students/me/records', {
       title: '未来记录',
+      task_id: task.id,
       content: '不应该允许',
       practice_date: tomorrow,
       location: '教室',
@@ -645,7 +666,9 @@ describe('route behavior', () => {
   test('resubmits rejected record as pending after student edit', async () => {
     await setNormalPassword('S00001', 'student-pass-01');
     const student = database.findUserByUid('S00001')!;
+    const task = createOpenTaskForStudent(student.id);
     const record = database.createRecord({
+      task_id: task.id,
       student_id: student.id,
       title: '待重提记录',
       content: '第一次提交',
@@ -685,8 +708,10 @@ describe('route behavior', () => {
   test('keeps existing images when student edit omits image fields', async () => {
     await setNormalPassword('S00001', 'student-pass-01');
     const student = database.findUserByUid('S00001')!;
+    const task = createOpenTaskForStudent(student.id);
     const image = createTempUpload(`test-record-image-${Date.now()}-student-keep.webp`, 'image');
     const record = database.createRecord({
+      task_id: task.id,
       student_id: student.id,
       title: '保留图片记录',
       content: '第一次提交',

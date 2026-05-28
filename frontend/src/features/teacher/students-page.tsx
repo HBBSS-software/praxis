@@ -4,7 +4,6 @@ import type { ColumnDef } from '@tanstack/react-table';
 
 import { useSession } from '@/lib/auth';
 import { DatePickerField } from '@/shared/date-picker-field';
-import { EmptyState } from '@/shared/empty-state';
 import { AuthenticatedImage } from '@/shared/authenticated-image';
 import { StatCard } from '@/shared/stat-card';
 import { ConfirmActionDialog } from '@/components/confirm-action-dialog';
@@ -280,11 +279,7 @@ export function TeacherStudentsPage() {
               onChange={(value) => setSortBy(value as typeof sortBy)}
             />
           </div>
-          {sortedStudents.length === 0 ? (
-            <EmptyState title={students.length === 0 ? '暂无学生' : '没有匹配的学生'} description={students.length === 0 ? '管理员分配学生后，这里会自动显示。' : '调整搜索条件后再试。'} />
-          ) : (
-            <DataTable batchSize={60} columns={columns} data={sortedStudents} />
-          )}
+          <DataTable batchSize={60} columns={columns} data={sortedStudents} />
           {resetResult ? (
             <UserCredentialsResult
               autoDownload

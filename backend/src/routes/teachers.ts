@@ -11,14 +11,18 @@ import {
   batchUpdateStudentClassBodySchema,
   batchReviewBodySchema,
   buildReviewNotificationMessage,
+  classIdsBodySchema,
+  createTaskBodySchema,
   isValidRecordImagePath,
   isValidUploadPath,
   normalizeOptionalString,
   normalizeRecordFilters,
+  parseDateTimeInput,
   parseDuration,
   recordQuerySchema,
   requireRole,
   reviewRecordBodySchema,
+  updateTaskBodySchema,
   updateRecordBodySchema,
   updateUserBodySchema,
   userSearchQuerySchema,
@@ -31,11 +35,14 @@ import {
   validatePracticeDate,
   validateRecordFilters,
   validateTitle,
+  validateTaskDescription,
+  validateTaskTitle,
   validationHook
 } from '../http';
 import { authMiddleware, type AppBindings } from '../plugins/auth';
 import type { RecordFilters, UpdateRecordInput, UserRole } from '../models';
 import { MAX_RECORD_IMAGES } from '../models';
+import { startOfTodayIso } from '../time';
 
 const recordIdParamSchema = z.object({
   id: z.string().regex(/^[1-9]\d*$/)
@@ -55,6 +62,14 @@ function getVisibleStudentIds(userId: number, role: UserRole) {
   }
 
   return new Set(database.getTeacherStudentIds(userId));
+}
+
+function getVisibleClassIds(userId: number, role: UserRole) {
+  if (role === 'admin') {
+    return undefined;
+  }
+
+  return new Set(database.getTeacherClassIds(userId));
 }
 
 function canManageStudent(studentId: number, userId: number, role: UserRole) {
@@ -77,8 +92,22 @@ function canManageClass(classId: number | null, userId: number, role: UserRole) 
   return database.getTeacherClassIds(userId).includes(classId);
 }
 
+function canManageClasses(classIds: number[], userId: number, role: UserRole) {
+  if (classIds.length === 0) {
+    return false;
+  }
+
+  if (role === 'admin') {
+    return classIds.every((classId) => Boolean(database.findClassById(classId)));
+  }
+
+  const visibleClassIds = new Set(database.getTeacherClassIds(userId));
+  return classIds.every((classId) => visibleClassIds.has(classId));
+}
+
 function parseRecordFilters(query: Record<string, unknown>): RecordFilters {
   return normalizeRecordFilters({
+    task_id: typeof query.task_id === 'string' ? Number(query.task_id) : null,
     student_id: typeof query.student_id === 'string' ? Number(query.student_id) : null,
     student_ids: typeof query.student_ids === 'string' && query.student_ids ? query.student_ids.split(',').map(Number) : null,
     class_id: typeof query.class_id === 'string' ? Number(query.class_id) : null,
@@ -89,6 +118,66 @@ function parseRecordFilters(query: Record<string, unknown>): RecordFilters {
     created_after: typeof query.created_after === 'string' && query.created_after ? query.created_after : null,
     created_before: typeof query.created_before === 'string' && query.created_before ? query.created_before : null
   });
+}
+
+function buildTaskPayload(body: {
+  title?: string;
+  description?: string | null;
+  start_at?: string;
+  end_at?: string;
+  min_words?: number;
+  min_images?: number;
+  max_records_per_student?: number;
+  class_ids?: number[];
+}) {
+  const title = body.title?.trim();
+  const description = body.description === undefined ? undefined : normalizeOptionalString(body.description);
+  const startAt = body.start_at === undefined ? undefined : parseDateTimeInput(body.start_at);
+  const endAt = body.end_at === undefined ? undefined : parseDateTimeInput(body.end_at);
+
+  return {
+    title,
+    description,
+    start_at: startAt,
+    end_at: endAt,
+    min_words: body.min_words,
+    min_images: body.min_images,
+    max_records_per_student: body.max_records_per_student,
+    class_ids: body.class_ids
+  };
+}
+
+function validateTaskPayload(payload: ReturnType<typeof buildTaskPayload>, current?: { start_at: string; end_at: string }) {
+  if (payload.title !== undefined) {
+    const error = validateTaskTitle(payload.title);
+    if (error) return error;
+  }
+
+  if (payload.description !== undefined) {
+    const error = validateTaskDescription(payload.description);
+    if (error) return error;
+  }
+
+  const startAt = payload.start_at ?? current?.start_at;
+  const endAt = payload.end_at ?? current?.end_at;
+
+  if (!startAt) {
+    return '开始时间无效。';
+  }
+
+  if (!endAt) {
+    return '截止时间无效。';
+  }
+
+  if (startAt > endAt) {
+    return '开始时间不能晚于截止时间。';
+  }
+
+  if (payload.end_at !== undefined && endAt < startOfTodayIso()) {
+    return '截止时间不能早于今天。';
+  }
+
+  return null;
 }
 
 function validateRecordImages(imagePaths: string[], coverImagePath: string | null) {
@@ -121,6 +210,215 @@ export const teacherRoutes = new Hono<AppBindings>()
     }
 
     await next();
+  })
+  .get('/teacher/tasks', (c) => {
+    const user = c.get('user')!;
+
+    return c.json({
+      tasks: database.getManageableTasks(getVisibleClassIds(user.id, user.role))
+    });
+  })
+  .post('/teacher/tasks', zValidator('json', createTaskBodySchema, validationHook), (c) => {
+    const body = c.req.valid('json');
+    const user = c.get('user')!;
+    const payload = buildTaskPayload(body);
+    const error = validateTaskPayload(payload);
+
+    if (error) {
+      return apiError(c, 400, error);
+    }
+
+    if (!canManageClasses(body.class_ids, user.id, user.role)) {
+      return apiError(c, 403, '无权选择部分班级。');
+    }
+
+    const task = database.createTask({
+      title: payload.title!,
+      description: payload.description ?? null,
+      start_at: payload.start_at!,
+      end_at: payload.end_at!,
+      min_words: body.min_words,
+      min_images: body.min_images,
+      max_records_per_student: body.max_records_per_student,
+      class_ids: body.class_ids,
+      created_by_id: user.id
+    });
+
+    return c.json({
+      message: '任务创建成功。',
+      task
+    });
+  })
+  .get('/teacher/tasks/:id', zValidator('param', recordIdParamSchema, validationHook), (c) => {
+    const id = Number(c.req.valid('param').id);
+    const user = c.get('user')!;
+    const task = database.getManageableTaskById(id, getVisibleClassIds(user.id, user.role));
+
+    if (!task) {
+      return apiError(c, 404, '任务不存在。');
+    }
+
+    return c.json({ task });
+  })
+  .put('/teacher/tasks/:id', zValidator('param', recordIdParamSchema, validationHook), zValidator('json', updateTaskBodySchema, validationHook), (c) => {
+    const id = Number(c.req.valid('param').id);
+    const body = c.req.valid('json');
+    const user = c.get('user')!;
+    const task = database.getManageableTaskById(id, getVisibleClassIds(user.id, user.role));
+
+    if (!task) {
+      return apiError(c, 404, '任务不存在。');
+    }
+
+    if (body.class_ids && !canManageClasses(body.class_ids, user.id, user.role)) {
+      return apiError(c, 403, '无权选择部分班级。');
+    }
+
+    const payload = buildTaskPayload(body);
+    const error = validateTaskPayload(payload, task);
+
+    if (error) {
+      return apiError(c, 400, error);
+    }
+
+    const updated = database.updateTask(id, {
+      ...(payload.title === undefined ? {} : { title: payload.title }),
+      ...(payload.description === undefined ? {} : { description: payload.description }),
+      ...(payload.start_at === undefined || payload.start_at === null ? {} : { start_at: payload.start_at }),
+      ...(payload.end_at === undefined || payload.end_at === null ? {} : { end_at: payload.end_at }),
+      ...(payload.min_words === undefined ? {} : { min_words: payload.min_words }),
+      ...(payload.min_images === undefined ? {} : { min_images: payload.min_images }),
+      ...(payload.max_records_per_student === undefined ? {} : { max_records_per_student: payload.max_records_per_student }),
+      ...(payload.class_ids === undefined ? {} : { class_ids: payload.class_ids })
+    });
+
+    return c.json({
+      message: '任务更新成功。',
+      task: updated
+    });
+  })
+  .delete('/teacher/tasks/:id', zValidator('param', recordIdParamSchema, validationHook), (c) => {
+    const id = Number(c.req.valid('param').id);
+    const user = c.get('user')!;
+    const task = database.getManageableTaskById(id, getVisibleClassIds(user.id, user.role));
+
+    if (!task) {
+      return apiError(c, 404, '任务不存在。');
+    }
+
+    if (user.role !== 'admin') {
+      const visibleClassIds = new Set(database.getTeacherClassIds(user.id));
+      if (!task.classes.every((item) => visibleClassIds.has(item.id))) {
+        return apiError(c, 403, '只能删除完全属于自己管理范围的任务。');
+      }
+    }
+
+    database.deleteTask(id);
+    return c.json({ message: '任务已删除。' });
+  })
+  .get('/teacher/tasks/:id/classes/:classId/record-count', zValidator('param', z.object({
+    id: z.string().regex(/^[1-9]\d*$/),
+    classId: z.string().regex(/^[1-9]\d*$/)
+  }), validationHook), (c) => {
+    const id = Number(c.req.valid('param').id);
+    const classId = Number(c.req.valid('param').classId);
+    const user = c.get('user')!;
+    const task = database.getManageableTaskById(id, getVisibleClassIds(user.id, user.role));
+
+    if (!task || !task.classes.some((item) => item.id === classId)) {
+      return apiError(c, 404, '任务班级不存在。');
+    }
+
+    if (!canManageClass(classId, user.id, user.role)) {
+      return apiError(c, 403, '无权管理该班级。');
+    }
+
+    return c.json({
+      count: database.countTaskClassRecords(id, classId)
+    });
+  })
+  .delete('/teacher/tasks/:id/classes/:classId', zValidator('param', z.object({
+    id: z.string().regex(/^[1-9]\d*$/),
+    classId: z.string().regex(/^[1-9]\d*$/)
+  }), validationHook), (c) => {
+    const id = Number(c.req.valid('param').id);
+    const classId = Number(c.req.valid('param').classId);
+    const user = c.get('user')!;
+    const task = database.getManageableTaskById(id, getVisibleClassIds(user.id, user.role));
+
+    if (!task || !task.classes.some((item) => item.id === classId)) {
+      return apiError(c, 404, '任务班级不存在。');
+    }
+
+    if (!canManageClass(classId, user.id, user.role)) {
+      return apiError(c, 403, '无权管理该班级。');
+    }
+
+    const deletedCount = database.removeTaskClass(id, classId);
+    return c.json({
+      message: '班级已从任务中移除。',
+      deletedCount
+    });
+  })
+  .post('/teacher/tasks/:id/export', zValidator('param', recordIdParamSchema, validationHook), zValidator('json', classIdsBodySchema, validationHook), async (c) => {
+    const id = Number(c.req.valid('param').id);
+    const body = c.req.valid('json');
+    const user = c.get('user')!;
+    const task = database.getManageableTaskById(id, getVisibleClassIds(user.id, user.role));
+
+    if (!task) {
+      return apiError(c, 404, '任务不存在。');
+    }
+
+    if (!canManageClasses(body.class_ids, user.id, user.role)) {
+      return apiError(c, 403, '无权导出部分班级。');
+    }
+
+    const visibleStudentIds = getVisibleStudentIds(user.id, user.role);
+    const records = database.getAllRecords({ task_id: id, class_ids: body.class_ids }, visibleStudentIds)
+      .map((record) => database.getTeacherRecordById(record.id, visibleStudentIds))
+      .filter((record): record is NonNullable<typeof record> => Boolean(record));
+    const csv = [
+      ['任务名称', '班级', '学生姓名', '学生 UID', '记录标题', '实践日期', '时长', '地点', '状态', '教师评语', '提交时间', '正文', '图片数量'],
+      ...records.map((record) => [
+        task.title,
+        (() => {
+          const classId = database.getStudentClassId(record.student_id);
+          const targetClass = classId ? database.findClassById(classId) : null;
+          return targetClass ? `${targetClass.name} (${targetClass.cid})` : '';
+        })(),
+        record.student_name,
+        record.student_uid,
+        record.title,
+        record.practice_date,
+        record.duration,
+        record.location ?? '',
+        record.status,
+        record.teacher_comment ?? '',
+        record.created_at,
+        record.content,
+        record.image_paths.length
+      ])
+    ].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n') + '\n';
+
+    return c.text(csv, 200, {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="task-${id}-records.csv"`
+    });
+  })
+  .get('/teacher/overview', zValidator('query', z.object({ class_id: z.string().regex(/^[1-9]\d*$/).optional() }), (result, c) => {
+    if (!result.success) return apiError(c, 400, '请求参数无效。');
+  }), (c) => {
+    const user = c.get('user')!;
+    const classId = c.req.valid('query').class_id ? Number(c.req.valid('query').class_id) : null;
+
+    if (classId && !canManageClass(classId, user.id, user.role)) {
+      return apiError(c, 403, '无权查看该班级。');
+    }
+
+    return c.json({
+      overview: database.getOverview(getVisibleClassIds(user.id, user.role), classId)
+    });
   })
   .get('/teacher/records', zValidator('query', recordQuerySchema, validationHook), (c) => {
     const query = c.req.valid('query');

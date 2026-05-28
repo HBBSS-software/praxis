@@ -70,6 +70,30 @@ function validateRecordImages(imagePaths: string[] | undefined, coverImagePath: 
   return null;
 }
 
+function validateTaskRecordConstraints(task: { min_words: number; min_images: number; max_records_per_student: number; start_at: string; end_at: string }, content: string, imagePaths: string[]) {
+  const now = new Date().toISOString();
+
+  if (now < task.start_at) {
+    return '任务尚未开始。';
+  }
+
+  if (now > task.end_at) {
+    return '任务已结束。';
+  }
+
+  const wordCount = (content.match(/[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*/g)?.length ?? 0) + (content.match(/[\u3400-\u9fff]/g)?.length ?? 0);
+
+  if (wordCount < task.min_words) {
+    return `实践内容不能少于 ${task.min_words} 字。`;
+  }
+
+  if (imagePaths.length < task.min_images) {
+    return `至少需要上传 ${task.min_images} 张图片。`;
+  }
+
+  return null;
+}
+
 export const studentRoutes = new Hono<AppBindings>()
   .use('/students/me/*', authMiddleware)
   .use('/students/me/*', async (c, next) => {
@@ -80,6 +104,27 @@ export const studentRoutes = new Hono<AppBindings>()
     }
 
     await next();
+  })
+  .get('/students/me/tasks', (c) => {
+    const user = c.get('user')!;
+
+    return c.json({
+      tasks: database.getStudentTasks(user.id)
+    });
+  })
+  .get('/students/me/tasks/:id', zValidator('param', recordIdParamSchema, validationHook), (c) => {
+    const id = Number(c.req.valid('param').id);
+    const user = c.get('user')!;
+    const task = database.getStudentTaskById(id, user.id);
+
+    if (!task) {
+      return apiError(c, 404, '任务不存在。');
+    }
+
+    return c.json({
+      task,
+      records: database.getRecordsByStudentTask(user.id, id)
+    });
   })
   .get('/students/me/records', (c) => {
     const user = c.get('user')!;
@@ -92,6 +137,18 @@ export const studentRoutes = new Hono<AppBindings>()
   .post('/students/me/records', zValidator('json', createRecordBodySchema, validationHook), (c) => {
     const body = c.req.valid('json');
     const user = c.get('user')!;
+    const taskId = body.task_id;
+
+    if (!taskId) {
+      return apiError(c, 400, '缺少任务。');
+    }
+
+    const task = database.getStudentTaskById(taskId, user.id);
+
+    if (!task) {
+      return apiError(c, 404, '任务不存在。');
+    }
+
     const payload = buildRecordPayload(body as Record<string, unknown>);
     const titleError = validateTitle(payload.title);
     const contentError = validateContent(payload.content);
@@ -109,6 +166,13 @@ export const studentRoutes = new Hono<AppBindings>()
     const imageError = validateRecordImages(imagePaths, payload.coverImagePath ?? null);
     if (imageError) return apiError(c, 400, imageError);
 
+    const taskError = validateTaskRecordConstraints(task, payload.content, imagePaths);
+    if (taskError) return apiError(c, 400, taskError);
+
+    if (database.countStudentTaskRecords(user.id, task.id) >= task.max_records_per_student) {
+      return apiError(c, 400, `每个学生最多提交 ${task.max_records_per_student} 条记录。`);
+    }
+
     if (database.countStudentRecordsToday(user.id) >= database.MAX_DAILY_RECORDS) {
       return apiError(c, 429, `每天最多创建 ${database.MAX_DAILY_RECORDS} 条实践记录。`);
     }
@@ -118,6 +182,7 @@ export const studentRoutes = new Hono<AppBindings>()
     try {
       record = database.createRecord({
         student_id: user.id,
+        task_id: task.id,
         title: payload.title,
         content: payload.content,
         practice_date: payload.practiceDate,
@@ -143,6 +208,16 @@ export const studentRoutes = new Hono<AppBindings>()
 
     if (!record || record.student_id !== user.id) {
       return apiError(c, 404, '记录不存在。');
+    }
+
+    if (!record.task_id) {
+      return apiError(c, 400, '记录未关联任务。');
+    }
+
+    const task = database.getStudentTaskById(record.task_id, user.id);
+
+    if (!task) {
+      return apiError(c, 404, '任务不存在。');
     }
 
     if (record.status !== 'pending' && record.status !== 'rejected') {
@@ -191,6 +266,11 @@ export const studentRoutes = new Hono<AppBindings>()
       updates.image_paths = imagePaths;
       updates.cover_image_path = coverImagePath ?? imagePaths[0] ?? null;
     }
+
+    const nextContent = updates.content ?? record.content;
+    const nextImages = updates.image_paths ?? record.image_paths;
+    const taskError = validateTaskRecordConstraints(task, nextContent, nextImages);
+    if (taskError) return apiError(c, 400, taskError);
 
     if (record.status === 'rejected') {
       updates.status = 'pending';

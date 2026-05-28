@@ -25,9 +25,12 @@ const LoginPage = lazyPage(() => import('@/features/auth-page'), 'LoginPage');
 const SetupPasswordPage = lazyPage(() => import('@/features/setup-password-page'), 'SetupPasswordPage');
 const StudentDashboardPage = lazyPage(() => import('@/features/student'), 'StudentDashboardPage');
 const StudentUploadPage = lazyPage(() => import('@/features/student'), 'StudentUploadPage');
+const StudentTaskPage = lazyPage(() => import('@/features/student'), 'StudentTaskPage');
 const StudentNotificationsPage = lazyPage(() => import('@/features/student'), 'StudentNotificationsPage');
 const StudentAccountPage = lazyPage(() => import('@/features/student'), 'StudentAccountPage');
 const TeacherDashboardPage = lazyPage(() => import('@/features/teacher'), 'TeacherDashboardPage');
+const TeacherTasksPage = lazyPage(() => import('@/features/teacher'), 'TeacherTasksPage');
+const TeacherTaskPage = lazyPage(() => import('@/features/teacher'), 'TeacherTaskPage');
 const TeacherStudentsPage = lazyPage(() => import('@/features/teacher'), 'TeacherStudentsPage');
 const AccountSettingsPage = lazyPage(() => import('@/features/teacher'), 'AccountSettingsPage');
 const AdminAssignmentsPage = lazyPage(() => import('@/features/admin'), 'AdminAssignmentsPage');
@@ -85,10 +88,6 @@ function LoginGuard() {
   return user ? <Navigate to={getDefaultPathByRole(user.role, user.password_setup_required)} replace /> : <DeferredRoute><LoginPage /></DeferredRoute>;
 }
 
-function AdminRecordsRoute() {
-  return <TeacherDashboardPage />;
-}
-
 export function App() {
   return (
     <SessionProvider>
@@ -101,19 +100,24 @@ export function App() {
 
           <Route path="/student" element={<RoleLayout role="student" />}>
             <Route path="dashboard" element={<DeferredRoute><StudentDashboardPage /></DeferredRoute>} />
-            <Route path="upload" element={<DeferredRoute><StudentUploadPage /></DeferredRoute>} />
+            <Route path="tasks/:id" element={<DeferredRoute><StudentTaskPage /></DeferredRoute>} />
+            <Route path="tasks/:taskId/upload" element={<DeferredRoute><StudentUploadPage /></DeferredRoute>} />
             <Route path="notifications" element={<DeferredRoute><StudentNotificationsPage /></DeferredRoute>} />
             <Route path="account" element={<DeferredRoute><StudentAccountPage /></DeferredRoute>} />
           </Route>
 
           <Route path="/teacher" element={<RoleLayout role="teacher" />}>
             <Route path="dashboard" element={<DeferredRoute><TeacherDashboardPage /></DeferredRoute>} />
+            <Route path="tasks" element={<DeferredRoute><TeacherTasksPage /></DeferredRoute>} />
+            <Route path="tasks/:id" element={<DeferredRoute><TeacherTaskPage /></DeferredRoute>} />
             <Route path="students" element={<DeferredRoute><TeacherStudentsPage /></DeferredRoute>} />
             <Route path="account" element={<DeferredRoute><AccountSettingsPage allowNameChange /></DeferredRoute>} />
           </Route>
 
           <Route path="/admin" element={<RoleLayout role="admin" />}>
-            <Route path="records" element={<DeferredRoute><AdminRecordsRoute /></DeferredRoute>} />
+            <Route path="dashboard" element={<DeferredRoute><TeacherDashboardPage /></DeferredRoute>} />
+            <Route path="tasks" element={<DeferredRoute><TeacherTasksPage /></DeferredRoute>} />
+            <Route path="tasks/:id" element={<DeferredRoute><TeacherTaskPage /></DeferredRoute>} />
             <Route path="users" element={<DeferredRoute><AdminUsersPage /></DeferredRoute>} />
             <Route path="assign" element={<DeferredRoute><AdminAssignmentsPage /></DeferredRoute>} />
             <Route path="students" element={<DeferredRoute><AdminStudentsPage /></DeferredRoute>} />

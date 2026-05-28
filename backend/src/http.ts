@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { PublicUser, RecordFilters, RecordStatus, UserRole } from './models';
 import { MAX_RECORD_IMAGES, notificationTypes, recordStatuses, userRoles } from './models';
 import type { AppBindings } from './plugins/auth';
+import { getZonedDateString } from './time';
 
 const positiveIdPattern = /^[1-9]\d*$/;
 const uploadPathPattern = /^\/uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -80,6 +81,7 @@ export const batchDeleteUsersBodySchema = z.object({
 });
 
 export const createRecordBodySchema = z.object({
+  task_id: z.number().int().positive().optional(),
   title: z.string().min(1).max(TITLE_MAX_LENGTH),
   content: z.string().min(1).max(CONTENT_MAX_LENGTH),
   practice_date: z.string().min(1).max(10),
@@ -110,6 +112,7 @@ export const batchReviewBodySchema = z.object({
 });
 
 export const recordQuerySchema = z.object({
+  task_id: z.string().regex(positiveIdPattern).optional(),
   student_id: z.string().regex(positiveIdPattern).optional(),
   student_ids: z.string().optional(),
   class_id: z.string().regex(positiveIdPattern).optional(),
@@ -119,6 +122,25 @@ export const recordQuerySchema = z.object({
   practice_before: z.string().optional(),
   created_after: z.string().optional(),
   created_before: z.string().optional()
+});
+
+export const createTaskBodySchema = z.object({
+  title: z.string().min(1).max(TITLE_MAX_LENGTH),
+  description: z.string().max(CONTENT_MAX_LENGTH).nullable().optional(),
+  start_at: z.string().min(1).max(40),
+  end_at: z.string().min(1).max(40),
+  min_words: z.number().int().min(0).max(CONTENT_MAX_LENGTH),
+  min_images: z.number().int().min(0).max(MAX_RECORD_IMAGES),
+  max_records_per_student: z.number().int().min(1).max(100),
+  class_ids: z.array(z.number().int().positive()).min(1)
+});
+
+export const updateTaskBodySchema = createTaskBodySchema.partial().extend({
+  class_ids: z.array(z.number().int().positive()).min(1).optional()
+});
+
+export const classIdsBodySchema = z.object({
+  class_ids: z.array(z.number().int().positive()).min(1)
 });
 
 export function apiError(c: Context, code: number, message: string) {
@@ -263,8 +285,7 @@ export function validatePracticeDate(value: string) {
     return '实践日期格式无效。';
   }
 
-  const today = new Date();
-  const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const localToday = getZonedDateString();
 
   if (value > localToday) {
     return '不能记录未来的活动。';
@@ -308,6 +329,23 @@ export function validateDuration(duration: number) {
 
 export function validateDateTimeInput(value: string) {
   return Number.isFinite(Date.parse(value));
+}
+
+export function parseDateTimeInput(value: string) {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
+export function validateTaskTitle(title: string) {
+  return validateTitle(title);
+}
+
+export function validateTaskDescription(description: string | null) {
+  if (description && description.length > CONTENT_MAX_LENGTH) {
+    return `任务说明不能超过 ${CONTENT_MAX_LENGTH} 个字符。`;
+  }
+
+  return null;
 }
 
 export function validateRecordFilters(query: Record<string, unknown>) {

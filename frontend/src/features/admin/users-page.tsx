@@ -70,7 +70,7 @@ export function AdminUsersPage() {
   return (
     <AdminPageFrame title="用户创建" description="管理员可以单个创建、批量填写或导入 CSV 创建账号，并下载生成结果。">
       <Tabs defaultValue="single">
-        <TabsList className="grid h-auto w-full grid-cols-1 sm:grid-cols-3">
+        <TabsList>
           <TabsTrigger value="single">单个创建</TabsTrigger>
           <TabsTrigger value="csv">CSV 导入</TabsTrigger>
           <TabsTrigger value="batch">批量填写</TabsTrigger>

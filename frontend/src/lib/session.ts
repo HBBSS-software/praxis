@@ -74,7 +74,7 @@ export function getDefaultPathByRole(role: UserRole, passwordSetupRequired = fal
   }
 
   return role === 'admin'
-    ? '/admin/records'
+    ? '/admin/dashboard'
     : role === 'teacher'
       ? '/teacher/dashboard'
       : '/student/dashboard';

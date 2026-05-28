@@ -35,7 +35,6 @@ import { formatDateTime, formatDuration } from '@/lib/format';
 import { useShiftMultiSelect } from '@/lib/shift-selection';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { ClassAssignments, ClassSummary, CreatedUser, CreatedUserPayload, CreatedUsersPayload, CsvImportEntry, CsvImportPreview, StudentSummary, StudentWithClassSummary, TeacherStatistics, UserRole, UserSummary } from '@/lib/types';
-import { EmptyState } from '@/shared/empty-state';
 import { includesSearch, ListSearchBar, type ListSearchState } from '@/shared/list-search-bar';
 import { UserCredentialsResult } from '@/shared/user-credentials-result';
 import { AdminPageFrame, compareStudentClass, Field, formatStudentClass, SelectClass, SortButton, type CredentialsResult } from './shared';
@@ -286,11 +285,7 @@ function AdminStudentListPage() {
             </Select>
           </div>
 
-          {sortedStudents.length === 0 ? (
-            <EmptyState title={students.length === 0 ? '暂无账号' : '没有匹配的账号'} description={students.length === 0 ? '在用户创建页添加学生账号后，这里会同步显示。' : '调整搜索条件后再试。'} />
-          ) : (
-            <DataTable batchSize={60} columns={columns} data={sortedStudents} />
-          )}
+          <DataTable batchSize={60} columns={columns} data={sortedStudents} />
           {resetResult ? (
             <UserCredentialsResult
               autoDownload

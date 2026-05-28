@@ -56,8 +56,37 @@ export const classStudents = sqliteTable('class_students', {
   index('class_students_class_idx').on(table.classId)
 ]);
 
+export const practiceTasks = sqliteTable('practice_tasks', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  title: text('title').notNull(),
+  description: text('description'),
+  startAt: text('start_at').notNull(),
+  endAt: text('end_at').notNull(),
+  minWords: integer('min_words').notNull().default(0),
+  minImages: integer('min_images').notNull().default(0),
+  maxRecordsPerStudent: integer('max_records_per_student').notNull().default(1),
+  createdById: integer('created_by_id').notNull().references(() => users.id),
+  createdAt: text('created_at').notNull()
+}, (table) => [
+  index('practice_tasks_start_at_idx').on(table.startAt),
+  index('practice_tasks_end_at_idx').on(table.endAt),
+  index('practice_tasks_created_by_idx').on(table.createdById),
+  index('practice_tasks_created_at_idx').on(table.createdAt)
+]);
+
+export const practiceTaskClasses = sqliteTable('practice_task_classes', {
+  taskId: integer('task_id').notNull().references(() => practiceTasks.id, { onDelete: 'cascade' }),
+  classId: integer('class_id').notNull().references(() => classes.id, { onDelete: 'cascade' }),
+  createdAt: text('created_at').notNull()
+}, (table) => [
+  primaryKey({ columns: [table.taskId, table.classId] }),
+  index('practice_task_classes_task_idx').on(table.taskId),
+  index('practice_task_classes_class_idx').on(table.classId)
+]);
+
 export const practiceRecords = sqliteTable('practice_records', {
   id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').references(() => practiceTasks.id, { onDelete: 'cascade' }),
   studentId: integer('student_id').notNull().references(() => users.id),
   studentUidSnapshot: text('student_uid_snapshot'),
   title: text('title').notNull(),
@@ -71,7 +100,9 @@ export const practiceRecords = sqliteTable('practice_records', {
   teacherComment: text('teacher_comment'),
   createdAt: text('created_at').notNull()
 }, (table) => [
+  index('practice_records_task_idx').on(table.taskId),
   index('practice_records_student_idx').on(table.studentId),
+  index('practice_records_task_student_idx').on(table.taskId, table.studentId),
   index('practice_records_cover_image_path_idx').on(table.coverImagePath),
   index('practice_records_status_idx').on(table.status),
   index('practice_records_practice_date_idx').on(table.practiceDate),

@@ -10,18 +10,19 @@ import { cn } from '@/lib/utils';
 
 const navMap: Record<UserRole, Array<{ to: string; label: string }>> = {
   student: [
-    { to: '/student/dashboard', label: '实践概览' },
-    { to: '/student/upload', label: '上传记录' },
+    { to: '/student/dashboard', label: '任务列表' },
     { to: '/student/notifications', label: '消息通知' },
     { to: '/student/account', label: '账号设置' }
   ],
   teacher: [
-    { to: '/teacher/dashboard', label: '审核中心' },
+    { to: '/teacher/dashboard', label: '数据概览' },
+    { to: '/teacher/tasks', label: '任务管理' },
     { to: '/teacher/students', label: '学生列表' },
     { to: '/teacher/account', label: '账号设置' }
   ],
   admin: [
-    { to: '/admin/records', label: '记录管理' },
+    { to: '/admin/dashboard', label: '数据概览' },
+    { to: '/admin/tasks', label: '任务管理' },
     { to: '/admin/users', label: '用户创建' },
     { to: '/admin/assign', label: '班级管理' },
     { to: '/admin/students', label: '学生列表' },

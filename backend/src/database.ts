@@ -2,29 +2,37 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { and, desc, eq, getTableColumns, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 
 import { hashPassword, hashPasswordSync, hashPasswords } from './auth/password';
 import { appConfig } from './config';
 import { db } from './db/client';
 import { ensureDatabaseSchema } from './db/setup';
-import { classes, classStudents, classTeachers, notifications, practiceRecords, tempUploadDeletions, users } from './db/schema';
+import { classes, classStudents, classTeachers, notifications, practiceRecords, practiceTaskClasses, practiceTasks, tempUploadDeletions, users } from './db/schema';
 import type {
   AppNotification,
   ClassAssignments,
+  ClassOverview,
   ClassSummary,
   CreateRecordInput,
+  CreatePracticeTaskInput,
   CreateUserResult,
   NotificationType,
+  OverviewData,
+  PracticeTask,
+  PracticeTaskDetail,
+  PracticeTaskSummary,
   PracticeRecord,
   RecordFilters,
   RecordStatistics,
+  StudentOverview,
   StudentRecord,
   StudentSummary,
   StudentWithClassSummary,
   TeacherRecord,
   TeacherRecordSummary,
   TeacherStatistics,
+  UpdatePracticeTaskInput,
   UpdateRecordInput,
   User,
   UserRole,
@@ -32,6 +40,7 @@ import type {
 } from './models';
 import { MAX_RECORD_IMAGES, userRoles } from './models';
 import { getPinyinInitials } from './pinyin';
+import { recentZonedMonths, zonedMonthRangeIso } from './time';
 
 const uploadDir = path.resolve(process.cwd(), 'backend/data/uploads');
 const tmpUploadDir = path.resolve(process.cwd(), 'backend/data/tmp-uploads');
@@ -47,8 +56,10 @@ const rolePrefixes: Record<UserRole, string> = {
 
 type UserRow = typeof users.$inferSelect;
 type ClassRow = typeof classes.$inferSelect;
+type PracticeTaskRow = typeof practiceTasks.$inferSelect;
 type PracticeRecordRow = typeof practiceRecords.$inferSelect;
 const practiceRecordColumns = getTableColumns(practiceRecords);
+const practiceTaskColumns = getTableColumns(practiceTasks);
 
 function nowIso() {
   return new Date().toISOString();
@@ -76,6 +87,7 @@ function toPracticeRecord(row: PracticeRecordRow): PracticeRecord {
 
   return {
     id: row.id,
+    task_id: row.taskId,
     student_id: row.studentId,
     student_uid_snapshot: row.studentUidSnapshot,
     title: row.title,
@@ -87,6 +99,21 @@ function toPracticeRecord(row: PracticeRecordRow): PracticeRecord {
     cover_image_path: row.coverImagePath && imagePaths.includes(row.coverImagePath) ? row.coverImagePath : imagePaths[0] ?? null,
     status: row.status as PracticeRecord['status'],
     teacher_comment: row.teacherComment,
+    created_at: row.createdAt
+  };
+}
+
+function toPracticeTask(row: PracticeTaskRow): PracticeTask {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    start_at: row.startAt,
+    end_at: row.endAt,
+    min_words: row.minWords,
+    min_images: row.minImages,
+    max_records_per_student: row.maxRecordsPerStudent,
+    created_by_id: row.createdById,
     created_at: row.createdAt
   };
 }
@@ -144,6 +171,14 @@ function activeUserByUid(uid: string) {
 
 function buildRecordWhere(filters: RecordFilters = {}, visibleStudentIds?: Set<number>) {
   const conditions = [];
+
+  if (filters.task_id !== undefined) {
+    if (filters.task_id === null) {
+      conditions.push(isNull(practiceRecords.taskId));
+    } else {
+      conditions.push(eq(practiceRecords.taskId, filters.task_id));
+    }
+  }
 
   if (visibleStudentIds) {
     const ids = [...visibleStudentIds];
@@ -264,6 +299,23 @@ function userSearchCondition(query: string) {
 
   const pattern = `%${normalized}%`;
   return sql`(${users.uid} like ${pattern} escape '\\' or ${users.name} like ${pattern} escape '\\' or ${users.nameInitials} like ${pattern} escape '\\')`;
+}
+
+function uniquePositiveIds(ids: number[]) {
+  return [...new Set(ids.filter((id) => Number.isInteger(id) && id > 0))];
+}
+
+function countWords(value: string) {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    return 0;
+  }
+
+  const latinWords = normalized.match(/[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*/g)?.length ?? 0;
+  const cjkChars = normalized.match(/[\u3400-\u9fff]/g)?.length ?? 0;
+
+  return latinWords + cjkChars;
 }
 
 class SQLiteDatabase {
@@ -862,11 +914,239 @@ class SQLiteDatabase {
       .get()?.classId ?? null;
   }
 
+  getClassIdsForTask(taskId: number) {
+    return db
+      .select({ classId: practiceTaskClasses.classId })
+      .from(practiceTaskClasses)
+      .where(eq(practiceTaskClasses.taskId, taskId))
+      .all()
+      .map((row) => row.classId);
+  }
+
+  getClassesForTask(taskId: number): ClassSummary[] {
+    return db
+      .select({
+        id: classes.id,
+        cid: classes.cid,
+        name: classes.name,
+        createdAt: classes.createdAt
+      })
+      .from(practiceTaskClasses)
+      .innerJoin(classes, eq(practiceTaskClasses.classId, classes.id))
+      .where(eq(practiceTaskClasses.taskId, taskId))
+      .orderBy(classes.cid)
+      .all()
+      .map(toClassSummary);
+  }
+
+  getStudentTaskById(taskId: number, studentId: number) {
+    const classId = this.getStudentClassId(studentId);
+
+    if (!classId) {
+      return null;
+    }
+
+    const row = db
+      .select({ task: practiceTaskColumns })
+      .from(practiceTasks)
+      .innerJoin(practiceTaskClasses, eq(practiceTaskClasses.taskId, practiceTasks.id))
+      .where(and(eq(practiceTasks.id, taskId), eq(practiceTaskClasses.classId, classId)))
+      .get();
+
+    return row ? this.decorateTask(row.task, studentId) : null;
+  }
+
+  getManageableTaskById(taskId: number, visibleClassIds?: Set<number>) {
+    const task = this.getTaskDetail(taskId);
+
+    if (!task) {
+      return null;
+    }
+
+    if (!visibleClassIds) {
+      return task;
+    }
+
+    return task.classes.some((item) => visibleClassIds.has(item.id)) ? task : null;
+  }
+
+  createTask(input: CreatePracticeTaskInput) {
+    const classIds = uniquePositiveIds(input.class_ids);
+    const createdAt = nowIso();
+
+    if (classIds.length === 0) {
+      throw new Error('请选择至少一个班级。');
+    }
+
+    const result = db.transaction((tx) => {
+      const inserted = tx.insert(practiceTasks).values({
+        title: input.title,
+        description: input.description,
+        startAt: input.start_at,
+        endAt: input.end_at,
+        minWords: input.min_words,
+        minImages: input.min_images,
+        maxRecordsPerStudent: input.max_records_per_student,
+        createdById: input.created_by_id,
+        createdAt
+      }).run();
+      const taskId = Number(inserted.lastInsertRowid);
+
+      tx.insert(practiceTaskClasses).values(classIds.map((classId) => ({
+        taskId,
+        classId,
+        createdAt
+      }))).run();
+
+      return taskId;
+    });
+
+    return this.getTaskDetail(result)!;
+  }
+
+  updateTask(taskId: number, input: UpdatePracticeTaskInput) {
+    const current = this.getTaskDetail(taskId);
+
+    if (!current) {
+      return null;
+    }
+
+    const values: Partial<typeof practiceTasks.$inferInsert> = {};
+
+    if (input.title !== undefined) values.title = input.title;
+    if (input.description !== undefined) values.description = input.description;
+    if (input.start_at !== undefined) values.startAt = input.start_at;
+    if (input.end_at !== undefined) values.endAt = input.end_at;
+    if (input.min_words !== undefined) values.minWords = input.min_words;
+    if (input.min_images !== undefined) values.minImages = input.min_images;
+    if (input.max_records_per_student !== undefined) values.maxRecordsPerStudent = input.max_records_per_student;
+
+    db.transaction((tx) => {
+      if (Object.keys(values).length > 0) {
+        tx.update(practiceTasks).set(values).where(eq(practiceTasks.id, taskId)).run();
+      }
+
+      if (input.class_ids !== undefined) {
+        const currentClassIds = new Set(current.classes.map((item) => item.id));
+        const nextClassIds = uniquePositiveIds(input.class_ids).filter((classId) => !currentClassIds.has(classId));
+
+        if (nextClassIds.length > 0) {
+          const createdAt = nowIso();
+          tx.insert(practiceTaskClasses).values(nextClassIds.map((classId) => ({
+            taskId,
+            classId,
+            createdAt
+          }))).onConflictDoNothing().run();
+        }
+      }
+    });
+
+    return this.getTaskDetail(taskId);
+  }
+
+  deleteTask(taskId: number) {
+    const records = db
+      .select()
+      .from(practiceRecords)
+      .where(eq(practiceRecords.taskId, taskId))
+      .all()
+      .map(toPracticeRecord);
+
+    db.transaction((tx) => {
+      tx.delete(practiceRecords).where(eq(practiceRecords.taskId, taskId)).run();
+      tx.delete(practiceTaskClasses).where(eq(practiceTaskClasses.taskId, taskId)).run();
+      tx.delete(practiceTasks).where(eq(practiceTasks.id, taskId)).run();
+    });
+
+    for (const record of records) {
+      for (const imagePath of record.image_paths) {
+        this.removeUploadFile(imagePath);
+      }
+    }
+
+    return true;
+  }
+
+  countTaskClassRecords(taskId: number, classId: number) {
+    const row = db
+      .select({ count: sql<number>`count(*)` })
+      .from(practiceRecords)
+      .innerJoin(classStudents, eq(practiceRecords.studentId, classStudents.studentId))
+      .where(and(eq(practiceRecords.taskId, taskId), eq(classStudents.classId, classId)))
+      .get();
+
+    return toFiniteNumber(row?.count);
+  }
+
+  removeTaskClass(taskId: number, classId: number) {
+    const records = db
+      .select({ record: practiceRecordColumns })
+      .from(practiceRecords)
+      .innerJoin(classStudents, eq(practiceRecords.studentId, classStudents.studentId))
+      .where(and(eq(practiceRecords.taskId, taskId), eq(classStudents.classId, classId)))
+      .all()
+      .map((row) => toPracticeRecord(row.record));
+
+    db.transaction((tx) => {
+      tx.delete(practiceRecords)
+        .where(sql`${practiceRecords.id} in (select practice_records.id from practice_records inner join class_students on practice_records.student_id = class_students.student_id where practice_records.task_id = ${taskId} and class_students.class_id = ${classId})`)
+        .run();
+      tx.delete(practiceTaskClasses)
+        .where(and(eq(practiceTaskClasses.taskId, taskId), eq(practiceTaskClasses.classId, classId)))
+        .run();
+    });
+
+    for (const record of records) {
+      for (const imagePath of record.image_paths) {
+        this.removeUploadFile(imagePath);
+      }
+    }
+
+    return records.length;
+  }
+
+  getStudentTasks(studentId: number): PracticeTaskSummary[] {
+    const classId = this.getStudentClassId(studentId);
+
+    if (!classId) {
+      return [];
+    }
+
+    return db
+      .select({ task: practiceTaskColumns })
+      .from(practiceTasks)
+      .innerJoin(practiceTaskClasses, eq(practiceTaskClasses.taskId, practiceTasks.id))
+      .where(eq(practiceTaskClasses.classId, classId))
+      .orderBy(asc(practiceTasks.startAt))
+      .all()
+      .map((row) => this.decorateTask(row.task, studentId));
+  }
+
+  getManageableTasks(visibleClassIds?: Set<number>): PracticeTaskSummary[] {
+    const where = visibleClassIds
+      ? (() => {
+          const ids = [...visibleClassIds];
+          return ids.length > 0 ? inArray(practiceTaskClasses.classId, ids) : sql`1 = 0`;
+        })()
+      : undefined;
+
+    return db
+      .select({ task: practiceTaskColumns })
+      .from(practiceTasks)
+      .innerJoin(practiceTaskClasses, eq(practiceTaskClasses.taskId, practiceTasks.id))
+      .where(where)
+      .groupBy(practiceTasks.id)
+      .orderBy(desc(practiceTasks.createdAt))
+      .all()
+      .map((row) => this.decorateTask(row.task));
+  }
+
   createRecord(input: CreateRecordInput) {
     const student = db.select({ uid: users.uid }).from(users).where(eq(users.id, input.student_id)).get();
     const createdAt = nowIso();
     const images = this.prepareRecordImages(input.image_paths, input.cover_image_path);
     const result = db.insert(practiceRecords).values({
+      taskId: input.task_id ?? null,
       studentId: input.student_id,
       studentUidSnapshot: student?.uid ?? null,
       title: input.title,
@@ -943,6 +1223,33 @@ class SQLiteDatabase {
       }));
   }
 
+  getRecordsByStudentTask(studentId: number, taskId: number): StudentRecord[] {
+    return db
+      .select({
+        record: practiceRecordColumns,
+        student_name: sql<string>`case when ${users.id} is null or ${users.deletedAt} is not null then ${deletedUserName} else ${users.name} end`
+      })
+      .from(practiceRecords)
+      .leftJoin(users, eq(practiceRecords.studentId, users.id))
+      .where(and(eq(practiceRecords.studentId, studentId), eq(practiceRecords.taskId, taskId)))
+      .orderBy(desc(practiceRecords.createdAt))
+      .all()
+      .map((row) => ({
+        ...toPracticeRecord(row.record),
+        student_name: String(row.student_name)
+      }));
+  }
+
+  countStudentTaskRecords(studentId: number, taskId: number) {
+    const row = db
+      .select({ count: sql<number>`count(*)` })
+      .from(practiceRecords)
+      .where(and(eq(practiceRecords.studentId, studentId), eq(practiceRecords.taskId, taskId)))
+      .get();
+
+    return toFiniteNumber(row?.count);
+  }
+
   getTeacherRecordById(id: number, visibleStudentIds?: Set<number>) {
     const where = buildRecordWhere({ student_id: null }, visibleStudentIds);
     const record = db
@@ -972,6 +1279,7 @@ class SQLiteDatabase {
     return db
       .select({
         id: practiceRecords.id,
+        task_id: practiceRecords.taskId,
         student_id: practiceRecords.studentId,
         title: practiceRecords.title,
         practice_date: practiceRecords.practiceDate,
@@ -986,6 +1294,7 @@ class SQLiteDatabase {
       .all()
       .map((row) => ({
         id: row.id,
+        task_id: row.task_id,
         student_id: row.student_id,
         title: row.title,
         practice_date: row.practice_date,
@@ -1239,6 +1548,156 @@ class SQLiteDatabase {
       rejected_count: toFiniteNumber(row?.rejected_count),
       total_duration: toFiniteNumber(row?.total_duration)
     } satisfies RecordStatistics;
+  }
+
+  private decorateTask(row: PracticeTaskRow, studentId?: number): PracticeTaskSummary {
+    const classCount = db
+      .select({ count: sql<number>`count(*)` })
+      .from(practiceTaskClasses)
+      .where(eq(practiceTaskClasses.taskId, row.id))
+      .get();
+    const recordStats = this.calculateRecordStatistics(eq(practiceRecords.taskId, row.id));
+    const myRecordCount = studentId
+      ? this.countStudentTaskRecords(studentId, row.id)
+      : undefined;
+
+    return {
+      ...toPracticeTask(row),
+      class_count: toFiniteNumber(classCount?.count),
+      record_count: recordStats.total_records,
+      pending_count: recordStats.pending_count,
+      approved_count: recordStats.approved_count,
+      rejected_count: recordStats.rejected_count,
+      ...(myRecordCount === undefined ? {} : { my_record_count: myRecordCount })
+    };
+  }
+
+  getTaskDetail(taskId: number, studentId?: number): PracticeTaskDetail | null {
+    const row = db.select().from(practiceTasks).where(eq(practiceTasks.id, taskId)).get();
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      ...this.decorateTask(row, studentId),
+      classes: this.getClassesForTask(taskId)
+    };
+  }
+
+  getOverview(visibleClassIds?: Set<number>, selectedClassId: number | null = null): OverviewData {
+    const classIds = visibleClassIds ? [...visibleClassIds] : this.getClasses().map((item) => item.id);
+    const scopedClassIds = selectedClassId ? classIds.filter((classId) => classId === selectedClassId) : classIds;
+    const visibleCondition = scopedClassIds.length > 0 ? inArray(classes.id, scopedClassIds) : sql`1 = 0`;
+    const totalDurationExpression = sql<number>`coalesce(sum(case when ${practiceRecords.status} = 'approved' then ${practiceRecords.duration} else 0 end), 0)`;
+    const totalRecordsExpression = sql<number>`count(distinct ${practiceRecords.id})`;
+    const classRows = db
+      .select({
+        class_id: classes.id,
+        class_cid: classes.cid,
+        class_name: classes.name,
+        student_count: sql<number>`count(distinct ${classStudents.studentId})`,
+        task_count: sql<number>`count(distinct ${practiceTaskClasses.taskId})`,
+        total_records: sql<number>`count(distinct ${practiceRecords.id})`,
+        pending_count: sql<number>`count(distinct case when ${practiceRecords.status} = 'pending' then ${practiceRecords.id} end)`,
+        approved_count: sql<number>`count(distinct case when ${practiceRecords.status} = 'approved' then ${practiceRecords.id} end)`,
+        rejected_count: sql<number>`count(distinct case when ${practiceRecords.status} = 'rejected' then ${practiceRecords.id} end)`,
+        total_duration: sql<number>`coalesce(sum(case when ${practiceRecords.status} = 'approved' then ${practiceRecords.duration} else 0 end), 0)`
+      })
+      .from(classes)
+      .leftJoin(classStudents, eq(classStudents.classId, classes.id))
+      .leftJoin(practiceTaskClasses, eq(practiceTaskClasses.classId, classes.id))
+      .leftJoin(practiceRecords, and(eq(practiceRecords.taskId, practiceTaskClasses.taskId), eq(practiceRecords.studentId, classStudents.studentId)))
+      .where(visibleCondition)
+      .groupBy(classes.id)
+      .orderBy(classes.cid)
+      .all()
+      .map((row): ClassOverview => ({
+        class_id: row.class_id,
+        class_cid: row.class_cid,
+        class_name: row.class_name,
+        student_count: toFiniteNumber(row.student_count),
+        task_count: toFiniteNumber(row.task_count),
+        total_records: toFiniteNumber(row.total_records),
+        pending_count: toFiniteNumber(row.pending_count),
+        approved_count: toFiniteNumber(row.approved_count),
+        rejected_count: toFiniteNumber(row.rejected_count),
+        total_duration: toFiniteNumber(row.total_duration)
+      }));
+    const studentRows = db
+      .select({
+        student_id: users.id,
+        student_uid: users.uid,
+        student_name: users.name,
+        class_id: classes.id,
+        class_cid: classes.cid,
+        class_name: classes.name,
+        total_records: totalRecordsExpression,
+        pending_count: sql<number>`count(distinct case when ${practiceRecords.status} = 'pending' then ${practiceRecords.id} end)`,
+        approved_count: sql<number>`count(distinct case when ${practiceRecords.status} = 'approved' then ${practiceRecords.id} end)`,
+        rejected_count: sql<number>`count(distinct case when ${practiceRecords.status} = 'rejected' then ${practiceRecords.id} end)`,
+        total_duration: totalDurationExpression
+      })
+      .from(classStudents)
+      .innerJoin(classes, eq(classes.id, classStudents.classId))
+      .innerJoin(users, eq(users.id, classStudents.studentId))
+      .leftJoin(practiceTaskClasses, eq(practiceTaskClasses.classId, classStudents.classId))
+      .leftJoin(practiceRecords, and(eq(practiceRecords.studentId, users.id), eq(practiceRecords.taskId, practiceTaskClasses.taskId)))
+      .where(and(visibleCondition, eq(users.role, 'student'), isNull(users.deletedAt)))
+      .groupBy(users.id, classes.id)
+      .orderBy(desc(totalDurationExpression), desc(totalRecordsExpression), asc(users.name), asc(users.uid))
+      .all()
+      .map((row): StudentOverview => ({
+        student_id: row.student_id,
+        student_uid: row.student_uid,
+        student_name: row.student_name,
+        class_id: row.class_id,
+        class_cid: row.class_cid,
+        class_name: row.class_name,
+        total_records: toFiniteNumber(row.total_records),
+        pending_count: toFiniteNumber(row.pending_count),
+        approved_count: toFiniteNumber(row.approved_count),
+        rejected_count: toFiniteNumber(row.rejected_count),
+        total_duration: toFiniteNumber(row.total_duration)
+      }));
+
+    return {
+      classes: classRows,
+      students: studentRows,
+      trend: this.getOverviewTrend(scopedClassIds),
+      selected_class_id: selectedClassId
+    };
+  }
+
+  private getOverviewTrend(classIds: number[]) {
+    const months = recentZonedMonths(12);
+
+    return months.map((month) => {
+      const range = zonedMonthRangeIso(month);
+      const classWhere = classIds.length > 0 ? inArray(practiceTaskClasses.classId, classIds) : sql`1 = 0`;
+      const activeTaskRow = db
+        .select({ count: sql<number>`count(distinct ${practiceTasks.id})` })
+        .from(practiceTasks)
+        .innerJoin(practiceTaskClasses, eq(practiceTaskClasses.taskId, practiceTasks.id))
+        .where(and(classWhere, lte(practiceTasks.startAt, range.end), gte(practiceTasks.endAt, range.start)))
+        .get();
+      const recordRow = db
+        .select({ count: sql<number>`count(distinct ${practiceRecords.id})` })
+        .from(practiceRecords)
+        .innerJoin(classStudents, eq(practiceRecords.studentId, classStudents.studentId))
+        .where(and(
+          classIds.length > 0 ? inArray(classStudents.classId, classIds) : sql`1 = 0`,
+          gte(practiceRecords.createdAt, range.start),
+          lte(practiceRecords.createdAt, range.end)
+        ))
+        .get();
+
+      return {
+        month,
+        active_task_count: toFiniteNumber(activeTaskRow?.count),
+        submitted_record_count: toFiniteNumber(recordRow?.count)
+      };
+    });
   }
 
   private seedDefaults() {

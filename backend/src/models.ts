@@ -53,6 +53,7 @@ export interface UserSummary extends StudentSummary {
 
 export interface PracticeRecord {
   id: number;
+  task_id: number | null;
   student_id: number;
   student_uid_snapshot: string | null;
   title: string;
@@ -77,6 +78,7 @@ export interface TeacherRecord extends StudentRecord {
 
 export interface TeacherRecordSummary {
   id: number;
+  task_id: number | null;
   student_id: number;
   title: string;
   practice_date: string;
@@ -87,6 +89,7 @@ export interface TeacherRecordSummary {
 }
 
 export interface CreateRecordInput {
+  task_id?: number | null;
   student_id: number;
   title: string;
   content: string;
@@ -110,6 +113,7 @@ export interface UpdateRecordInput {
 }
 
 export interface RecordFilters {
+  task_id?: number | null;
   student_id?: number | null;
   student_ids?: number[] | null;
   class_id?: number | null;
@@ -119,6 +123,55 @@ export interface RecordFilters {
   practice_before?: string | null;
   created_after?: string | null;
   created_before?: string | null;
+}
+
+export interface PracticeTask {
+  id: number;
+  title: string;
+  description: string | null;
+  start_at: string;
+  end_at: string;
+  min_words: number;
+  min_images: number;
+  max_records_per_student: number;
+  created_by_id: number;
+  created_at: string;
+}
+
+export interface PracticeTaskSummary extends PracticeTask {
+  class_count: number;
+  record_count: number;
+  pending_count: number;
+  approved_count: number;
+  rejected_count: number;
+  my_record_count?: number;
+}
+
+export interface PracticeTaskDetail extends PracticeTaskSummary {
+  classes: ClassSummary[];
+}
+
+export interface CreatePracticeTaskInput {
+  title: string;
+  description: string | null;
+  start_at: string;
+  end_at: string;
+  min_words: number;
+  min_images: number;
+  max_records_per_student: number;
+  class_ids: number[];
+  created_by_id: number;
+}
+
+export interface UpdatePracticeTaskInput {
+  title?: string;
+  description?: string | null;
+  start_at?: string;
+  end_at?: string;
+  min_words?: number;
+  min_images?: number;
+  max_records_per_student?: number;
+  class_ids?: number[];
 }
 
 export interface RecordStatistics {
@@ -137,6 +190,46 @@ export interface TeacherStatistics extends RecordStatistics {
     student_uid: string;
     total_duration: number;
   }>;
+}
+
+export interface ClassOverview {
+  class_id: number;
+  class_cid: string;
+  class_name: string;
+  student_count: number;
+  task_count: number;
+  total_records: number;
+  pending_count: number;
+  approved_count: number;
+  rejected_count: number;
+  total_duration: number;
+}
+
+export interface StudentOverview {
+  student_id: number;
+  student_uid: string;
+  student_name: string;
+  class_id: number;
+  class_cid: string;
+  class_name: string;
+  total_records: number;
+  pending_count: number;
+  approved_count: number;
+  rejected_count: number;
+  total_duration: number;
+}
+
+export interface OverviewTrendPoint {
+  month: string;
+  active_task_count: number;
+  submitted_record_count: number;
+}
+
+export interface OverviewData {
+  classes: ClassOverview[];
+  students: StudentOverview[];
+  trend: OverviewTrendPoint[];
+  selected_class_id: number | null;
 }
 
 export interface ClassSummary {

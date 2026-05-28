@@ -79,8 +79,41 @@ export function ensureDatabaseSchema() {
   db.run(sql`create index if not exists class_students_class_idx on class_students(class_id)`);
 
   db.run(sql`
+    create table if not exists practice_tasks (
+      id integer primary key autoincrement,
+      title text not null,
+      description text,
+      start_at text not null,
+      end_at text not null,
+      min_words integer not null default 0,
+      min_images integer not null default 0,
+      max_records_per_student integer not null default 1,
+      created_by_id integer not null references users(id),
+      created_at text not null
+    )
+  `);
+
+  db.run(sql`create index if not exists practice_tasks_start_at_idx on practice_tasks(start_at)`);
+  db.run(sql`create index if not exists practice_tasks_end_at_idx on practice_tasks(end_at)`);
+  db.run(sql`create index if not exists practice_tasks_created_by_idx on practice_tasks(created_by_id)`);
+  db.run(sql`create index if not exists practice_tasks_created_at_idx on practice_tasks(created_at)`);
+
+  db.run(sql`
+    create table if not exists practice_task_classes (
+      task_id integer not null references practice_tasks(id) on delete cascade,
+      class_id integer not null references classes(id) on delete cascade,
+      created_at text not null,
+      primary key (task_id, class_id)
+    )
+  `);
+
+  db.run(sql`create index if not exists practice_task_classes_task_idx on practice_task_classes(task_id)`);
+  db.run(sql`create index if not exists practice_task_classes_class_idx on practice_task_classes(class_id)`);
+
+  db.run(sql`
     create table if not exists practice_records (
       id integer primary key autoincrement,
+      task_id integer references practice_tasks(id) on delete cascade,
       student_id integer not null references users(id),
       student_uid_snapshot text,
       title text not null,
@@ -97,6 +130,10 @@ export function ensureDatabaseSchema() {
   `);
 
   const recordColumns = db.all<{ name: string }>(sql`pragma table_info(practice_records)`);
+  if (!recordColumns.some((column) => column.name === 'task_id')) {
+    db.run(sql`alter table practice_records add column task_id integer references practice_tasks(id) on delete cascade`);
+  }
+
   if (!recordColumns.some((column) => column.name === 'image_paths')) {
     db.run(sql`alter table practice_records add column image_paths text not null default '[]'`);
   }
@@ -105,7 +142,9 @@ export function ensureDatabaseSchema() {
     db.run(sql`alter table practice_records add column cover_image_path text`);
   }
 
+  db.run(sql`create index if not exists practice_records_task_idx on practice_records(task_id)`);
   db.run(sql`create index if not exists practice_records_student_idx on practice_records(student_id)`);
+  db.run(sql`create index if not exists practice_records_task_student_idx on practice_records(task_id, student_id)`);
   db.run(sql`create index if not exists practice_records_cover_image_path_idx on practice_records(cover_image_path)`);
   db.run(sql`create index if not exists practice_records_status_idx on practice_records(status)`);
   db.run(sql`create index if not exists practice_records_practice_date_idx on practice_records(practice_date)`);

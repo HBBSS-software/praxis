@@ -195,6 +195,48 @@ export function createApiClient(token?: string | null) {
     }
   });
 
+  const teacherTaskRoute = ({ id }: { id: number }) => ({
+    get: () =>
+      wrapRpcResponse(client.teacher.tasks[':id'].$get({
+        param: { id: toPathParam(id) }
+      })),
+    put: (body?: any) =>
+      wrapRpcResponse(client.teacher.tasks[':id'].$put({
+        param: { id: toPathParam(id) },
+        json: body
+      })),
+    delete: () =>
+      wrapRpcResponse(client.teacher.tasks[':id'].$delete({
+        param: { id: toPathParam(id) }
+      })),
+    export: {
+      post: (body?: any) =>
+        wrapRpcResponse(client.teacher.tasks[':id'].export.$post({
+          param: { id: toPathParam(id) },
+          json: body
+        }))
+    },
+    classes: ({ classId }: { classId: number }) => ({
+      delete: () =>
+        wrapRpcResponse(client.teacher.tasks[':id'].classes[':classId'].$delete({
+          param: { id: toPathParam(id), classId: toPathParam(classId) }
+        })),
+      recordCount: {
+        get: () =>
+          wrapRpcResponse(client.teacher.tasks[':id'].classes[':classId']['record-count'].$get({
+            param: { id: toPathParam(id), classId: toPathParam(classId) }
+          }))
+      }
+    })
+  });
+
+  const studentTaskRoute = ({ id }: { id: number }) => ({
+    get: () =>
+      wrapRpcResponse(client.students.me.tasks[':id'].$get({
+        param: { id: toPathParam(id) }
+      }))
+  });
+
   const teacherStudentRoute = ({ id }: { id: number }) => ({
     put: (body?: any) =>
       wrapRpcResponse(client.teacher.students[':id'].$put({
@@ -331,6 +373,9 @@ export function createApiClient(token?: string | null) {
       })
     },
     student: {
+      tasks: Object.assign(studentTaskRoute, {
+        get: () => wrapRpcResponse(client.students.me.tasks.$get())
+      }),
       records: Object.assign(studentRecordRoute, {
         get: () => wrapRpcResponse(client.students.me.records.$get()),
         post: (body?: any) => wrapRpcResponse(client.students.me.records.$post({ json: body }))
@@ -343,6 +388,18 @@ export function createApiClient(token?: string | null) {
       }
     },
     teacher: {
+      tasks: Object.assign(teacherTaskRoute, {
+        get: () => wrapRpcResponse(client.teacher.tasks.$get()),
+        post: (body?: any) => wrapRpcResponse(client.teacher.tasks.$post({ json: body }))
+      }),
+      overview: {
+        get: ({ query }: { query?: { class_id?: string } } = {}) =>
+          wrapRpcResponse(client.teacher.overview.$get({
+            query: {
+              class_id: query?.class_id
+            }
+          }))
+      },
       records: Object.assign(teacherRecordRoute, {
         get: ({ query }: { query?: Record<string, string | number | undefined> } = {}) =>
           wrapRpcResponse(query ? client.teacher.records.$get({ query: query as Record<string, string> }) : client.teacher.records.$get({ query: {} })),

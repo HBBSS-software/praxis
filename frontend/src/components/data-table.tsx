@@ -76,15 +76,23 @@ function DataTableInner<TData, TValue>({
           ))}
         </TableHeader>
         <TableBody>
-          {visibleRows.map((row, index) => (
-            <TableRow key={row.id} className={rowClassName?.(row.original, index)}>
-              {row.getVisibleCells().map((cell) => (
-                <TableCell key={cell.id}>
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </TableCell>
-              ))}
+          {visibleRows.length === 0 ? (
+            <TableRow>
+              <TableCell className="h-24 text-center text-muted-foreground" colSpan={columns.length}>
+                暂无数据
+              </TableCell>
             </TableRow>
-          ))}
+          ) : (
+            visibleRows.map((row, index) => (
+              <TableRow key={row.id} className={rowClassName?.(row.original, index)}>
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
+          )}
           {hasMore ? (
             <TableRow ref={loadMoreRef}>
               <TableCell className="py-4 text-center text-muted-foreground" colSpan={columns.length}>
