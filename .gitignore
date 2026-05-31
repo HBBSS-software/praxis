@@ -1,15 +1,14 @@
 node_modules/
-config.toml
-
-backend/data/
-
 frontend/dist/
+
+config.toml
+backend/data/
 
 .DS_Store
 Thumbs.db
+
 .codex
 .antigravitycli/
 .omo/
 .agents/
-
-tmp/
+.claude/
