@@ -282,7 +282,7 @@ function AdminStudentListPage() {
             </Select>
           </div>
 
-          <DataTable batchSize={60} columns={columns} data={sortedStudents} />
+          <DataTable columns={columns} data={sortedStudents} pagination={{ pageSize: 60 }} />
           {resetResult ? (
             <UserCredentialsResult
               autoDownload

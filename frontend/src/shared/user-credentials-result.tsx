@@ -53,7 +53,7 @@ function UserCredentialsResult({
           </a>
         </Button>
       </div>
-      {shouldShowUsers ? <DataTable batchSize={20} columns={columns} data={users} /> : null}
+      {shouldShowUsers ? <DataTable columns={columns} data={users} pagination={{ pageSize: 20 }} /> : null}
     </div>
   );
 }

@@ -20,7 +20,7 @@ import {
   ComboboxLabel,
   ComboboxList,
   ComboboxSeparator,
-  useComboboxAnchor
+  useComboboxPagedSearch
 } from '@/components/ui/combobox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -33,7 +33,6 @@ import { ApiResponseError, createApiClient, importUserCsv, unwrapResponse } from
 import { toastError, toastSuccess } from '@/lib/feedback';
 import { formatDateTime, formatDuration } from '@/lib/format';
 import { useShiftMultiSelect } from '@/lib/shift-selection';
-import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { ClassAssignments, ClassSummary, CreatedUser, CreatedUserPayload, CreatedUsersPayload, CsvImportEntry, CsvImportPreview, StudentSummary, StudentWithClassSummary, TeacherStatistics, UserRole, UserSummary } from '@/lib/types';
 import { EmptyState } from '@/shared/empty-state';
 import { includesSearch, ListSearchBar, type ListSearchState } from '@/shared/list-search-bar';
@@ -46,6 +45,16 @@ const classSearchOptions = [
   { label: 'CID', value: 'cid' }
 ] satisfies Array<{ label: string; value: ClassSearchField }>;
 const defaultClassSearch: ListSearchState<ClassSearchField> = { field: 'name', query: '' };
+
+function matchUserSummary(user: UserSummary, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return user.name.toLowerCase().includes(normalizedQuery) || user.uid.toLowerCase().includes(normalizedQuery);
+}
 
 export function AdminAssignmentsPage() {
   const { signOut } = useSession();
@@ -376,28 +385,23 @@ function TeacherMultiSelect({
   value: number[];
   onChange: (value: number[]) => void;
 }) {
-  const anchorRef = useComboboxAnchor();
-  const [query, setQuery] = useState('');
-  const debouncedQuery = useDebouncedValue(query);
+  const {
+    anchorRef,
+    query,
+    setQuery,
+    matchedItems: matchedTeachers,
+    visibleItems: visibleTeachers,
+    loadMoreItems: loadMoreTeachers,
+    resetCombobox
+  } = useComboboxPagedSearch({
+    items: teachers,
+    filter: matchUserSummary
+  });
   const [selectedTeacherMap, setSelectedTeacherMap] = useState(() => new Map(teachers.map((teacher) => [teacher.id, teacher])));
-  const [visibleCount, setVisibleCount] = useState(comboboxPageSize);
-  const matchedTeachers = useMemo(() => {
-    const normalizedQuery = debouncedQuery.trim().toLowerCase();
-
-    if (!normalizedQuery) {
-      return teachers;
-    }
-
-    return teachers.filter((teacher) =>
-      teacher.name.toLowerCase().includes(normalizedQuery) ||
-      teacher.uid.toLowerCase().includes(normalizedQuery)
-    );
-  }, [debouncedQuery, teachers]);
   const selectedTeachers = useMemo(
     () => value.map((id) => selectedTeacherMap.get(id)).filter((teacher): teacher is UserSummary => Boolean(teacher)),
     [selectedTeacherMap, value]
   );
-  const visibleTeachers = useMemo(() => matchedTeachers.slice(0, visibleCount), [matchedTeachers, visibleCount]);
 
   useEffect(() => {
     setSelectedTeacherMap((current) => {
@@ -408,20 +412,6 @@ function TeacherMultiSelect({
       return next;
     });
   }, [teachers]);
-
-  useEffect(() => {
-    setVisibleCount(comboboxPageSize);
-  }, [debouncedQuery, matchedTeachers]);
-
-  function loadMoreTeachers(event: React.UIEvent<HTMLDivElement>) {
-    const element = event.currentTarget;
-
-    if (element.scrollTop + element.clientHeight < element.scrollHeight - 24) {
-      return;
-    }
-
-    setVisibleCount((current) => Math.min(current + comboboxPageSize, matchedTeachers.length));
-  }
 
   return (
     <Field label="教师">
@@ -452,7 +442,10 @@ function TeacherMultiSelect({
           ))}
           <ComboboxChipsInput placeholder={selectedTeachers.length > 0 ? '' : '筛选教师'} />
           {selectedTeachers.length > 0 ? (
-            <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange([])}>
+            <Button type="button" variant="ghost" size="icon-xs" onClick={() => {
+              resetCombobox();
+              onChange([]);
+            }}>
               <X className="size-3" />
             </Button>
           ) : null}
@@ -489,18 +482,22 @@ function ClassStudentMultiSelect({
   value: number[];
   onChange: (value: number[]) => void;
 }) {
-  const anchorRef = useComboboxAnchor();
-  const [query, setQuery] = useState('');
-  const debouncedQuery = useDebouncedValue(query);
   const [students, setStudents] = useState<StudentWithClassSummary[]>(initialStudents);
+  const {
+    anchorRef,
+    query,
+    setQuery,
+    debouncedQuery,
+    visibleItems: visibleStudents,
+    loadMoreItems: loadMoreStudents,
+    resetCombobox
+  } = useComboboxPagedSearch({ items: students });
   const [selectedStudentMap, setSelectedStudentMap] = useState(() => new Map(initialStudents.map((student) => [student.id, student])));
-  const [visibleCount, setVisibleCount] = useState(comboboxPageSize);
   const [loading, setLoading] = useState(false);
   const selectedStudents = useMemo(
     () => value.map((id) => selectedStudentMap.get(id)).filter((student): student is StudentWithClassSummary => Boolean(student)),
     [selectedStudentMap, value]
   );
-  const visibleStudents = useMemo(() => students.slice(0, visibleCount), [students, visibleCount]);
 
   useEffect(() => {
     let cancelled = false;
@@ -541,20 +538,6 @@ function ClassStudentMultiSelect({
     };
   }, [classId, debouncedQuery, signOut]);
 
-  useEffect(() => {
-    setVisibleCount(comboboxPageSize);
-  }, [debouncedQuery, students]);
-
-  function loadMoreStudents(event: React.UIEvent<HTMLDivElement>) {
-    const element = event.currentTarget;
-
-    if (element.scrollTop + element.clientHeight < element.scrollHeight - 24) {
-      return;
-    }
-
-    setVisibleCount((current) => Math.min(current + comboboxPageSize, students.length));
-  }
-
   return (
     <Field label="学生">
       <Combobox
@@ -584,7 +567,10 @@ function ClassStudentMultiSelect({
           ))}
           <ComboboxChipsInput placeholder={selectedStudents.length > 0 ? '' : 'UID / 姓名'} />
           {selectedStudents.length > 0 ? (
-            <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange([])}>
+            <Button type="button" variant="ghost" size="icon-xs" onClick={() => {
+              resetCombobox();
+              onChange([]);
+            }}>
               <X className="size-3" />
             </Button>
           ) : null}
@@ -621,14 +607,18 @@ function AssignmentStudentFilter({
   value: number[];
   onChange: (value: number[], selectedStudents: StudentWithClassSummary[]) => void;
 }) {
-  const anchorRef = useComboboxAnchor();
-  const [query, setQuery] = useState('');
-  const debouncedQuery = useDebouncedValue(query);
   const [students, setStudents] = useState<StudentWithClassSummary[]>([]);
+  const {
+    anchorRef,
+    query,
+    setQuery,
+    debouncedQuery,
+    visibleItems: visibleStudents,
+    loadMoreItems: loadMoreStudents,
+    resetCombobox
+  } = useComboboxPagedSearch({ items: students });
   const [selectedStudentMap, setSelectedStudentMap] = useState(() => new Map<number, StudentWithClassSummary>());
-  const [visibleCount, setVisibleCount] = useState(comboboxPageSize);
   const [loading, setLoading] = useState(false);
-  const visibleStudents = useMemo(() => students.slice(0, visibleCount), [students, visibleCount]);
   const studentGroups = useMemo(() => {
     const groupMap = new Map<string, { value: string; items: StudentWithClassSummary[] }>();
 
@@ -683,20 +673,6 @@ function AssignmentStudentFilter({
     };
   }, [debouncedQuery, signOut]);
 
-  useEffect(() => {
-    setVisibleCount(comboboxPageSize);
-  }, [debouncedQuery]);
-
-  function loadMoreStudents(event: React.UIEvent<HTMLDivElement>) {
-    const element = event.currentTarget;
-
-    if (element.scrollTop + element.clientHeight < element.scrollHeight - 24) {
-      return;
-    }
-
-    setVisibleCount((current) => Math.min(current + comboboxPageSize, students.length));
-  }
-
   return (
     <Field label="筛选学生">
       <Combobox
@@ -726,7 +702,10 @@ function AssignmentStudentFilter({
           ))}
           <ComboboxChipsInput placeholder={selectedStudents.length > 0 ? '' : 'UID / 姓名'} />
           {selectedStudents.length > 0 ? (
-            <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange([], [])}>
+            <Button type="button" variant="ghost" size="icon-xs" onClick={() => {
+              resetCombobox();
+              onChange([], []);
+            }}>
               <X className="size-3" />
             </Button>
           ) : null}

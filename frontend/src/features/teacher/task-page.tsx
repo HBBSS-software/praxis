@@ -209,7 +209,7 @@ export function TeacherTaskPage() {
                   />
                 </Field>
               </div>
-              {recordsLoading ? <LoadingCard label="正在加载记录..." /> : <DataTable columns={columns} data={records} />}
+              {recordsLoading ? <LoadingCard label="正在加载记录..." /> : <DataTable columns={columns} data={records} pagination={{ pageSize: 50 }} />}
             </CardContent>
           </Card>
         </div>

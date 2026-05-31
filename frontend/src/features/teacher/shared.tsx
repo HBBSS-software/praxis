@@ -26,7 +26,7 @@ import {
   ComboboxLabel,
   ComboboxList,
   ComboboxSeparator,
-  useComboboxAnchor
+  useComboboxPagedSearch
 } from '@/components/ui/combobox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -38,7 +38,6 @@ import { ApiResponseError, createApiClient, unwrapResponse } from '@/lib/api';
 import { toastError, toastSuccess } from '@/lib/feedback';
 import { formatDate, formatDateTime, formatDuration, normalizeDateInputValue, statusLabel } from '@/lib/format';
 import { useShiftMultiSelect } from '@/lib/shift-selection';
-import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { ClassSummary, CreatedUser, CreatedUsersPayload, StudentSummary, StudentWithClassSummary, TeacherRecord, TeacherRecordSummary, TeacherStatistics, UserSummary } from '@/lib/types';
 import { UserCredentialsResult } from '@/shared/user-credentials-result';
 
@@ -76,8 +75,6 @@ export const defaultFilters = {
   created_after: '',
   created_before: ''
 };
-
-const comboboxPageSize = 50;
 
 export type CredentialsResult = {
   users: CreatedUser[];
@@ -254,15 +251,19 @@ export const UserMultiCombobox = memo(function UserMultiCombobox({
   loadOptions: (query: string) => Promise<UserOption[]>;
   onChange: (value: number[]) => void;
 }) {
-  const anchorRef = useComboboxAnchor();
-  const [query, setQuery] = useState('');
-  const debouncedQuery = useDebouncedValue(query);
   const [options, setOptions] = useState<UserOption[]>([]);
+  const {
+    anchorRef,
+    query,
+    setQuery,
+    debouncedQuery,
+    visibleItems: visibleOptions,
+    loadMoreItems: loadMoreOptions,
+    resetCombobox
+  } = useComboboxPagedSearch({ items: options });
   const [selectedOptionMap, setSelectedOptionMap] = useState(() => new Map<string, UserOption>());
-  const [visibleCount, setVisibleCount] = useState(comboboxPageSize);
   const [loading, setLoading] = useState(false);
   const selectedOptions = useMemo(() => value.map((id) => selectedOptionMap.get(String(id))).filter((option): option is UserOption => Boolean(option)), [selectedOptionMap, value]);
-  const visibleOptions = useMemo(() => options.slice(0, visibleCount), [options, visibleCount]);
 
   useEffect(() => {
     let cancelled = false;
@@ -294,20 +295,6 @@ export const UserMultiCombobox = memo(function UserMultiCombobox({
     };
   }, [debouncedQuery, loadOptions]);
 
-  useEffect(() => {
-    setVisibleCount(comboboxPageSize);
-  }, [debouncedQuery]);
-
-  function loadMoreOptions(event: React.UIEvent<HTMLDivElement>) {
-    const element = event.currentTarget;
-
-    if (element.scrollTop + element.clientHeight < element.scrollHeight - 24) {
-      return;
-    }
-
-    setVisibleCount((current) => Math.min(current + comboboxPageSize, options.length));
-  }
-
   return (
     <Field label={label}>
       <Combobox
@@ -337,7 +324,10 @@ export const UserMultiCombobox = memo(function UserMultiCombobox({
           ))}
           <ComboboxChipsInput placeholder={selectedOptions.length > 0 ? '' : `筛选${label}`} />
           {selectedOptions.length > 0 ? (
-            <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange([])}>
+            <Button type="button" variant="ghost" size="icon-xs" onClick={() => {
+              resetCombobox();
+              onChange([]);
+            }}>
               <X className="size-3" />
             </Button>
           ) : null}
@@ -376,15 +366,19 @@ export const StudentMultiCombobox = memo(function StudentMultiCombobox({
   loadOptions: (query: string) => Promise<StudentOption[]>;
   onChange: (value: number[]) => void;
 }) {
-  const anchorRef = useComboboxAnchor();
-  const [query, setQuery] = useState('');
-  const debouncedQuery = useDebouncedValue(query);
   const [options, setOptions] = useState<StudentOption[]>([]);
+  const {
+    anchorRef,
+    query,
+    setQuery,
+    debouncedQuery,
+    visibleItems: visibleOptions,
+    loadMoreItems: loadMoreOptions,
+    resetCombobox
+  } = useComboboxPagedSearch({ items: options });
   const [selectedOptionMap, setSelectedOptionMap] = useState(() => new Map<string, StudentOption>());
-  const [visibleCount, setVisibleCount] = useState(comboboxPageSize);
   const [loading, setLoading] = useState(false);
   const selectedOptions = useMemo(() => value.map((id) => selectedOptionMap.get(String(id))).filter((option): option is StudentOption => Boolean(option)), [selectedOptionMap, value]);
-  const visibleOptions = useMemo(() => options.slice(0, visibleCount), [options, visibleCount]);
   const visibleGroups = useMemo(() => {
     const groupMap = new Map<string, { value: string; items: StudentOption[] }>();
 
@@ -428,20 +422,6 @@ export const StudentMultiCombobox = memo(function StudentMultiCombobox({
     };
   }, [debouncedQuery, loadOptions]);
 
-  useEffect(() => {
-    setVisibleCount(comboboxPageSize);
-  }, [debouncedQuery]);
-
-  function loadMoreOptions(event: React.UIEvent<HTMLDivElement>) {
-    const element = event.currentTarget;
-
-    if (element.scrollTop + element.clientHeight < element.scrollHeight - 24) {
-      return;
-    }
-
-    setVisibleCount((current) => Math.min(current + comboboxPageSize, options.length));
-  }
-
   return (
     <Field label={label}>
       <Combobox
@@ -471,7 +451,10 @@ export const StudentMultiCombobox = memo(function StudentMultiCombobox({
           ))}
           <ComboboxChipsInput placeholder={selectedOptions.length > 0 ? '' : `筛选${label}`} />
           {selectedOptions.length > 0 ? (
-            <Button type="button" variant="ghost" size="icon-xs" onClick={() => onChange([])}>
+            <Button type="button" variant="ghost" size="icon-xs" onClick={() => {
+              resetCombobox();
+              onChange([]);
+            }}>
               <X className="size-3" />
             </Button>
           ) : null}

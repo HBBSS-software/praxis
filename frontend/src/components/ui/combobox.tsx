@@ -5,6 +5,7 @@ import { Combobox as ComboboxPrimitive } from "@base-ui/react"
 import { CheckIcon, ChevronDownIcon, XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { useDebouncedValue } from "@/lib/use-debounced-value"
 import { Button } from "@/components/ui/button"
 import {
   InputGroup,
@@ -302,6 +303,69 @@ function useComboboxAnchor() {
   return React.useRef<HTMLDivElement | null>(null)
 }
 
+function useComboboxPagedSearch<T>({
+  items,
+  filter,
+  pageSize = 50,
+  debounceDelay = 250
+}: {
+  items: T[]
+  filter?: (item: T, query: string) => boolean
+  pageSize?: number
+  debounceDelay?: number
+}) {
+  const anchorRef = useComboboxAnchor()
+  const [query, setQuery] = React.useState("")
+  const debouncedQuery = useDebouncedValue(query, debounceDelay)
+  const [visibleCount, setVisibleCount] = React.useState(pageSize)
+  const matchedItems = React.useMemo(() => {
+    if (!filter) {
+      return items
+    }
+
+    return items.filter((item) => filter(item, debouncedQuery))
+  }, [debouncedQuery, filter, items])
+  const visibleItems = React.useMemo(
+    () => matchedItems.slice(0, visibleCount),
+    [matchedItems, visibleCount]
+  )
+
+  const resetVisibleItems = React.useCallback(() => {
+    setVisibleCount(pageSize)
+  }, [pageSize])
+
+  React.useEffect(() => {
+    resetVisibleItems()
+  }, [debouncedQuery, matchedItems, resetVisibleItems])
+
+  const loadMoreItems = React.useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget
+
+    if (element.scrollTop + element.clientHeight < element.scrollHeight - 24) {
+      return
+    }
+
+    setVisibleCount((current) => Math.min(current + pageSize, matchedItems.length))
+  }, [matchedItems.length, pageSize])
+
+  const resetCombobox = React.useCallback(() => {
+    setQuery("")
+    setVisibleCount(pageSize)
+  }, [pageSize])
+
+  return {
+    anchorRef,
+    query,
+    setQuery,
+    debouncedQuery,
+    matchedItems,
+    visibleItems,
+    loadMoreItems,
+    resetCombobox,
+    resetVisibleItems,
+  }
+}
+
 export {
   Combobox,
   ComboboxInput,
@@ -319,4 +383,5 @@ export {
   ComboboxTrigger,
   ComboboxValue,
   useComboboxAnchor,
+  useComboboxPagedSearch,
 }

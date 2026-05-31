@@ -277,7 +277,7 @@ export function TeacherStudentsPage() {
               onChange={(value) => setSortBy(value as typeof sortBy)}
             />
           </div>
-          <DataTable batchSize={60} columns={columns} data={sortedStudents} />
+          <DataTable columns={columns} data={sortedStudents} pagination={{ pageSize: 60 }} />
           {resetResult ? (
             <UserCredentialsResult
               autoDownload

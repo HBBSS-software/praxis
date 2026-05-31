@@ -265,7 +265,7 @@ function UserListPage({
               </SelectContent>
             </Select>
           </div>
-          <DataTable columns={columns} data={sortedUsers} />
+          <DataTable columns={columns} data={sortedUsers} pagination={{ pageSize: 50 }} />
           {resetResult ? (
             <UserCredentialsResult
               autoDownload
