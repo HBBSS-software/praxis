@@ -4,18 +4,19 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decodeJwt, SignJWT } from 'jose';
 
-const testDbPath = `/tmp/social-practice-test-db-${Date.now()}.db`;
-const testConfigPath = `/tmp/social-practice-test-config-${Date.now()}.toml`;
+const testDbPath = `/tmp/praxis-test-db-${Date.now()}.db`;
+const testConfigPath = `/tmp/praxis-test-config-${Date.now()}.toml`;
 const testUploadDir = fileURLToPath(new URL('../data/uploads', import.meta.url));
 const testTmpUploadDir = fileURLToPath(new URL('../data/tmp-uploads', import.meta.url));
 const cleanupUploadFiles = new Set<string>();
 const testJwtSecret = 'test-jwt-secret-12345678901234567890';
-const testJwtIssuer = 'social-practice-system';
+const testJwtIssuer = 'praxis';
 
-globalThis.__socialPracticeConfigFile = testConfigPath;
-globalThis.__socialPracticeDatabaseFile = testDbPath;
+globalThis.__praxisConfigFile = testConfigPath;
+globalThis.__praxisDatabaseFile = testDbPath;
 
 fs.writeFileSync(testConfigPath, [
+  'site_name = "Test Praxis"',
   'port = 3000',
   'vite_port = 5173',
   'backend_host = "127.0.0.1"',
@@ -487,11 +488,12 @@ describe('route behavior', () => {
     });
   });
 
-  test('exposes upload size limit from config', async () => {
+  test('exposes runtime values from config', async () => {
     const response = await apiRequest('/api/config');
     const payload = await readJson(response);
 
     expect(response.status).toBe(200);
+    expect(payload.site_name).toBe('Test Praxis');
     expect(payload.upload_image_max_size_bytes).toBe(5 * 1024 * 1024);
   });
 

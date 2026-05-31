@@ -77,6 +77,7 @@ export const api = new Hono<AppBindings>()
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
   }))
   .get('/config', (c) => c.json({
+    site_name: appConfig.site_name,
     upload_image_max_size_bytes: appConfig.upload_image_max_size_bytes,
     timezone: appConfig.timezone
   }))

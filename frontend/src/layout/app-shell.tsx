@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useSession } from '@/lib/auth';
+import { useSiteName } from '@/lib/runtime-config';
 import type { StoredUser, UserRole } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -48,6 +49,7 @@ export function AppShell({
   const items = navMap[user.role];
   const { signOut } = useSession();
   const roleTitle = roleTitleMap[user.role];
+  const siteName = useSiteName();
 
   function handleSignOut() {
     signOut();
@@ -64,7 +66,7 @@ export function AppShell({
                 <ClipboardList className="size-5" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm text-muted-foreground">社会实践系统</p>
+                <p className="text-sm text-muted-foreground">{siteName}</p>
                 <p className="truncate text-base font-semibold">{roleTitle}</p>
               </div>
             </Link>
@@ -113,7 +115,7 @@ export function AppShell({
               <ClipboardList className="size-5" />
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm text-muted-foreground">社会实践系统</p>
+              <p className="truncate text-sm text-muted-foreground">{siteName}</p>
               <p className="truncate text-base font-semibold tracking-tight">{roleTitle}</p>
             </div>
           </Link>

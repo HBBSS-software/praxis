@@ -5,6 +5,7 @@ import path from 'node:path';
 import { parse } from 'smol-toml';
 
 export interface AppConfig {
+  site_name: string;
   port: number;
   vite_port: number;
   backend_host: string;
@@ -41,10 +42,10 @@ export interface AppConfig {
 }
 
 declare global {
-  var __socialPracticeConfigFile: string | undefined;
+  var __praxisConfigFile: string | undefined;
 }
 
-const configFilePath = path.resolve(globalThis.__socialPracticeConfigFile ?? 'config.toml');
+const configFilePath = path.resolve(globalThis.__praxisConfigFile ?? 'config.toml');
 
 function randomSecret() {
   return crypto.randomBytes(32).toString('hex');
@@ -52,12 +53,13 @@ function randomSecret() {
 
 function createDefaultConfig(): AppConfig {
   return {
+    site_name: 'Praxis',
     port: 3000,
     vite_port: 5173,
     backend_host: '127.0.0.1',
     frontend_host: '127.0.0.1',
     jwt_secret: randomSecret(),
-    jwt_issuer: 'social-practice-system',
+    jwt_issuer: 'praxis',
     jwt_expires_in: '8h',
     login_max_attempts: 5,
     login_lockout_ms: 15 * 60 * 1000,
@@ -122,6 +124,7 @@ function normalizeConfig(source: unknown): AppConfig {
 
   return {
     port: getPositiveInteger(config, 'port', fallback.port),
+    site_name: getString(config, 'site_name', fallback.site_name),
     vite_port: getPositiveInteger(config, 'vite_port', fallback.vite_port),
     backend_host: getString(config, 'backend_host', fallback.backend_host),
     frontend_host: getString(config, 'frontend_host', fallback.frontend_host),

@@ -181,5 +181,5 @@ export function seedDefaultAdmin() {
     createdAt: nowIso(),
     deletedAt: null
   }]).run();
-  console.log("欢迎使用可爱奶龙社会实践系统，初始 uid：A00001，初始密码：%s", password);
+  console.log("欢迎使用 Praxis，初始 uid：A00001，初始密码：%s", password);
 }

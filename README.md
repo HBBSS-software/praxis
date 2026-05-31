@@ -1,4 +1,6 @@
-# 可爱奶龙社会实践系统
+# Praxis
+
+可靠、快速、易用的社会实践管理系统，让实践提交更便捷、审核更透明、管理更省心。
 
 ## 技术栈
 
@@ -30,12 +32,13 @@ pnpm start
 
 | 字段 | 说明 | 默认值 |
 |------|------|--------|
+| `site_name` | 网站名称 | `"Praxis"` |
 | `port` | 后端 HTTP 监听端口 | `3000` |
 | `vite_port` | Vite 开发服务器端口（仅开发环境） | `5173` |
 | `backend_host` | 后端监听地址 | `"127.0.0.1"` |
 | `frontend_host` | 前端开发地址（仅开发环境） | `"127.0.0.1"` |
 | `jwt_secret` | JWT 签名密钥，至少 32 字符 | 随机生成 |
-| `jwt_issuer` | JWT 签发者 | `"social-practice-system"` |
+| `jwt_issuer` | JWT 签发者 | `"praxis"` |
 | `jwt_expires_in` | JWT 有效期，支持 `s`/`m`/`h`/`d` 后缀 | `"8h"` |
 | `login_max_attempts` | 登录连续失败锁定阈值 | `5` |
 | `login_lockout_ms` | 锁定持续时间（毫秒） | `900000`（15 分钟） |

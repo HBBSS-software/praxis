@@ -17,10 +17,12 @@ import { login } from '@/lib/api';
 import { toastError } from '@/lib/feedback';
 import { getDefaultPathByRole } from '@/lib/session';
 import { useSession } from '@/lib/auth';
+import { useSiteName } from '@/lib/runtime-config';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const { signIn } = useSession();
+  const siteName = useSiteName();
   const [uid, setUid] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -52,7 +54,7 @@ export function LoginPage() {
           <div className="space-y-6">
             <div className="space-y-5">
               <div className="inline-flex rounded-full border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-                社会实践系统
+                {siteName}
               </div>
               <div className="space-y-3">
                 <h1 className="max-w-xl text-4xl font-semibold leading-tight tracking-tight">一套系统，搞定社会实践全流程。</h1>

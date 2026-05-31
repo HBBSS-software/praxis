@@ -77,6 +77,7 @@ export interface CreatedUserPayload {
 }
 
 export interface AppRuntimeConfig {
+  site_name: string;
   upload_image_max_size_bytes: number;
   timezone: string;
 }

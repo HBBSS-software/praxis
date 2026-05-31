@@ -7,11 +7,11 @@ import { drizzle } from 'drizzle-orm/node-sqlite';
 import * as schema from './schema';
 
 declare global {
-  var __socialPracticeDatabaseFile: string | undefined;
+  var __praxisDatabaseFile: string | undefined;
 }
 
 const defaultDatabaseFile = 'backend/data/app.db';
-const databaseFile = path.resolve(globalThis.__socialPracticeDatabaseFile ?? defaultDatabaseFile);
+const databaseFile = path.resolve(globalThis.__praxisDatabaseFile ?? defaultDatabaseFile);
 
 fs.mkdirSync(path.dirname(databaseFile), { recursive: true });
 
