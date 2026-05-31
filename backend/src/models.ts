@@ -88,6 +88,21 @@ export interface TeacherRecordSummary {
   student_uid: string;
 }
 
+export interface TeacherRecordExport {
+  class_label: string;
+  student_name: string;
+  student_uid: string;
+  title: string;
+  practice_date: string;
+  duration: number;
+  location: string;
+  status: RecordStatus;
+  teacher_comment: string;
+  created_at: string;
+  content: string;
+  image_count: number;
+}
+
 export interface CreateRecordInput {
   task_id?: number | null;
   student_id: number;

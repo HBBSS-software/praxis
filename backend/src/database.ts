@@ -76,6 +76,7 @@ class SQLiteDatabase {
   countStudentTaskRecords = repo.countStudentTaskRecords;
   getTeacherRecordById = repo.getTeacherRecordById;
   getAllRecords = repo.getAllRecords;
+  getRecordsForExport = repo.getRecordsForExport;
   updateRecord = repo.updateRecord;
   deleteRecord = repo.deleteRecord;
   countStudentRecordsToday = repo.countStudentRecordsToday;

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 
 import { and, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
-import type { CreateRecordInput, RecordFilters, StudentRecord, TeacherRecord, TeacherRecordSummary, UpdateRecordInput } from '../../models';
+import type { CreateRecordInput, RecordFilters, StudentRecord, TeacherRecord, TeacherRecordExport, TeacherRecordSummary, UpdateRecordInput } from '../../models';
 import { MAX_RECORD_IMAGES } from '../../models';
 import { db } from '../client';
 import {
@@ -11,7 +11,7 @@ import {
   normalizeRecordImagePaths, normalizeIncomingRecordImagePaths, toFiniteNumber,
   deletedUserName, uploadPathPattern, tmpUploadPathPattern
 } from '../helpers';
-import { users, practiceRecords, tempUploadDeletions } from '../schema';
+import { classes, classStudents, users, practiceRecords, tempUploadDeletions } from '../schema';
 import { createUploadPathFromSource, removeUploadFile, resolveTmpUploadFilePath, resolveUploadFilePath } from './uploads';
 
 export function createRecord(input: CreateRecordInput) {
@@ -108,6 +108,35 @@ export function getTeacherRecordById(id: number, visibleStudentIds?: Set<number>
     student_name: String(record.student_name),
     student_uid: String(record.student_uid)
   } satisfies TeacherRecord;
+}
+
+export function getRecordsForExport(filters: RecordFilters = {}, visibleStudentIds?: Set<number>): TeacherRecordExport[] {
+  const where = buildRecordWhere(filters, visibleStudentIds);
+  return db
+    .select({
+      title: practiceRecords.title, content: practiceRecords.content,
+      practice_date: practiceRecords.practiceDate, location: practiceRecords.location,
+      duration: practiceRecords.duration, status: practiceRecords.status,
+      teacher_comment: practiceRecords.teacherComment, created_at: practiceRecords.createdAt,
+      image_paths: practiceRecords.imagePaths,
+      class_name: classes.name, class_cid: classes.cid,
+      ...recordIdentitySelect()
+    })
+    .from(practiceRecords)
+    .leftJoin(users, eq(practiceRecords.studentId, users.id))
+    .leftJoin(classStudents, eq(practiceRecords.studentId, classStudents.studentId))
+    .leftJoin(classes, eq(classStudents.classId, classes.id))
+    .where(where)
+    .orderBy(desc(practiceRecords.createdAt))
+    .all()
+    .map((row) => ({
+      class_label: row.class_name && row.class_cid ? `${row.class_name} (${row.class_cid})` : '',
+      student_name: row.student_name, student_uid: row.student_uid,
+      title: row.title, practice_date: row.practice_date, duration: row.duration,
+      location: row.location ?? '', status: row.status as TeacherRecordSummary['status'],
+      teacher_comment: row.teacher_comment ?? '', created_at: row.created_at,
+      content: row.content, image_count: normalizeRecordImagePaths(row.image_paths).length
+    }));
 }
 
 export function getAllRecords(filters: RecordFilters = {}, visibleStudentIds?: Set<number>): TeacherRecordSummary[] {

@@ -16,8 +16,6 @@ const tmpUploadDir = path.resolve(process.cwd(), 'backend/data/tmp-uploads');
 
 fs.mkdirSync(tmpUploadDir, { recursive: true });
 
-const webpQuality = 76;
-const maxImageDimension = 1920;
 const headerProbeSize = 8;
 
 function formatBytes(bytes: number): string {
@@ -225,14 +223,14 @@ export const uploadRoutes = new Hono<AppBindings>()
       await sharp(uploaded.filePath, { animated: uploaded.imageType === 'image/gif' })
         .rotate()
         .resize({
-          width: maxImageDimension,
-          height: maxImageDimension,
+          width: appConfig.upload_max_image_dimension,
+          height: appConfig.upload_max_image_dimension,
           fit: 'inside',
           withoutEnlargement: true
         })
         .webp({
-          quality: webpQuality,
-          effort: 5
+          quality: appConfig.upload_webp_quality,
+          effort: appConfig.upload_webp_effort
         })
         .toFile(filePath);
     } catch {

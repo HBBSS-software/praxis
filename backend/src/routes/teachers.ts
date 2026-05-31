@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { hashPassword } from '../auth/password';
 import { createUserCredentialsCsv } from '../csv/user-import';
+import { formatCsv } from '../csv/export';
 import database from '../database';
 import {
   apiError,
@@ -375,31 +376,25 @@ export const teacherRoutes = new Hono<AppBindings>()
     }
 
     const visibleStudentIds = getVisibleStudentIds(user.id, user.role);
-    const records = database.getAllRecords({ task_id: id, class_ids: body.class_ids }, visibleStudentIds)
-      .map((record) => database.getTeacherRecordById(record.id, visibleStudentIds))
-      .filter((record): record is NonNullable<typeof record> => Boolean(record));
-    const csv = [
+    const records = database.getRecordsForExport({ task_id: id, class_ids: body.class_ids }, visibleStudentIds);
+    const csv = formatCsv([
       ['任务名称', '班级', '学生姓名', '学生 UID', '记录标题', '实践日期', '时长', '地点', '状态', '教师评语', '提交时间', '正文', '图片数量'],
       ...records.map((record) => [
         task.title,
-        (() => {
-          const classId = database.getStudentClassId(record.student_id);
-          const targetClass = classId ? database.findClassById(classId) : null;
-          return targetClass ? `${targetClass.name} (${targetClass.cid})` : '';
-        })(),
+        record.class_label,
         record.student_name,
         record.student_uid,
         record.title,
         record.practice_date,
         record.duration,
-        record.location ?? '',
+        record.location,
         record.status,
-        record.teacher_comment ?? '',
+        record.teacher_comment,
         record.created_at,
         record.content,
-        record.image_paths.length
+        record.image_count
       ])
-    ].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n') + '\n';
+    ]);
 
     return c.text(csv, 200, {
       'content-type': 'text/csv; charset=utf-8',

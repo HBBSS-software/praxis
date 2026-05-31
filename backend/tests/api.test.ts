@@ -890,6 +890,53 @@ describe('route behavior', () => {
     expect((await readJson(missingClassResponse)).error).toBe('第 1 行错误：班级 ID 不存在或错误。');
   });
 
+  test('escapes formula injection in task record export', async () => {
+    await setNormalPassword('A00001', 'admin-pass-01');
+    const token = await loginAs('A00001', 'admin-pass-01');
+    const student = await database.createUser('导出测试学生', 'student');
+    const targetClass = database.createClass(`导出班级 ${Date.now()}`);
+
+    database.assignStudentsToClass(targetClass.id, [student.id]);
+
+    const task = database.createTask({
+      title: '导出任务',
+      description: null,
+      start_at: '2020-01-01T00:00:00.000Z',
+      end_at: '2099-01-01T00:00:00.000Z',
+      min_words: 0,
+      min_images: 0,
+      max_records_per_student: 10,
+      class_ids: [targetClass.id],
+      created_by_id: 1
+    });
+
+    database.createRecord({
+      task_id: task.id,
+      student_id: student.id,
+      title: '=cmd|"/c calc"!A0',
+      content: '正常正文',
+      practice_date: '2026-02-01',
+      location: '@SUM(1+1)',
+      duration: 2,
+      image_paths: [],
+      cover_image_path: null
+    });
+
+    const response = await jsonRequest(`/api/teacher/tasks/${task.id}/export`, { class_ids: [targetClass.id] }, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(response.status).toBe(200);
+    const csv = await response.text();
+    const dataLine = csv.trim().split('\n')[1];
+
+    expect(dataLine).toContain('"\'=cmd|""/c calc""!A0"');
+    expect(dataLine).toContain('"\'@SUM(1+1)"');
+    expect(dataLine).toContain(`"${targetClass.name} (${targetClass.cid})"`);
+    expect(dataLine).not.toContain(',"=cmd');
+  });
+
   test('locks failed logins per uid and source without blocking other accounts from the same address', async () => {
     await setNormalPassword('S00001', 'student-pass-01');
     await setNormalPassword('S00002', 'student-pass-02');
