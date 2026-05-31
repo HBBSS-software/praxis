@@ -18,7 +18,7 @@
 
 后端采用 `Hono` 编写，数据库采用 `SQLite + Drizzle ORM`。
 
-请遵循 RESTful API 规范。
+内部接口采用 Hono RPC 风格。
 
 不要相信前端传回的内容，一定记得进行合法性判断。
 
