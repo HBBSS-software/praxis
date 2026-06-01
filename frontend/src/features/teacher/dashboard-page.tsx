@@ -14,6 +14,7 @@ import { ApiResponseError, createApiClient, unwrapResponse } from '@/lib/api';
 import { useSession } from '@/lib/auth';
 import { formatDuration } from '@/lib/format';
 import type { ClassSummary, OverviewData } from '@/lib/types';
+import { EmptyState } from '@/shared/empty-state';
 import { ErrorCard, LoadingCard, PageFrame } from './shared';
 import type { ColumnDef } from '@tanstack/react-table';
 
@@ -127,30 +128,39 @@ export function TeacherDashboardPage() {
     }
   ], []);
 
+  const selectValue = classes.length === 1 ? String(classes[0].id) : classId;
+
   return (
     <PageFrame
       title="数据概览"
       description={user?.role === 'admin' ? '查看全部班级的任务和记录数据。' : '查看自己管理班级的任务和记录数据。'}
       action={
-        <Select value={classId} onValueChange={setClassId}>
-          <SelectTrigger className="w-56">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">总览</SelectItem>
-            {classes.map((item) => (
-              <SelectItem key={item.id} value={String(item.id)}>
-                {item.name} ({item.cid})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        classes.length > 0 ? (
+          <Select value={selectValue} onValueChange={setClassId}>
+            <SelectTrigger className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {classes.length > 1 ? <SelectItem value="all">总览</SelectItem> : null}
+              {classes.map((item) => (
+                <SelectItem key={item.id} value={String(item.id)}>
+                  {item.name} ({item.cid})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null
       }
     >
       {loading ? (
         <LoadingCard label="正在加载数据概览..." />
       ) : error ? (
         <ErrorCard message={error} onRetry={() => void load()} />
+      ) : classes.length === 0 ? (
+        <EmptyState
+          title="暂无班级"
+          description={user?.role === 'admin' ? '系统中还没有任何班级，创建班级后即可查看数据概览。' : '你还没有管理任何班级，分配班级后即可查看数据概览。'}
+        />
       ) : overview && totals ? (
         <div className="space-y-5">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
