@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useSession } from '@/lib/auth';
 import { useSiteName } from '@/lib/runtime-config';
+import { SiteFooter } from '@/shared/site-footer';
 import type { StoredUser, UserRole } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -57,7 +58,7 @@ export function AppShell({
   }
 
   return (
-    <div className="min-h-screen bg-background lg:flex">
+    <div className="flex min-h-screen flex-col bg-background lg:flex-row">
       <div className="space-y-4 px-3 py-3 sm:px-4 sm:py-4 lg:hidden">
         <Card className="border-border/70 bg-card/95 py-0 shadow-sm">
           <div className="flex items-start justify-between gap-4 p-4">
@@ -155,9 +156,10 @@ export function AppShell({
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 px-3 py-3 sm:px-4 sm:py-4 md:px-6 md:py-5 lg:px-8 lg:py-6">
-        <div className="mx-auto max-w-[1220px]">
+      <main className="flex min-w-0 flex-1 flex-col px-3 py-3 sm:px-4 sm:py-4 md:px-6 md:py-5 lg:px-8 lg:py-6">
+        <div className="mx-auto flex w-full max-w-[1220px] flex-1 flex-col">
           <Outlet />
+          <SiteFooter className="mt-auto pt-8" />
         </div>
       </main>
     </div>

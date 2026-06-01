@@ -78,6 +78,7 @@ export const api = new Hono<AppBindings>()
   }))
   .get('/config', (c) => c.json({
     site_name: appConfig.site_name,
+    icp_beian: appConfig.icp_beian,
     upload_image_max_size_bytes: appConfig.upload_image_max_size_bytes,
     timezone: appConfig.timezone,
     password_min_length: appConfig.password_min_length,

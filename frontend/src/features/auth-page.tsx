@@ -18,6 +18,7 @@ import { toastError } from '@/lib/feedback';
 import { getDefaultPathByRole } from '@/lib/session';
 import { useSession } from '@/lib/auth';
 import { useRuntimeConfig, useSiteName } from '@/lib/runtime-config';
+import { SiteFooter } from '@/shared/site-footer';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -49,8 +50,9 @@ export function LoginPage() {
   ] as const;
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 py-8">
-      <div className="grid w-full max-w-6xl items-start gap-4 lg:gap-20 lg:grid-cols-[1fr_minmax(380px,460px)]">
+    <div className="flex min-h-screen flex-col px-4 py-8">
+      <div className="flex flex-1 items-center justify-center">
+        <div className="grid w-full max-w-6xl items-start gap-4 lg:gap-20 lg:grid-cols-[1fr_minmax(380px,460px)]">
         <div className="hidden lg:block">
           <div className="space-y-6">
             <div className="space-y-5">
@@ -149,7 +151,9 @@ export function LoginPage() {
             </form>
           </CardContent>
         </Card>
+        </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }

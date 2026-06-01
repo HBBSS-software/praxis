@@ -6,6 +6,7 @@ import { parse } from "smol-toml";
 
 export interface AppConfig {
   site_name: string;
+  icp_beian: string;
   port: number;
   vite_port: number;
   backend_host: string;
@@ -53,28 +54,6 @@ function randomSecret() {
   return crypto.randomBytes(32).toString("hex");
 }
 
-function askToPersistJwtSecret() {
-  const buffer = Buffer.alloc(32);
-
-  process.stdout.write(
-    "jwt_secret 不存在，是否向 config.toml 写入随机的值以继续？[y/N] ",
-  );
-
-  try {
-    const bytesRead = fs.readSync(0, buffer, 0, buffer.length, null);
-    const answer = buffer
-      .subarray(0, bytesRead)
-      .toString("utf8")
-      .trim()
-      .toLowerCase();
-
-    return answer === "y" || answer === "yes";
-  } catch {
-    console.error("\n无法读取终端输入。");
-    process.exit(1);
-  }
-}
-
 function writeJwtSecretToConfig(secret: string) {
   fs.mkdirSync(path.dirname(configFilePath), { recursive: true });
 
@@ -96,20 +75,18 @@ function ensureJwtSecret(source: Record<string, unknown>) {
     return;
   }
 
-  if (!askToPersistJwtSecret()) {
-    console.error("缺少 jwt_secret，程序已退出。");
-    process.exit(1);
-  }
-
   const jwtSecret = randomSecret();
   writeJwtSecretToConfig(jwtSecret);
   source.jwt_secret = jwtSecret;
   appConfig.jwt_secret = jwtSecret;
+
+  console.log(`jwt_secret 不存在，已生成随机值并写入 ${configFilePath}。`);
 }
 
 function createDefaultConfig(): AppConfig {
   return {
     site_name: "Praxis",
+    icp_beian: "",
     port: 3000,
     vite_port: 5173,
     backend_host: "127.0.0.1",
@@ -203,6 +180,7 @@ function normalizeConfig(source: unknown): AppConfig {
   return {
     port: getPositiveInteger(config, "port", fallback.port),
     site_name: getString(config, "site_name", fallback.site_name),
+    icp_beian: getString(config, "icp_beian", fallback.icp_beian),
     vite_port: getPositiveInteger(config, "vite_port", fallback.vite_port),
     backend_host: getString(config, "backend_host", fallback.backend_host),
     frontend_host: getString(config, "frontend_host", fallback.frontend_host),

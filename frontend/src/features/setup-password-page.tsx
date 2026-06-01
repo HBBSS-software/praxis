@@ -12,6 +12,7 @@ import { useSession } from '@/lib/auth';
 import { toastError, toastSuccess } from '@/lib/feedback';
 import { useRuntimeConfig } from '@/lib/runtime-config';
 import { getDefaultPathByRole } from '@/lib/session';
+import { SiteFooter } from '@/shared/site-footer';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -54,8 +55,9 @@ export function SetupPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-4 py-8">
-      <Card className="w-full max-w-xl border-border/70 shadow-sm">
+    <div className="flex min-h-screen flex-col bg-white px-4 py-8">
+      <div className="flex flex-1 items-center justify-center">
+        <Card className="w-full max-w-xl border-border/70 shadow-sm">
         <CardHeader className="space-y-4 pb-0">
           <div className="flex items-start justify-between gap-4">
             <div className="flex size-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -155,7 +157,9 @@ export function SetupPasswordPage() {
             </Button>
           </form>
         </CardContent>
-      </Card>
+        </Card>
+      </div>
+      <SiteFooter />
     </div>
   );
 }

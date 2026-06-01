@@ -5,6 +5,7 @@ import type { AppRuntimeConfig } from './types';
 
 const defaultRuntimeConfig: AppRuntimeConfig = {
   site_name: 'Praxis',
+  icp_beian: '',
   upload_image_max_size_bytes: 5 * 1024 * 1024,
   timezone: 'UTC+8',
   password_min_length: 8,

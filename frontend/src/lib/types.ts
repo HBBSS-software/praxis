@@ -78,6 +78,7 @@ export interface CreatedUserPayload {
 
 export interface AppRuntimeConfig {
   site_name: string;
+  icp_beian: string;
   upload_image_max_size_bytes: number;
   timezone: string;
   password_min_length: number;

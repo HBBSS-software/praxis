@@ -32,11 +32,12 @@ pnpm start
 | 字段 | 说明 | 默认值 |
 |------|------|--------|
 | `site_name` | 网站名称 | `"Praxis"` |
+| `icp_beian` | 页脚展示的备案信息，留空则不显示 | `""` |
 | `port` | 后端 HTTP 监听端口 | `3000` |
 | `vite_port` | Vite 开发服务器端口（仅开发环境） | `5173` |
 | `backend_host` | 后端监听地址 | `"127.0.0.1"` |
 | `frontend_host` | 前端开发地址（仅开发环境） | `"127.0.0.1"` |
-| `jwt_secret` | JWT 签名密钥，至少 32 字符 | 缺失时询问后写入随机值 |
+| `jwt_secret` | JWT 签名密钥，至少 32 字符 | 缺失时写入随机值 |
 | `jwt_issuer` | JWT 签发者 | `"praxis"` |
 | `jwt_expires_in` | JWT 有效期，支持 `s`/`m`/`h`/`d` 后缀 | `"8h"` |
 | `login_max_attempts` | 登录连续失败锁定阈值 | `5` |
