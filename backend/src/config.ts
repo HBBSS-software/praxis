@@ -25,6 +25,8 @@ export interface AppConfig {
   cors_origins: string[];
   record_max_images: number;
   max_daily_records: number;
+  overview_class_ranking_limit: number;
+  overview_student_ranking_limit: number;
   generated_password_length: number;
   initial_admin_password: string;
   upload_webp_quality: number;
@@ -106,6 +108,8 @@ function createDefaultConfig(): AppConfig {
     cors_origins: [],
     record_max_images: 9,
     max_daily_records: 50,
+    overview_class_ranking_limit: 30,
+    overview_student_ranking_limit: 30,
     generated_password_length: 8,
     initial_admin_password: "12345678",
     upload_webp_quality: 76,
@@ -241,6 +245,16 @@ function normalizeConfig(source: unknown): AppConfig {
       config,
       "max_daily_records",
       fallback.max_daily_records,
+    ),
+    overview_class_ranking_limit: getPositiveInteger(
+      config,
+      "overview_class_ranking_limit",
+      fallback.overview_class_ranking_limit,
+    ),
+    overview_student_ranking_limit: getPositiveInteger(
+      config,
+      "overview_student_ranking_limit",
+      fallback.overview_student_ranking_limit,
     ),
     generated_password_length: getPositiveInteger(
       config,

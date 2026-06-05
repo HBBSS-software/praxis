@@ -9,6 +9,7 @@ import type { ECharts, EChartsCoreOption } from 'echarts/core';
 import { DataTable } from '@/components/data-table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StatCard } from '@/shared/stat-card';
 import { ApiResponseError, createApiClient, unwrapResponse } from '@/lib/api';
 import { useSession } from '@/lib/auth';
@@ -25,6 +26,7 @@ export function TeacherDashboardPage() {
   const [classes, setClasses] = useState<ClassSummary[]>([]);
   const [classId, setClassId] = useState<string>('all');
   const [overview, setOverview] = useState<OverviewData | null>(null);
+  const [rankingTab, setRankingTab] = useState('students');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -129,6 +131,7 @@ export function TeacherDashboardPage() {
   ], []);
 
   const selectValue = classes.length === 1 ? String(classes[0].id) : classId;
+  const hasMultipleClasses = (overview?.classes.length ?? 0) > 1;
 
   return (
     <PageFrame
@@ -179,25 +182,36 @@ export function TeacherDashboardPage() {
             </CardContent>
           </Card>
 
-          {overview.classes.length > 1 ? (
+          {hasMultipleClasses ? (
+            <Tabs value={rankingTab} onValueChange={setRankingTab}>
+              <Card>
+                <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <CardTitle>排名</CardTitle>
+                  <TabsList>
+                    <TabsTrigger value="classes">班级排名</TabsTrigger>
+                    <TabsTrigger value="students">学生排名</TabsTrigger>
+                  </TabsList>
+                </CardHeader>
+                <CardContent>
+                  <TabsContent value="classes" className="mt-0">
+                    <DataTable columns={columns} data={overview.class_rankings} />
+                  </TabsContent>
+                  <TabsContent value="students" className="mt-0">
+                    <DataTable batchSize={50} columns={studentColumns} data={overview.student_rankings} />
+                  </TabsContent>
+                </CardContent>
+              </Card>
+            </Tabs>
+          ) : (
             <Card>
               <CardHeader>
-                <CardTitle>班级排名</CardTitle>
+                <CardTitle>学生排名</CardTitle>
               </CardHeader>
               <CardContent>
-                <DataTable columns={columns} data={overview.classes} />
+                <DataTable batchSize={50} columns={studentColumns} data={overview.student_rankings} />
               </CardContent>
             </Card>
-          ) : null}
-
-          <Card>
-            <CardHeader>
-              <CardTitle>学生排名</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <DataTable batchSize={50} columns={studentColumns} data={overview.students} />
-            </CardContent>
-          </Card>
+          )}
         </div>
       ) : null}
     </PageFrame>

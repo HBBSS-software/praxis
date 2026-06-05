@@ -243,6 +243,8 @@ export interface OverviewTrendPoint {
 export interface OverviewData {
   classes: ClassOverview[];
   students: StudentOverview[];
+  class_rankings: ClassOverview[];
+  student_rankings: StudentOverview[];
   trend: OverviewTrendPoint[];
   selected_class_id: number | null;
 }

@@ -54,6 +54,8 @@ pnpm start
 | `cors_origins` | 允许的 CORS 域名列表 | `[]` |
 | `record_max_images` | 每条实践记录最多图片数 | `9` |
 | `max_daily_records` | 学生每日最多提交记录数 | `50` |
+| `overview_class_ranking_limit` | 概览页班级排名显示数量 | `30` |
+| `overview_student_ranking_limit` | 概览页学生排名显示数量 | `30` |
 | `generated_password_length` | 批量创建用户时的生成密码长度 | `8` |
 | `initial_admin_password` | 首次启动自动创建的默认管理员密码 | `"12345678"` |
 | `csv_import_max_size_bytes` | CSV 批量导入文件大小上限（字节） | `52428800`（50 MiB） |
