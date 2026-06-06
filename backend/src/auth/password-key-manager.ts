@@ -2,11 +2,10 @@ import { createDecipheriv, randomBytes } from 'node:crypto';
 
 import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
 
-import { appConfig } from '../config';
-
 export const KEY_ALGORITHM = 'ML-KEM-768';
 
 const AES_TAG_LENGTH = 16;
+const rotationIntervalMs = 60 * 1000;
 
 type KeyPair = {
   publicKey: Uint8Array;
@@ -33,8 +32,6 @@ export class EnvelopeDecryptError extends Error {
     this.name = 'EnvelopeDecryptError';
   }
 }
-
-const rotationIntervalMs = appConfig.password_key_rotation_ms;
 
 let current: ManagedKey = createManagedKey();
 let previous: ManagedKey | null = null;

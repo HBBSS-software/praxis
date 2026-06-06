@@ -36,7 +36,6 @@ export interface AppConfig {
   title_max_length: number;
   content_max_length: number;
   comment_max_length: number;
-  password_key_rotation_ms: number;
   location_max_length: number;
   max_record_duration: number;
 }
@@ -115,7 +114,6 @@ function createDefaultConfig(): AppConfig {
     title_max_length: 120,
     content_max_length: 5000,
     comment_max_length: 500,
-    password_key_rotation_ms: 30 * 60 * 1000,
     location_max_length: 120,
     max_record_duration: 24,
   };
@@ -296,12 +294,6 @@ function normalizeConfig(source: unknown): AppConfig {
       config,
       "comment_max_length",
       fallback.comment_max_length,
-    ),
-    password_key_rotation_ms: getBoundedInteger(
-      config,
-      "password_key_rotation_ms",
-      fallback.password_key_rotation_ms,
-      24 * 60 * 60 * 1000,
     ),
     location_max_length: getPositiveInteger(
       config,

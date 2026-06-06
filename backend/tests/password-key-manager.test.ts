@@ -41,10 +41,13 @@ function encryptForCurrentKey(plaintext: string, overrideKeyId?: string) {
 describe('password key manager', () => {
   test('publishes an ML-KEM-768 public key', () => {
     const published = getPublicKey();
+    const expiresInMs = Date.parse(published.expires_at) - Date.now();
+
     expect(published.algorithm).toBe('ML-KEM-768');
     expect(published.key_id).toBeTruthy();
     expect(Buffer.from(published.public_key, 'base64url')).toHaveLength(1184);
-    expect(Number.isFinite(Date.parse(published.expires_at))).toBe(true);
+    expect(expiresInMs).toBeGreaterThan(0);
+    expect(expiresInMs).toBeLessThanOrEqual(60 * 1000);
   });
 
   test('decrypts an envelope produced for the current key', () => {
