@@ -11,7 +11,24 @@ import {
 } from "@/components/ui/input-group"
 import { ChevronDownIcon, XIcon, CheckIcon } from "lucide-react"
 
-const Combobox = ComboboxPrimitive.Root
+function Combobox<Value, Multiple extends boolean | undefined = false>({
+  multiple,
+  onOpenChange,
+  ...props
+}: ComboboxPrimitive.Root.Props<Value, Multiple>) {
+  return (
+    <ComboboxPrimitive.Root
+      multiple={multiple}
+      onOpenChange={(open, eventDetails) => {
+        if (multiple && !open && eventDetails.reason === "item-press") {
+          eventDetails.cancel()
+        }
+        onOpenChange?.(open, eventDetails)
+      }}
+      {...props}
+    />
+  )
+}
 
 function ComboboxValue({ ...props }: ComboboxPrimitive.Value.Props) {
   return <ComboboxPrimitive.Value data-slot="combobox-value" {...props} />
@@ -91,14 +108,18 @@ function ComboboxContent({
   align = "start",
   alignOffset = 0,
   anchor,
+  container,
   ...props
 }: ComboboxPrimitive.Popup.Props &
   Pick<
     ComboboxPrimitive.Positioner.Props,
     "side" | "align" | "sideOffset" | "alignOffset" | "anchor"
-  >) {
+  > &
+  Pick<ComboboxPrimitive.Portal.Props, "container">) {
+  const portalContainer = container ?? getDialogContainer(anchor)
+
   return (
-    <ComboboxPrimitive.Portal>
+    <ComboboxPrimitive.Portal container={portalContainer}>
       <ComboboxPrimitive.Positioner
         side={side}
         sideOffset={sideOffset}
@@ -116,6 +137,28 @@ function ComboboxContent({
       </ComboboxPrimitive.Positioner>
     </ComboboxPrimitive.Portal>
   )
+}
+
+function getDialogContainer(anchor: ComboboxPrimitive.Positioner.Props["anchor"]) {
+  const anchorElement = getAnchorElement(anchor)
+  return anchorElement?.closest<HTMLElement>('[data-slot="dialog-content"]') ?? undefined
+}
+
+function getAnchorElement(anchor: ComboboxPrimitive.Positioner.Props["anchor"]) {
+  if (!anchor) return null
+  if (isElement(anchor)) return anchor
+  if (typeof anchor === "function") {
+    const value = anchor()
+    return isElement(value) ? value : null
+  }
+  if ("current" in anchor) {
+    return isElement(anchor.current) ? anchor.current : null
+  }
+  return null
+}
+
+function isElement(value: unknown): value is Element {
+  return typeof Element !== "undefined" && value instanceof Element
 }
 
 function ComboboxList({ className, ...props }: ComboboxPrimitive.List.Props) {

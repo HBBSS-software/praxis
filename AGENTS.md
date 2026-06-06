@@ -1,6 +1,6 @@
-# 默认提示词
+# AGENTS.md
 
-本项目采用 Node.js + pnpm 开发，各种操作的命令参见 `package.json`。如果你修改了代码，请跑一遍 `test:all`。
+本项目采用 Node.js + pnpm 开发，各种操作的命令参见 `package.json`。如果你修改了业务逻辑，请跑一遍 `test:all`。
 
 当 README 和代码不符时，记得修改 README，尤其是在修改了 config 后。如果 README 不存在错误，不要擅自改它。
 
@@ -8,7 +8,13 @@
 
 **不要画蛇添足地添加任何不必要的元素或文本，包括不必要的解释、说明和英文翻译等。**
 
-请你通过 shadcn/ui 安装 UI 组件，并采用 Luma 风格。
+请你通过 shadcn/ui CLI 安装 UI 组件，比如：
+
+```bash
+pnpm dlx shadcn@latest add switch
+```
+
+除非 shadcn/ui 不提供类似组件，不要自己造轮子。
 
 新增或修改 combobox 时，优先复用 `useComboboxPagedSearch`，不要在业务组件里重复实现按需渲染、debounce 和 reset。
 
@@ -18,7 +24,7 @@
 
 ## 后端
 
-后端采用 `Hono` 编写，数据库采用 `SQLite + Drizzle ORM`。
+后端采用 Hono 编写，数据库采用 SQLite + Drizzle ORM。
 
 内部接口采用 Hono RPC 风格。
 

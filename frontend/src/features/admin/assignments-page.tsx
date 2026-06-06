@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, ChevronDown, FileUp, Pencil, Plus, Trash2, UserPlus, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 
 import { ConfirmActionDialog } from '@/components/confirm-action-dialog';
@@ -172,7 +172,7 @@ export function AdminAssignmentsPage() {
         </DialogContent>
       </Dialog>
 
-      <div className="max-h-[calc(100vh-220px)] space-y-4 overflow-y-auto pr-1" onScroll={loadMoreClasses}>
+      <div className="-mx-1 max-h-[calc(100vh-220px)] space-y-4 overflow-y-auto px-1 py-1" onScroll={loadMoreClasses}>
         {visibleClasses.length === 0 && !creating ? (
           <EmptyState title={classes.length === 0 ? '暂无班级' : '没有匹配的班级'} description={classes.length === 0 ? '点击添加班级创建第一个班级。' : '调整搜索条件后再试。'} />
         ) : null}
@@ -183,7 +183,7 @@ export function AdminAssignmentsPage() {
           const classStudents = classStudentMap.get(item.id) ?? [];
 
           return (
-            <div key={item.id}>
+            <Fragment key={item.id}>
               <ClassSummaryCard
                 classItem={item}
                 teachers={classTeachers}
@@ -232,7 +232,7 @@ export function AdminAssignmentsPage() {
                   />
                 </DialogContent>
               </Dialog>
-            </div>
+            </Fragment>
           );
         })}
       </div>
