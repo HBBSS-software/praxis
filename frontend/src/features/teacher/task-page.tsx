@@ -163,12 +163,12 @@ export function TeacherTaskPage() {
       ) : task ? (
         <div className="space-y-5">
           <Card>
-            <CardContent className="space-y-4 p-5">
+            <CardContent className="space-y-4">
               {task.description ? <p className="whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{task.description}</p> : null}
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {task.classes.map((item) => (
-                  <div key={item.id} className="rounded-lg border bg-muted/20 px-3 py-2">
-                    <p className="truncate text-sm font-medium">{item.name}</p>
+                  <div key={item.id} className="rounded-3xl bg-muted px-3 py-2">
+                    <p className="truncate text-sm">{item.name}</p>
                   </div>
                 ))}
               </div>
@@ -282,7 +282,7 @@ export function TeacherTaskPage() {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="确认删除任务"
-        description="删除任务会删除任务下的全部记录，确认删除？"
+        description="任务下的全部记录也会被永久删除。"
         confirmLabel="删除"
         variant="destructive"
         onConfirm={async () => {
@@ -296,7 +296,7 @@ export function TeacherTaskPage() {
         open={removeClassTargets.length > 0}
         onOpenChange={(open) => !open && setRemoveClassTargets([])}
         title="确认移除班级"
-        description={removeClassTargets.length > 0 ? `确认删除 ${removeClassTargets.length} 个班级在该任务下的 ${removeClassRecordCount} 条记录？` : ''}
+        description={removeClassTargets.length > 0 ? `这 ${removeClassTargets.length} 个班级在该任务下的 ${removeClassRecordCount} 条记录也会被永久删除。` : ''}
         confirmLabel="删除"
         variant="destructive"
         onConfirm={async () => {
@@ -322,7 +322,7 @@ export function TeacherTaskPage() {
             <>
               <DialogHeader>
                 <DialogTitle>{reviewRecord.title}</DialogTitle>
-                <DialogDescription>{reviewRecord.student_name} · {reviewRecord.student_uid}</DialogDescription>
+                <DialogDescription>学生：{reviewRecord.student_name}（{reviewRecord.student_uid}）</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <RecordPreview record={reviewRecord} />

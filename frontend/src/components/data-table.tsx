@@ -152,8 +152,9 @@ function DataTableInner<TData, TValue>({
   }, [hasMore, isPaginated, rows.length, safeBatchSize]);
 
   return (
-    <div className={cn('overflow-hidden rounded-xl border border-border', className)}>
-      <Table>
+    <div className={cn('overflow-hidden rounded-3xl bg-card ring-1 ring-foreground/5 dark:ring-foreground/10', className)}>
+      <div className="overflow-x-auto">
+        <Table>
         <TableHeader className="bg-muted/50">
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -194,9 +195,10 @@ function DataTableInner<TData, TValue>({
             </TableRow>
           ) : null}
         </TableBody>
-      </Table>
+        </Table>
+      </div>
       {isPaginated && pageCount > 1 ? (
-        <div className="border-t border-border px-2 py-3">
+        <div className="border-t px-2 py-3">
           <Pagination>
             <PaginationContent className="flex-wrap">
               <PaginationItem>

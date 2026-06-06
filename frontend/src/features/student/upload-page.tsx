@@ -97,12 +97,12 @@ export function StudentUploadPage() {
   return (
     <StudentPageFrame
       title={editId ? '编辑实践记录' : '上传实践记录'}
-      description={task ? task.title : '提交任务记录。'}
+      description={task?.title}
     >
       <Card>
         <CardHeader>
           <CardTitle>{editId ? '保存修改' : '填写记录内容'}</CardTitle>
-          <CardDescription>实践日期不能晚于今天，时长最少 0.1 小时，图片大小不超过 {formatUploadImageMaxSize(uploadImageMaxSizeBytes)}。</CardDescription>
+          <CardDescription>实践日期不能晚于今天；时长至少 0.1 小时；每张图片不能超过 {formatUploadImageMaxSize(uploadImageMaxSizeBytes)}。</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -111,7 +111,7 @@ export function StudentUploadPage() {
             <ErrorCard message={error} onRetry={() => navigate('/student/dashboard', { replace: true })} />
           ) : (
             <form
-              className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]"
+              className="grid gap-4 sm:gap-5 lg:grid-cols-[1.1fr_0.9fr]"
               onSubmit={async (event) => {
                 event.preventDefault();
                 setError('');
@@ -185,14 +185,14 @@ export function StudentUploadPage() {
                 }
               }}
             >
-              <div className="space-y-5">
+              <div className="space-y-4 sm:space-y-5">
                 <Field label="标题">
                   <Input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} required />
                 </Field>
                 <Field label="实践内容">
                   <Textarea value={form.content} onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))} required />
                 </Field>
-                <div className="grid gap-5 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-2">
                   <Field label="实践日期">
                   <DatePickerField value={form.practice_date} onChange={(value) => setForm((current) => ({ ...current, practice_date: value }))} placeholder="选择实践日期" />
                 </Field>
@@ -216,13 +216,13 @@ export function StudentUploadPage() {
 
               <div className="space-y-4">
                 <Field label="实践图片">
-                  <label className="group flex min-h-28 cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/20 p-4 text-center transition hover:border-primary hover:bg-background has-disabled:pointer-events-none has-disabled:opacity-60">
-                    <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <label className="group flex min-h-28 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed bg-muted/20 p-4 text-center transition hover:bg-muted/40 has-disabled:pointer-events-none has-disabled:opacity-60">
+                    <div className="flex size-10 items-center justify-center rounded-2xl bg-secondary text-secondary-foreground">
                       <ImagePlus className="size-5" />
                     </div>
                     <div>
                       <p className="text-sm font-medium">选择图片</p>
-                      <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">最多 {MAX_RECORD_IMAGES} 张，单张最大 {formatUploadImageMaxSize(uploadImageMaxSizeBytes)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">最多 {MAX_RECORD_IMAGES} 张，单张最大 {formatUploadImageMaxSize(uploadImageMaxSizeBytes)}</p>
                     </div>
                     <input
                       className="hidden"
@@ -266,7 +266,7 @@ export function StudentUploadPage() {
                 {images.length > 0 ? (
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                     {images.map((image) => (
-                      <div key={image.id} className="space-y-2 rounded-lg border bg-card p-2">
+                      <div key={image.id} className="space-y-2 rounded-2xl bg-muted p-2">
                         <AuthenticatedImage
                           className="aspect-square w-full rounded-md object-cover"
                           placeholderClassName="flex aspect-square w-full items-center justify-center rounded-md bg-muted/40"

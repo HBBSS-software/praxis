@@ -74,7 +74,7 @@ export function StudentTaskPage() {
       ) : task ? (
         <div className="space-y-5">
           <Card>
-            <CardContent className="space-y-3 p-5">
+            <CardContent className="space-y-3">
               {task.description ? <p className="whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{task.description}</p> : null}
               <div className="flex flex-wrap gap-2 text-sm">
                 <Badge variant="outline">最少 {task.min_words} 字</Badge>
@@ -85,11 +85,11 @@ export function StudentTaskPage() {
           </Card>
 
           {records.length === 0 ? (
-            <EmptyState title="还没有记录" description="" action={canAdd ? <Button asChild><Link to={`/student/tasks/${task.id}/upload`}>添加记录</Link></Button> : undefined} />
+            <EmptyState title="还没有记录" action={canAdd ? <Button asChild><Link to={`/student/tasks/${task.id}/upload`}>添加记录</Link></Button> : undefined} />
           ) : (
             <div className="grid gap-4 xl:grid-cols-2">
               {records.map((record) => (
-                <Card key={record.id} className="overflow-hidden">
+                <Card key={record.id} padding="none">
                   <CardContent className="grid p-0 md:grid-cols-[160px_minmax(0,1fr)]">
                     <div className="relative min-h-36 bg-muted">
                       {record.cover_image_path ? (
@@ -100,10 +100,10 @@ export function StudentTaskPage() {
                         </div>
                       )}
                     </div>
-                    <div className="space-y-3 p-4">
+                    <div className="space-y-3 p-(--card-spacing)">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0 space-y-1">
-                          <h3 className="truncate text-lg font-semibold">{record.title}</h3>
+                          <h3 className="truncate text-lg font-bold">{record.title}</h3>
                           <p className="flex flex-wrap gap-3 text-sm text-muted-foreground">
                             <span className="inline-flex items-center gap-1"><CalendarDays className="size-4" />{formatDate(record.practice_date)}</span>
                             <span>{formatDuration(record.duration)} 小时</span>
@@ -112,7 +112,7 @@ export function StudentTaskPage() {
                         <StatusBadge status={record.status} />
                       </div>
                       <p className="line-clamp-3 text-sm leading-6 text-muted-foreground">{record.content}</p>
-                      {record.teacher_comment ? <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">{record.teacher_comment}</p> : null}
+                      {record.teacher_comment ? <p className="rounded-2xl bg-muted p-3 text-sm text-muted-foreground">{record.teacher_comment}</p> : null}
                       <div className="flex flex-wrap gap-2">
                         {record.status === 'pending' || record.status === 'rejected' ? (
                           <Button size="sm" variant="outline" asChild>
@@ -142,7 +142,7 @@ export function StudentTaskPage() {
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="确认删除记录"
-        description={deleteTarget ? `将删除《${deleteTarget.title}》，删除后不可恢复。` : ''}
+        description={deleteTarget ? `《${deleteTarget.title}》将被永久删除。` : ''}
         confirmLabel="删除"
         loading={deleteLoading}
         variant="destructive"

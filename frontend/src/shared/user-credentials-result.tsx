@@ -48,7 +48,7 @@ function UserCredentialsResult({
   ], []);
 
   return (
-    <div className="space-y-4 rounded-xl bg-muted/40 p-4">
+    <div className="space-y-4 rounded-3xl bg-muted/40 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">{summary}</p>
         <Button variant="secondary" asChild>

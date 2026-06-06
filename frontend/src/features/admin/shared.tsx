@@ -5,7 +5,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { ConfirmActionDialog } from '@/components/confirm-action-dialog';
 import { DataTable } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Combobox,
@@ -22,7 +22,6 @@ import {
   ComboboxSeparator,
   useComboboxAnchor
 } from '@/components/ui/combobox';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -51,14 +50,14 @@ export function AdminPageFrame({
   children
 }: {
   title: string;
-  description: string;
+  description?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-w-0 space-y-6">
-      <div className="rounded-xl border bg-card p-5 shadow-sm">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{description}</p>
+    <div className="min-w-0 space-y-5 sm:space-y-6">
+      <div className="space-y-2">
+        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{title}</h1>
+        {description ? <p className="max-w-3xl text-sm text-muted-foreground">{description}</p> : null}
       </div>
       {children}
     </div>
@@ -141,7 +140,7 @@ export function SortButton({
   onClick: () => void;
 }) {
   return (
-    <button className="inline-flex items-center gap-1 font-medium" type="button" onClick={onClick}>
+    <button className="inline-flex items-center gap-1 [font-weight:inherit]" type="button" onClick={onClick}>
       {label}
       {active ? descending ? <ArrowDown className="size-3.5" /> : <ArrowUp className="size-3.5" /> : null}
     </button>

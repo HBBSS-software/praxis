@@ -6,7 +6,6 @@ import { ConfirmActionDialog } from '@/components/confirm-action-dialog';
 import { DataTable } from '@/components/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Combobox,
@@ -49,17 +48,15 @@ const userSearchOptions = [
 const defaultUserSearch: ListSearchState<UserSearchField> = { field: 'name', query: '' };
 
 export function AdminTeachersPage() {
-  return <UserListPage role="teacher" title="教师列表" description="管理员可以维护教师信息，并清理无效账号。" />;
+  return <UserListPage role="teacher" title="教师列表" />;
 }
 
 function UserListPage({
   role,
-  title,
-  description
+  title
 }: {
   role: 'student' | 'teacher';
   title: string;
-  description: string;
 }) {
   const { signOut } = useSession();
   const runtimeConfig = useRuntimeConfig();
@@ -182,7 +179,7 @@ function UserListPage({
           onClick={() => setSortBy((current) => current === 'name-asc' ? 'name-desc' : 'name-asc')}
         />
       ),
-      cell: ({ row }) => <span className="font-medium">{row.original.name}</span>
+      cell: ({ row }) => row.original.name
     },
     {
       accessorKey: 'created_at',
@@ -228,63 +225,56 @@ function UserListPage({
   ], [allSelected, captureShiftKey, role, selectedUserIdSet, sortBy, teacherClassMap, updateSelection, userIds]);
 
   return (
-    <AdminPageFrame title={title} description={description}>
-      <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-3">
-              {selectedIds.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-slate-100 p-3">
-                  <p className="mr-2 text-sm text-muted-foreground">已选 {selectedIds.length} 人</p>
-                  <Button size="sm" onClick={() => setBatchResetOpen(true)}>重置密码</Button>
-                  <Button size="sm" variant="destructive" onClick={() => setBatchDeleteOpen(true)}>删除</Button>
-                </div>
-              ) : null}
-              <ListSearchBar
-                value={searchDraft}
-                options={userSearchOptions}
-                placeholder={searchDraft.field === 'uid' ? '搜索 UID' : '搜索姓名'}
-                onChange={setSearchDraft}
-                onSearch={() => {
-                  setSearch({ field: searchDraft.field, query: searchDraft.query.trim() });
-                  setSelectedIds([]);
-                  resetSelectionAnchor();
-                }}
-              />
+    <AdminPageFrame title={title}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex w-full flex-wrap items-center gap-3 lg:w-auto">
+          {selectedIds.length > 0 ? (
+            <div className="flex w-full flex-wrap items-center gap-2 rounded-2xl border bg-muted/40 p-2 sm:w-auto">
+              <p className="mr-1 text-sm text-muted-foreground">已选 {selectedIds.length} 人</p>
+              <Button size="sm" onClick={() => setBatchResetOpen(true)}>重置密码</Button>
+              <Button size="sm" variant="destructive" onClick={() => setBatchDeleteOpen(true)}>删除</Button>
             </div>
-            <Select value={sortBy} onValueChange={(value) => setSortBy(value as typeof sortBy)}>
-              <SelectTrigger className="w-52">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="uid-asc">UID 从小到大</SelectItem>
-                <SelectItem value="uid-desc">UID 从大到小</SelectItem>
-                <SelectItem value="name-asc">姓名 A-Z</SelectItem>
-                <SelectItem value="name-desc">姓名 Z-A</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <DataTable columns={columns} data={sortedUsers} pagination={{ pageSize: 50 }} />
-          {resetResult ? (
-            <UserCredentialsResult
-              autoDownload
-              users={resetResult.users}
-              credentialsCsv={resetResult.credentialsCsv}
-              filename="reset_teachers.csv"
-              summary={`成功重置 ${resetResult.users.length} 个教师的密码。`}
-            />
           ) : null}
-        </CardContent>
-      </Card>
+          <ListSearchBar
+            value={searchDraft}
+            options={userSearchOptions}
+            placeholder={searchDraft.field === 'uid' ? '搜索 UID' : '搜索姓名'}
+            onChange={setSearchDraft}
+            onSearch={() => {
+              setSearch({ field: searchDraft.field, query: searchDraft.query.trim() });
+              setSelectedIds([]);
+              resetSelectionAnchor();
+            }}
+          />
+        </div>
+        <Select value={sortBy} onValueChange={(value) => setSortBy(value as typeof sortBy)}>
+          <SelectTrigger className="w-full sm:w-52">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="uid-asc">UID 从小到大</SelectItem>
+            <SelectItem value="uid-desc">UID 从大到小</SelectItem>
+            <SelectItem value="name-asc">姓名 A-Z</SelectItem>
+            <SelectItem value="name-desc">姓名 Z-A</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <DataTable columns={columns} data={sortedUsers} pagination={{ pageSize: 50 }} />
+      {resetResult ? (
+        <UserCredentialsResult
+          autoDownload
+          users={resetResult.users}
+          credentialsCsv={resetResult.credentialsCsv}
+          filename="reset_teachers.csv"
+          summary={`成功重置 ${resetResult.users.length} 个教师的密码。`}
+        />
+      ) : null}
 
       <Dialog open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>编辑账号</DialogTitle>
-            <DialogDescription>密码留空表示不修改。</DialogDescription>
+            <DialogDescription>不需要修改密码时，留空即可。</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <Field label="姓名">
@@ -336,7 +326,7 @@ function UserListPage({
         open={batchResetOpen}
         onOpenChange={setBatchResetOpen}
         title="确认重置密码"
-        description={`将重置当前选中的 ${selectedIds.length} 个教师密码，并下载包含新密码的 CSV 文件。`}
+        description={`将为选中的 ${selectedIds.length} 个教师生成新密码，并自动下载密码文件。`}
         confirmLabel="重置密码"
         loading={resetLoading}
         onConfirm={async () => {
@@ -369,7 +359,7 @@ function UserListPage({
           }
         }}
         title="确认删除账号"
-        description={deleteTarget ? `将删除 ${deleteTarget.name}（${deleteTarget.uid}）账号，删除后不可恢复。` : ''}
+        description={deleteTarget ? `${deleteTarget.name}（${deleteTarget.uid}）的账号将被永久删除。` : ''}
         confirmLabel="删除"
         loading={deleteLoading}
         variant="destructive"
@@ -399,7 +389,7 @@ function UserListPage({
         open={batchDeleteOpen}
         onOpenChange={setBatchDeleteOpen}
         title="确认批量删除教师账号"
-        description={`将删除当前选中的 ${selectedIds.length} 个教师账号，删除后不可恢复。`}
+        description={`选中的 ${selectedIds.length} 个教师账号将被永久删除。`}
         confirmLabel="删除"
         loading={deleteLoading}
         variant="destructive"

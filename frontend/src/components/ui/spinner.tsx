@@ -1,9 +1,10 @@
-import { LoaderCircle } from 'lucide-react';
+import { cn } from "@/lib/utils"
+import { Loader2Icon } from "lucide-react"
 
-import { cn } from '@/lib/utils';
-
-function Spinner({ className, ...props }: React.ComponentProps<typeof LoaderCircle>) {
-  return <LoaderCircle className={cn('size-4 animate-spin text-muted-foreground', className)} {...props} />;
+function Spinner({ className, ...props }: React.ComponentProps<"svg">) {
+  return (
+    <Loader2Icon role="status" aria-label="Loading" className={cn("size-4 animate-spin", className)} {...props} />
+  )
 }
 
-export { Spinner };
+export { Spinner }

@@ -34,14 +34,14 @@ export function ListSearchBar<T extends string>({
 }) {
   return (
     <form
-      className={cn('flex flex-wrap items-center gap-2', className)}
+      className={cn('grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center', className)}
       onSubmit={(event) => {
         event.preventDefault();
         onSearch();
       }}
     >
       <Select value={value.field} onValueChange={(field) => onChange({ ...value, field: field as T })}>
-        <SelectTrigger className="h-9 w-28">
+        <SelectTrigger className="h-9 w-full sm:w-28">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -53,12 +53,12 @@ export function ListSearchBar<T extends string>({
         </SelectContent>
       </Select>
       <Input
-        className="h-9 w-56"
+        className="h-9 w-full sm:w-56"
         value={value.query}
         placeholder={placeholder}
         onChange={(event) => onChange({ ...value, query: event.target.value })}
       />
-      <Button type="submit" size="sm">搜索</Button>
+      <Button className="col-span-2 sm:col-span-1" type="submit" size="sm">搜索</Button>
     </form>
   );
 }

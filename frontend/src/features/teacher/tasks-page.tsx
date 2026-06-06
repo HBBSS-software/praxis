@@ -100,7 +100,6 @@ export function TeacherTasksPage() {
   return (
     <PageFrame
       title="任务管理"
-      description="创建任务并查看任务记录。"
       action={
         <div className="flex gap-2">
           <Button variant="secondary" onClick={() => void load()}><RefreshCw className="size-4" />刷新</Button>
@@ -166,7 +165,7 @@ export function TeacherTasksPage() {
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="确认删除任务"
-        description="删除任务会删除任务下的全部记录，确认删除？"
+        description="任务下的全部记录也会被永久删除。"
         confirmLabel="删除"
         variant="destructive"
         onConfirm={async () => {
@@ -181,7 +180,7 @@ export function TeacherTasksPage() {
         open={removeClassTargets.length > 0}
         onOpenChange={(open) => !open && setRemoveClassTargets([])}
         title="确认移除班级"
-        description={removeClassTargets.length > 0 ? `确认删除 ${removeClassTargets.length} 个班级在该任务下的 ${removeClassRecordCount} 条记录？` : ''}
+        description={removeClassTargets.length > 0 ? `这 ${removeClassTargets.length} 个班级在该任务下的 ${removeClassRecordCount} 条记录也会被永久删除。` : ''}
         confirmLabel="删除"
         variant="destructive"
         onConfirm={async () => {
@@ -223,19 +222,20 @@ function TaskList({
   return (
     <TabsContent value={value} className="mt-4">
       {tasks.length === 0 ? (
-        <EmptyState title="暂无任务" description="" />
+        <EmptyState title="暂无任务" />
       ) : (
         <div className="space-y-3">
           {tasks.map((task) => (
             <Card
               key={task.id}
-              className="cursor-pointer transition hover:border-primary/40 hover:bg-muted/20"
+              size="sm"
+              variant="interactive"
               onClick={() => onOpen(task)}
             >
-              <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
+              <CardContent className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="truncate text-base font-semibold">{task.title}</h2>
+                    <h2 className="truncate text-base font-bold">{task.title}</h2>
                     <Badge variant="outline">{task.class_count} 个班级</Badge>
                     <Badge variant={task.pending_count > 0 ? 'destructive' : 'secondary'}>{task.pending_count} 待审核</Badge>
                   </div>

@@ -11,7 +11,7 @@ import { ConfirmActionDialog } from '@/components/confirm-action-dialog';
 import { DataTable } from '@/components/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Combobox,
@@ -28,7 +28,6 @@ import {
   ComboboxSeparator,
   useComboboxPagedSearch
 } from '@/components/ui/combobox';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -48,16 +47,16 @@ export function PageFrame({
   action
 }: {
   title: string;
-  description: string;
+  description?: string;
   children: React.ReactNode;
   action?: React.ReactNode;
 }) {
   return (
-    <div className="min-w-0 space-y-6">
-      <div className="flex flex-col gap-4 rounded-xl border bg-card p-5 shadow-sm md:flex-row md:items-end md:justify-between">
+    <div className="min-w-0 space-y-5 sm:space-y-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          <p className="max-w-3xl text-sm text-muted-foreground">{description}</p>
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{title}</h1>
+          {description ? <p className="max-w-3xl text-sm text-muted-foreground">{description}</p> : null}
         </div>
         {action}
       </div>
@@ -167,7 +166,7 @@ export function SelectClass({
 export function LoadingCard({ label }: { label: string }) {
   return (
     <Card>
-      <CardContent className="flex min-h-52 items-center justify-center gap-3 p-6 text-sm text-[color:var(--muted-foreground)]">
+      <CardContent className="flex min-h-52 items-center justify-center gap-3 text-sm text-muted-foreground">
         <Spinner />
         {label}
       </CardContent>
@@ -178,8 +177,8 @@ export function LoadingCard({ label }: { label: string }) {
 export function ErrorCard({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <Card>
-      <CardContent className="flex min-h-52 flex-col items-center justify-center gap-4 p-6 text-center">
-        <p className="text-sm text-rose-700">{message}</p>
+      <CardContent className="flex min-h-52 flex-col items-center justify-center gap-4 text-center">
+        <p className="text-sm text-destructive">{message}</p>
         {onRetry ? <Button variant="secondary" onClick={onRetry}>重新加载</Button> : null}
       </CardContent>
     </Card>
@@ -493,7 +492,7 @@ export function RecordPreview({ record }: { record: TeacherRecord }) {
         <Badge variant="secondary">{formatDuration(record.duration)} h</Badge>
         {record.location ? <Badge variant="outline">{record.location}</Badge> : null}
       </div>
-      <div className="rounded-xl bg-muted/40 p-4 text-sm leading-7 text-muted-foreground">
+      <div className="rounded-2xl bg-muted/40 p-3 text-sm leading-7 text-muted-foreground sm:p-4">
         {record.content}
       </div>
       {record.image_paths.length > 0 ? (
@@ -529,7 +528,7 @@ export function SortButton({
   onClick: () => void;
 }) {
   return (
-    <button className="inline-flex items-center gap-1 font-medium" type="button" onClick={onClick}>
+    <button className="inline-flex items-center gap-1 [font-weight:inherit]" type="button" onClick={onClick}>
       {label}
       {active ? descending ? <ArrowDown className="size-3.5" /> : <ArrowUp className="size-3.5" /> : null}
     </button>

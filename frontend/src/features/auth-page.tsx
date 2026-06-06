@@ -100,9 +100,9 @@ export function LoginPage() {
   const navigate = useNavigate();
   return (
     <AuthLayout>
-      <Card className="border-border/70 shadow-sm lg:self-center">
+      <Card className="lg:self-center">
         <CardHeader className="space-y-3 pb-4">
-          <div className="flex size-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <div className="flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
             <LockKeyhole className="size-6" />
           </div>
           <CardTitle className="text-2xl">登录系统</CardTitle>
@@ -114,7 +114,7 @@ export function LoginPage() {
           </Button>
           <Button className="h-12 justify-start gap-3" variant="outline" onClick={() => navigate('/login/staff')}>
             <UsersRound className="size-5" />
-            我是老师/管理员
+            我是老师 / 管理员
           </Button>
         </CardContent>
       </Card>
@@ -153,13 +153,13 @@ export function StudentLoginPage() {
 
   return (
     <AuthLayout>
-      <Card className="w-full border-border/70 shadow-sm">
+      <Card className="w-full">
         <CardHeader className="space-y-4">
           <Button type="button" variant="ghost" size="sm" className="w-fit px-2" onClick={() => navigate('/login')}>
             <ArrowLeft className="size-4" />
             返回
           </Button>
-          <div className="flex size-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <div className="flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
             <GraduationCap className="size-5" />
           </div>
           <CardTitle className="text-2xl">学生登录</CardTitle>
@@ -264,16 +264,16 @@ export function StaffLoginPage() {
 
   return (
     <AuthLayout>
-      <Card className="w-full border-border/70 shadow-sm">
+      <Card className="w-full">
         <CardHeader className="space-y-4">
           <Button type="button" variant="ghost" size="sm" className="w-fit px-2" onClick={() => navigate('/login')}>
             <ArrowLeft className="size-4" />
             返回
           </Button>
-          <div className="flex size-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <div className="flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
             <UsersRound className="size-5" />
           </div>
-          <CardTitle className="text-2xl">老师/管理员登录</CardTitle>
+          <CardTitle className="text-2xl">老师 / 管理员登录</CardTitle>
         </CardHeader>
         <CardContent>
           <form
@@ -323,9 +323,9 @@ function AuthLayout({ children }: { children: ReactNode }) {
   const siteName = useSiteName();
 
   return (
-    <div className="flex min-h-screen flex-col bg-muted/30 px-4 py-8">
+    <div className="flex min-h-screen flex-col bg-background px-4 py-6 sm:py-8">
       <div className="flex flex-1 items-center justify-center">
-        <div className="grid w-full max-w-md gap-5">
+        <div className="grid w-full max-w-md gap-4 sm:gap-5">
           <div className="text-center text-sm font-medium text-muted-foreground">
             {siteName}
           </div>

@@ -3,7 +3,6 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { useSession } from '@/lib/auth';
 import { useSiteName } from '@/lib/runtime-config';
 import { SiteFooter } from '@/shared/site-footer';
@@ -59,65 +58,60 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen flex-col bg-background lg:flex-row">
-      <div className="space-y-4 px-3 py-3 sm:px-4 sm:py-4 lg:hidden">
-        <Card className="border-border/70 bg-card/95 py-0 shadow-sm">
-          <div className="flex items-start justify-between gap-4 p-4">
-            <Link to="/" className="flex min-w-0 items-center gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <ClipboardList className="size-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm text-muted-foreground">{siteName}</p>
-                <p className="truncate text-base font-semibold">{roleTitle}</p>
-              </div>
-            </Link>
-            <Button variant="ghost" size="sm" className="shrink-0" onClick={handleSignOut}>
+      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80 lg:hidden">
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <Link to="/" className="flex min-w-0 items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+              <ClipboardList className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-xs text-muted-foreground">{siteName}</p>
+              <p className="truncate text-base font-bold tracking-tight">{roleTitle}</p>
+            </div>
+          </Link>
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="hidden min-w-0 text-right text-xs sm:block">
+              <p className="truncate font-medium">{user.name}</p>
+              <p className="truncate text-muted-foreground">{user.uid}</p>
+            </div>
+            <Button variant="ghost" size="icon-sm" className="shrink-0" onClick={handleSignOut}>
               <LogOut className="size-4" />
-              退出
+              <span className="sr-only">退出登录</span>
             </Button>
           </div>
-          <div className="border-t border-border/70 px-4 py-3">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-              <span className="font-semibold">{user.name}</span>
-              <span className="text-muted-foreground">{user.uid}</span>
-            </div>
-          </div>
-        </Card>
+        </div>
+        <nav className="scrollbar-none flex gap-1 overflow-x-auto px-3 pb-2">
+          {items.map(({ to, label }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                cn(
+                  'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-4xl px-3 text-sm font-medium whitespace-nowrap transition-colors',
+                  isActive
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                )
+              }
+            >
+              {label}
+              {user.role === 'student' && to === '/student/notifications' ? (
+                <NotificationBadgeInline count={notificationCount} />
+              ) : null}
+            </NavLink>
+          ))}
+        </nav>
+      </header>
 
-        <Card className="border-border/70 bg-card/95 py-0 shadow-sm">
-          <nav className="flex gap-2 overflow-x-auto p-2">
-            {items.map(({ to, label }) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) =>
-                  cn(
-                    'inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap transition',
-                    isActive
-                      ? 'bg-primary text-primary-foreground'
-                      : 'border border-border/70 bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
-                  )
-                }
-              >
-                {label}
-                {user.role === 'student' && to === '/student/notifications' ? (
-                  <NotificationBadgeInline count={notificationCount} />
-                ) : null}
-              </NavLink>
-            ))}
-          </nav>
-        </Card>
-      </div>
-
-      <aside className="hidden h-screen w-64 shrink-0 flex-col border-r border-border/80 bg-card lg:sticky lg:top-0 lg:flex">
+      <aside className="hidden h-screen w-64 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground lg:sticky lg:top-0 lg:flex">
         <div className="flex h-full flex-col overflow-y-auto">
           <Link to="/" className="flex min-h-20 items-center gap-3 px-5">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-sidebar-primary text-sidebar-primary-foreground">
               <ClipboardList className="size-5" />
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm text-muted-foreground">{siteName}</p>
-              <p className="truncate text-base font-semibold tracking-tight">{roleTitle}</p>
+              <p className="truncate text-base font-bold tracking-tight">{roleTitle}</p>
             </div>
           </Link>
 
@@ -128,10 +122,10 @@ export function AppShell({
                 to={to}
                 className={({ isActive }) =>
                   cn(
-                    'group flex min-h-10 items-center justify-between rounded-full px-4 text-sm font-medium transition-colors',
+                    'group flex min-h-10 items-center justify-between rounded-4xl px-4 text-sm font-medium transition-colors',
                     isActive
-                      ? 'bg-muted text-foreground shadow-[inset_0_0_0_1px_rgb(0_0_0/0.02)]'
-                      : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                      : 'text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground'
                   )
                 }
               >
@@ -143,12 +137,12 @@ export function AppShell({
             ))}
           </nav>
 
-          <div className="border-t border-border/80 px-4 py-4">
+          <div className="border-t px-4 py-4">
             <div className="min-w-0 px-1 pb-3">
               <p className="truncate text-sm font-medium">{user.name}</p>
-              <p className="truncate text-xs text-muted-foreground">{user.uid}</p>
+              <p className="truncate text-xs text-muted-foreground">UID: {user.uid}</p>
             </div>
-            <Button variant="ghost" className="w-full justify-start rounded-full px-3" onClick={handleSignOut}>
+            <Button variant="ghost" className="w-full justify-start px-3" onClick={handleSignOut}>
               <LogOut className="size-4" />
               退出登录
             </Button>
@@ -156,7 +150,7 @@ export function AppShell({
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col px-3 py-3 sm:px-4 sm:py-4 md:px-6 md:py-5 lg:px-8 lg:py-6">
+      <main className="flex min-w-0 flex-1 flex-col px-4 py-5 sm:px-5 md:px-6 lg:px-8 lg:py-6">
         <div className="mx-auto flex w-full max-w-[1220px] flex-1 flex-col">
           <Outlet />
           <SiteFooter className="mt-auto pt-8" />
@@ -170,7 +164,7 @@ function NotificationBadgeInline({ count }: { count: number }) {
   if (count <= 0) return null;
 
   return (
-    <Badge variant="destructive" className="ml-1 h-5 min-w-5 justify-center rounded-full px-1 text-[10px] leading-none shadow-sm">
+    <Badge variant="destructive" className="ml-1 h-5 min-w-5 justify-center px-1 text-[10px] leading-none">
       {count > 99 ? '99+' : count}
     </Badge>
   );

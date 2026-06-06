@@ -65,7 +65,7 @@ export function StudentDashboardPage() {
   }), [tasks]);
 
   return (
-    <StudentPageFrame title="任务列表" description="查看自己的实践任务和提交记录。">
+    <StudentPageFrame title="任务列表">
       {loading ? (
         <LoadingCard label="正在加载任务..." />
       ) : error ? (
@@ -90,14 +90,14 @@ function TaskList({ value, tasks }: { value: TaskTab; tasks: PracticeTaskSummary
   return (
     <TabsContent value={value} className="mt-4">
       {tasks.length === 0 ? (
-        <EmptyState title="暂无任务" description="" />
+        <EmptyState title="暂无任务" />
       ) : (
         <div className="space-y-3">
           {tasks.map((task) => (
-            <Card key={task.id} className="overflow-hidden">
-              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <Card key={task.id} size="sm">
+              <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 space-y-2">
-                  <h2 className="truncate text-base font-semibold">{task.title}</h2>
+                  <h2 className="truncate text-base font-bold">{task.title}</h2>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
                     <span className="inline-flex items-center gap-1"><CalendarDays className="size-4" />开始：{formatDateTime(task.start_at)}</span>
                     <span>截止：{formatDateTime(task.end_at)}</span>

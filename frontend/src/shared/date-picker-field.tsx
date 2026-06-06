@@ -137,7 +137,7 @@ export function DateTimePickerField({
           const nextTime = event.target.value;
           onChange(toDateTimeValue(date || normalizeDateInputValue(new Date()), nextTime));
         }}
-        className="w-20 bg-background"
+        className="w-full border-input bg-background sm:w-32"
       />
     </div>
   );

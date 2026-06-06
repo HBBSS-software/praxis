@@ -97,7 +97,7 @@ export function TaskFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
@@ -119,7 +119,7 @@ export function TaskFormDialog({
           <div className="grid gap-4 md:grid-cols-3">
             <Field label="最少字数"><Input type="number" min="0" value={form.min_words} onChange={(event) => onFormChange({ ...form, min_words: event.target.value })} /></Field>
             <Field label="最少图片数量"><Input type="number" min="0" max="9" value={form.min_images} onChange={(event) => onFormChange({ ...form, min_images: event.target.value })} /></Field>
-            <Field label="最多记录数"><Input type="number" min="1" value={form.max_records_per_student} onChange={(event) => onFormChange({ ...form, max_records_per_student: event.target.value })} /></Field>
+            <Field label="每人最多记录数"><Input type="number" min="1" value={form.max_records_per_student} onChange={(event) => onFormChange({ ...form, max_records_per_student: event.target.value })} /></Field>
           </div>
           <UserMultiCombobox
             label="班级"

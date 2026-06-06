@@ -80,7 +80,7 @@ export function TeacherDashboardPage() {
       id: 'class',
       header: '班级',
       cell: ({ row }) => (
-        <span className="font-medium">{row.original.class_name}</span>
+        <span>{row.original.class_name}</span>
       )
     },
     { accessorKey: 'student_count', header: '学生数' },
@@ -101,7 +101,7 @@ export function TeacherDashboardPage() {
       header: '学生',
       cell: ({ row }) => (
         <div>
-          <p className="font-medium">{row.original.student_name}</p>
+          <p>{row.original.student_name}</p>
           <p className="text-xs text-muted-foreground">{row.original.student_uid}</p>
         </div>
       )
@@ -110,7 +110,7 @@ export function TeacherDashboardPage() {
       id: 'class',
       header: '班级',
       cell: ({ row }) => (
-        <span className="font-medium">{row.original.class_name}</span>
+        <span>{row.original.class_name}</span>
       )
     },
     { accessorKey: 'total_records', header: '记录总数' },
@@ -130,7 +130,6 @@ export function TeacherDashboardPage() {
   return (
     <PageFrame
       title="数据概览"
-      description={user?.role === 'admin' ? '查看全部班级的任务和记录数据。' : '查看自己管理班级的任务和记录数据。'}
       action={
         classes.length > 0 ? (
           <Select value={selectValue} onValueChange={setClassId}>
@@ -156,7 +155,7 @@ export function TeacherDashboardPage() {
       ) : classes.length === 0 ? (
         <EmptyState
           title="暂无班级"
-          description={user?.role === 'admin' ? '系统中还没有任何班级，创建班级后即可查看数据概览。' : '你还没有管理任何班级，分配班级后即可查看数据概览。'}
+          description={user?.role === 'admin' ? '创建班级后即可查看数据。' : '分配班级后即可查看数据。'}
         />
       ) : overview && totals ? (
         <div className="space-y-5">

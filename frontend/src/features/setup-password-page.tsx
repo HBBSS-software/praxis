@@ -55,12 +55,12 @@ export function SetupPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-white px-4 py-8">
+    <div className="flex min-h-screen flex-col bg-background px-4 py-6 sm:py-8">
       <div className="flex flex-1 items-center justify-center">
-        <Card className="w-full max-w-xl border-border/70 shadow-sm">
+        <Card className="w-full max-w-xl">
         <CardHeader className="space-y-4 pb-0">
           <div className="flex items-start justify-between gap-4">
-            <div className="flex size-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <div className="flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
                 <ShieldCheck className="size-6" />
             </div>
             <Button
@@ -76,7 +76,7 @@ export function SetupPasswordPage() {
             </Button>
           </div>
           <div className="space-y-2">
-            <CardTitle className="text-2xl">设置密码</CardTitle>
+            <CardTitle className="text-xl sm:text-2xl">设置密码</CardTitle>
             <CardDescription className="text-sm leading-6">
               当前使用的是系统随机生成的初始密码。设置新密码后，才能进入系统面板。
               {runtimeConfig.is_production ? (
@@ -87,7 +87,7 @@ export function SetupPasswordPage() {
               ) : null}
             </CardDescription>
           </div>
-          <div className="rounded-lg border bg-muted/30 p-4 text-sm">
+          <div className="rounded-2xl bg-muted p-3 text-sm sm:p-4">
             <p><span className="font-semibold text-foreground">UID：</span>{user.uid}</p>
             <p className="mt-1"><span className="font-semibold text-foreground">姓名：</span>{user.name}</p>
           </div>

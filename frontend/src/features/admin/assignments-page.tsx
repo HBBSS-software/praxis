@@ -5,7 +5,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { ConfirmActionDialog } from '@/components/confirm-action-dialog';
 import { DataTable } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Combobox,
@@ -22,7 +22,7 @@ import {
   ComboboxSeparator,
   useComboboxPagedSearch
 } from '@/components/ui/combobox';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -131,7 +131,7 @@ export function AdminAssignmentsPage() {
   }
 
   return (
-    <AdminPageFrame title="班级管理" description="管理员可以创建班级，并维护每个班级的教师和学生。">
+    <AdminPageFrame title="班级管理">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <ListSearchBar
           value={searchDraft}
@@ -267,11 +267,11 @@ function ClassSummaryCard({
       </CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
-          <p className="text-sm font-medium">教师</p>
+          <p className="text-sm font-semibold">教师</p>
           <CompactNameList emptyText="未分配教师" items={teachers.map((teacher) => `${teacher.name} (${teacher.uid})`)} />
         </div>
         <div className="space-y-2">
-          <p className="text-sm font-medium">学生</p>
+          <p className="text-sm font-semibold">学生</p>
           <CompactNameList emptyText="未分配学生" items={students.map((student) => `${student.name} (${student.uid})`)} />
         </div>
       </CardContent>

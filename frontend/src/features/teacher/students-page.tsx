@@ -10,7 +10,6 @@ import { ConfirmActionDialog } from '@/components/confirm-action-dialog';
 import { DataTable } from '@/components/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Combobox,
@@ -171,7 +170,7 @@ export function TeacherStudentsPage() {
           onClick={() => setSortBy((current) => current === 'name-asc' ? 'name-desc' : 'name-asc')}
         />
       ),
-      cell: ({ row }) => <span className="font-medium">{row.original.name}</span>
+      cell: ({ row }) => row.original.name
     },
     {
       id: 'class',
@@ -222,81 +221,73 @@ export function TeacherStudentsPage() {
   ], [captureShiftKey, durations, selectedIds.length, selectedStudentIdSet, sortBy, sortedStudentIds, sortedStudents.length, updateSelection]);
 
   return (
-    <PageFrame title="学生列表" description="教师可以查看学生总时长，支持批量重置密码，并按总时长或姓名排序。">
-      <Card>
-        <CardHeader>
-          <CardTitle>学生列表</CardTitle>
-          <CardDescription>这里只展示已分配给当前教师的学生，总时长仅统计已通过记录。</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-3">
-              {selectedIds.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-slate-100 p-3">
-                  <p className="mr-2 text-sm text-muted-foreground">已选 {selectedIds.length} 人</p>
-                  <Button size="sm" onClick={() => setBatchResetOpen(true)}>重置密码</Button>
-                  <Select value={batchClassId ? String(batchClassId) : '__none__'} onValueChange={(value) => setBatchClassId(value === '__none__' ? null : Number(value))}>
-                    <SelectTrigger className="h-8 w-48">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">未分配班级</SelectItem>
-                        {classes.map((item) => (
-                          <SelectItem key={item.id} value={String(item.id)}>
-                          {item.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                  <Button size="sm" variant="outline" onClick={() => void updateSelectedClass()}>批量改班级</Button>
-                </div>
-              ) : null}
-              <ListSearchBar
-                value={searchDraft}
-                options={studentSearchOptions}
-                placeholder={searchDraft.field === 'uid' ? '搜索 UID' : '搜索姓名'}
-                onChange={setSearchDraft}
-                onSearch={() => {
-                  setSearch({ field: searchDraft.field, query: searchDraft.query.trim() });
-                  setSelectedIds([]);
-                  resetSelectionAnchor();
-                }}
-              />
+    <PageFrame title="学生列表">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex w-full flex-wrap items-center gap-3 lg:w-auto">
+          {selectedIds.length > 0 ? (
+            <div className="flex w-full flex-wrap items-center gap-2 rounded-2xl border bg-muted/40 p-2 sm:w-auto">
+              <p className="mr-1 text-sm text-muted-foreground">已选 {selectedIds.length} 人</p>
+              <Button size="sm" onClick={() => setBatchResetOpen(true)}>重置密码</Button>
+              <Select value={batchClassId ? String(batchClassId) : '__none__'} onValueChange={(value) => setBatchClassId(value === '__none__' ? null : Number(value))}>
+                <SelectTrigger className="h-8 w-full sm:w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">未分配班级</SelectItem>
+                    {classes.map((item) => (
+                      <SelectItem key={item.id} value={String(item.id)}>
+                      {item.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <Button size="sm" variant="outline" onClick={() => void updateSelectedClass()}>批量改班级</Button>
             </div>
-            <FilterSelect
-              label="排序"
-              value={sortBy}
-              options={[
-                { label: '总时长从高到低', value: 'duration-desc' },
-                { label: '总时长从低到高', value: 'duration-asc' },
-                { label: 'UID 从小到大', value: 'uid-asc' },
-                { label: 'UID 从大到小', value: 'uid-desc' },
-                { label: '班级从小到大', value: 'class-asc' },
-                { label: '班级从大到小', value: 'class-desc' },
-                { label: '姓名 A-Z', value: 'name-asc' },
-                { label: '姓名 Z-A', value: 'name-desc' }
-              ]}
-              onChange={(value) => setSortBy(value as typeof sortBy)}
-            />
-          </div>
-          <DataTable columns={columns} data={sortedStudents} pagination={{ pageSize: 60 }} />
-          {resetResult ? (
-            <UserCredentialsResult
-              autoDownload
-              users={resetResult.users}
-              credentialsCsv={resetResult.credentialsCsv}
-              filename="reset_teacher_students.csv"
-              summary={`成功重置 ${resetResult.users.length} 个学生的密码。`}
-            />
           ) : null}
-        </CardContent>
-      </Card>
+          <ListSearchBar
+            value={searchDraft}
+            options={studentSearchOptions}
+            placeholder={searchDraft.field === 'uid' ? '搜索 UID' : '搜索姓名'}
+            onChange={setSearchDraft}
+            onSearch={() => {
+              setSearch({ field: searchDraft.field, query: searchDraft.query.trim() });
+              setSelectedIds([]);
+              resetSelectionAnchor();
+            }}
+          />
+        </div>
+        <FilterSelect
+          label="排序"
+          value={sortBy}
+          options={[
+            { label: '总时长从高到低', value: 'duration-desc' },
+            { label: '总时长从低到高', value: 'duration-asc' },
+            { label: 'UID 从小到大', value: 'uid-asc' },
+            { label: 'UID 从大到小', value: 'uid-desc' },
+            { label: '班级从小到大', value: 'class-asc' },
+            { label: '班级从大到小', value: 'class-desc' },
+            { label: '姓名 A-Z', value: 'name-asc' },
+            { label: '姓名 Z-A', value: 'name-desc' }
+          ]}
+          onChange={(value) => setSortBy(value as typeof sortBy)}
+        />
+      </div>
+      <DataTable columns={columns} data={sortedStudents} pagination={{ pageSize: 60 }} />
+      {resetResult ? (
+        <UserCredentialsResult
+          autoDownload
+          users={resetResult.users}
+          credentialsCsv={resetResult.credentialsCsv}
+          filename="reset_teacher_students.csv"
+          summary={`成功重置 ${resetResult.users.length} 个学生的密码。`}
+        />
+      ) : null}
 
       <Dialog open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>编辑学生信息</DialogTitle>
-            <DialogDescription>密码留空表示不修改。</DialogDescription>
+            <DialogDescription>不需要修改密码时，留空即可。</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <Field label="姓名"><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></Field>
@@ -344,7 +335,7 @@ export function TeacherStudentsPage() {
         open={batchResetOpen}
         onOpenChange={setBatchResetOpen}
         title="确认重置密码"
-        description={`将重置当前选中的 ${selectedIds.length} 个学生密码，并下载包含新密码的 CSV 文件。`}
+        description={`将为选中的 ${selectedIds.length} 个学生生成新密码，并自动下载密码文件。`}
         confirmLabel="重置密码"
         loading={resetLoading}
         onConfirm={async () => {
