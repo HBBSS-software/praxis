@@ -18,18 +18,20 @@ export interface AppNotification {
 
 export interface User {
   id: number;
-  uid: string;
+  uid: number;
   password: string;
   role: UserRole;
   name: string;
+  english_name: string | null;
   created_at: string;
 }
 
 export interface PublicUser {
   id: number;
-  uid: string;
+  uid: number;
   role: UserRole;
   name: string;
+  english_name: string | null;
   password_setup_required: boolean;
 }
 
@@ -42,8 +44,9 @@ export interface AuthTokenPayload extends PublicUser {
 
 export interface StudentSummary {
   id: number;
-  uid: string;
+  uid: number;
   name: string;
+  english_name: string | null;
   created_at: string;
 }
 
@@ -55,7 +58,7 @@ export interface PracticeRecord {
   id: number;
   task_id: number | null;
   student_id: number;
-  student_uid_snapshot: string | null;
+  student_uid_snapshot: number | null;
   title: string;
   content: string;
   practice_date: string;
@@ -73,7 +76,7 @@ export interface StudentRecord extends PracticeRecord {
 }
 
 export interface TeacherRecord extends StudentRecord {
-  student_uid: string;
+  student_uid: number;
 }
 
 export interface TeacherRecordSummary {
@@ -85,13 +88,13 @@ export interface TeacherRecordSummary {
   status: RecordStatus;
   created_at: string;
   student_name: string;
-  student_uid: string;
+  student_uid: number;
 }
 
 export interface TeacherRecordExport {
   class_label: string;
   student_name: string;
-  student_uid: string;
+  student_uid: number;
   title: string;
   practice_date: string;
   duration: number;
@@ -202,14 +205,13 @@ export interface TeacherStatistics extends RecordStatistics {
   student_durations: Array<{
     student_id: number;
     student_name: string;
-    student_uid: string;
+    student_uid: number;
     total_duration: number;
   }>;
 }
 
 export interface ClassOverview {
   class_id: number;
-  class_cid: string;
   class_name: string;
   student_count: number;
   task_count: number;
@@ -222,10 +224,9 @@ export interface ClassOverview {
 
 export interface StudentOverview {
   student_id: number;
-  student_uid: string;
+  student_uid: number;
   student_name: string;
   class_id: number;
-  class_cid: string;
   class_name: string;
   total_records: number;
   pending_count: number;
@@ -251,7 +252,6 @@ export interface OverviewData {
 
 export interface ClassSummary {
   id: number;
-  cid: string;
   name: string;
   created_at: string;
 }
@@ -273,14 +273,14 @@ export interface ClassAssignments {
 
 export interface StudentWithClassSummary extends StudentSummary {
   class_id: number | null;
-  class_cid: string | null;
   class_name: string | null;
 }
 
 export interface CreateUserResult {
   id: number;
-  uid: string;
+  uid: number;
   name: string;
+  english_name: string | null;
   role: UserRole;
   password: string;
 }
@@ -294,8 +294,9 @@ export interface UploadResult {
 export interface CsvImportEntry {
   lineNumber: number;
   name: string;
+  english_name: string | null;
   role: UserRole;
-  class_cid: string | null;
+  class_name: string | null;
 }
 
 export interface CsvImportPreview {

@@ -30,7 +30,7 @@ pnpm start
 `config.toml` 可选，缺失的字段自动使用默认值。所有可配置项：
 
 | 字段 | 说明 | 默认值 |
-|------|------|--------|
+| ------ | ------ | -------- |
 | `site_name` | 网站名称 | `"Praxis"` |
 | `icp_beian` | 页脚展示的备案信息，留空则不显示 | `""` |
 | `port` | 后端 HTTP 监听端口 | `3000` |
@@ -50,7 +50,7 @@ pnpm start
 | `temp_upload_cleanup_interval_ms` | 临时文件清理间隔（毫秒） | `5000` |
 | `timezone` | 时区 | `"UTC+8"` |
 | `trust_proxy` | 是否信任反向代理转发地址 | `false` |
-| `is_production` | 生产模式 | `false` |
+| `is_production` | 生产模式，生产环境请务必开启 | `false` |
 | `cors_origins` | 允许的 CORS 域名列表 | `[]` |
 | `record_max_images` | 每条实践记录最多图片数 | `9` |
 | `max_daily_records` | 学生每日最多提交记录数 | `50` |
@@ -63,9 +63,6 @@ pnpm start
 | `title_max_length` | 记录/任务标题最大长度 | `120` |
 | `content_max_length` | 记录内容最大长度 | `5000` |
 | `comment_max_length` | 审核评语最大长度 | `500` |
-| `password_min_length` | 密码最小长度 | `8` |
-| `password_max_length` | 密码最大长度 | `32` |
-| `uid_max_length` | UID 最大长度 | `32` |
 | `location_max_length` | 实践地点最大长度 | `120` |
 | `max_record_duration` | 实践时长最大值（小时） | `24` |
 
@@ -73,4 +70,8 @@ pnpm start
 
 | 角色 | UID | 密码 |
 | --- | --- | --- |
-| 管理员 | `A00001` | `initial_admin_password` |
+| 管理员 | `1` | `initial_admin_password` |
+
+## CSV 导入
+
+用户导入文件不包含表头，格式为 `中文名,英文名,用户类型,班级名称`。英文名和班级名称可以留空，用户类型为 `student`、`teacher` 或 `admin`。

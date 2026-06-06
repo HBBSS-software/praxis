@@ -79,8 +79,12 @@ export function SetupPasswordPage() {
             <CardTitle className="text-2xl">设置密码</CardTitle>
             <CardDescription className="text-sm leading-6">
               当前使用的是系统随机生成的初始密码。设置新密码后，才能进入系统面板。
-              <br />
-              新密码需为 8 到 32 位。
+              {runtimeConfig.is_production ? (
+                <>
+                  <br />
+                  新密码需为 8 到 32 位，并包含大写字母、小写字母、数字和特殊符号。
+                </>
+              ) : null}
             </CardDescription>
           </div>
           <div className="rounded-lg border bg-muted/30 p-4 text-sm">

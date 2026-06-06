@@ -52,7 +52,7 @@ async function main() {
     database.updateUserPassword(student.id, await hashPassword(studentPassword));
   }
 
-  const admin = database.findUserByUid('A00001')!;
+  const admin = database.findUserByUid(1)!;
   const tasks = [
     database.createTask({
       title: '社区志愿服务',

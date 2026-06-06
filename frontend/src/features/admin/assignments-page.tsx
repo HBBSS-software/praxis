@@ -39,10 +39,9 @@ import { includesSearch, ListSearchBar, type ListSearchState } from '@/shared/li
 import { UserCredentialsResult } from '@/shared/user-credentials-result';
 import { AdminPageFrame, comboboxPageSize, Field } from './shared';
 
-type ClassSearchField = 'name' | 'cid';
+type ClassSearchField = 'name';
 const classSearchOptions = [
-  { label: '名称', value: 'name' },
-  { label: 'CID', value: 'cid' }
+  { label: '名称', value: 'name' }
 ] satisfies Array<{ label: string; value: ClassSearchField }>;
 const defaultClassSearch: ListSearchState<ClassSearchField> = { field: 'name', query: '' };
 
@@ -53,7 +52,7 @@ function matchUserSummary(user: UserSummary, query: string) {
     return true;
   }
 
-  return user.name.toLowerCase().includes(normalizedQuery) || user.uid.toLowerCase().includes(normalizedQuery);
+  return user.name.toLowerCase().includes(normalizedQuery) || String(user.uid).includes(normalizedQuery);
 }
 
 export function AdminAssignmentsPage() {
@@ -117,7 +116,7 @@ export function AdminAssignmentsPage() {
     const query = search.query.trim();
     if (!query) return classes;
 
-    return classes.filter((item) => includesSearch(search.field === 'cid' ? item.cid : item.name, query));
+    return classes.filter((item) => includesSearch(item.name, query));
   }, [classes, search]);
   const visibleClasses = useMemo(() => searchedClasses.slice(0, visibleCount), [searchedClasses, visibleCount]);
 
@@ -137,7 +136,7 @@ export function AdminAssignmentsPage() {
         <ListSearchBar
           value={searchDraft}
           options={classSearchOptions}
-          placeholder={searchDraft.field === 'cid' ? '搜索 CID' : '搜索名称'}
+          placeholder="搜索名称"
           onChange={setSearchDraft}
           onSearch={() => {
             setSearch({ field: searchDraft.field, query: searchDraft.query.trim() });
@@ -259,7 +258,6 @@ function ClassSummaryCard({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <CardTitle>{classItem.name}</CardTitle>
-            <CardDescription>{classItem.cid}</CardDescription>
           </div>
           <Button variant="outline" size="sm" onClick={onEdit}>
             <Pencil className="size-4" />
@@ -356,7 +354,7 @@ function ClassEditorCard({
   return (
     <div className="space-y-5">
       <DialogHeader>
-        <DialogTitle>{mode === 'create' ? '添加班级' : `编辑 ${classItem?.cid ?? ''}`}</DialogTitle>
+        <DialogTitle>{mode === 'create' ? '添加班级' : `编辑 ${classItem?.name ?? ''}`}</DialogTitle>
       </DialogHeader>
       <div className="grid gap-4 lg:grid-cols-[minmax(180px,260px)_minmax(240px,1fr)_minmax(240px,1fr)]">
         <Field label="班级名称">
@@ -624,8 +622,8 @@ function AssignmentStudentFilter({
 
     for (const student of visibleStudents) {
       const groupKey = student.class_id ? String(student.class_id) : '__unassigned__';
-      const groupLabel = student.class_id && student.class_name && student.class_cid
-        ? `${student.class_name} (${student.class_cid})`
+      const groupLabel = student.class_id && student.class_name
+        ? student.class_name
         : '未分配';
       const group = groupMap.get(groupKey) ?? { value: groupLabel, items: [] };
       group.items.push(student);
@@ -692,8 +690,8 @@ function AssignmentStudentFilter({
           });
           onChange(nextValue.map((student) => student.id), nextValue);
         }}
-        itemToStringLabel={(item: { value?: string; name?: string; uid?: string }) => item.name && item.uid ? `${item.name} ${item.uid}` : item.value ?? ''}
-        itemToStringValue={(item: { id?: number; value?: string }) => item.id ? String(item.id) : item.value ?? ''}
+        itemToStringLabel={(item: StudentWithClassSummary) => `${item.name} ${item.uid}`}
+        itemToStringValue={(item: StudentWithClassSummary) => String(item.id)}
         isItemEqualToValue={(item: { id?: number }, selected: StudentWithClassSummary) => item.id === selected.id}
       >
         <ComboboxChips ref={anchorRef} className="min-h-9 w-full">

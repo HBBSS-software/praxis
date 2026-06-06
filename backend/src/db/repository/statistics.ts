@@ -11,7 +11,6 @@ import { recentZonedMonths, zonedMonthRangeIso } from '../../time';
 
 type ClassOverviewRow = {
   class_id: number;
-  class_cid: string;
   class_name: string;
   student_count: number;
   task_count: number;
@@ -24,10 +23,9 @@ type ClassOverviewRow = {
 
 type StudentOverviewRow = {
   student_id: number;
-  student_uid: string;
+  student_uid: number;
   student_name: string;
   class_id: number;
-  class_cid: string;
   class_name: string;
   total_records: number;
   pending_count: number;
@@ -68,7 +66,7 @@ export function getStatistics(visibleStudentIds?: Set<number>): TeacherStatistic
     studentConditions.push(ids.length > 0 ? inArray(users.id, ids) : sql`1 = 0`);
   }
   const studentsList = db
-    .select({ id: users.id, uid: users.uid, name: users.name })
+    .select({ id: users.id, name: users.name })
     .from(users)
     .where(and(...studentConditions))
     .all();
@@ -80,7 +78,7 @@ export function getStatistics(visibleStudentIds?: Set<number>): TeacherStatistic
         .from(practiceRecords)
         .where(eq(practiceRecords.studentId, student.id))
         .get();
-      return { student_id: student.id, student_name: student.name, student_uid: student.uid, total_duration: toFiniteNumber(row?.total) };
+      return { student_id: student.id, student_name: student.name, student_uid: student.id, total_duration: toFiniteNumber(row?.total) };
     })
     .sort((left, right) => {
       if (right.total_duration !== left.total_duration) return right.total_duration - left.total_duration;
@@ -96,7 +94,7 @@ export function getOverview(visibleClassIds?: Set<number>, selectedClassId: numb
   const totalDurationExpression = sql<number>`coalesce(sum(case when ${practiceRecords.status} = 'approved' then ${practiceRecords.duration} else 0 end), 0)`;
   const totalRecordsExpression = sql<number>`count(distinct ${practiceRecords.id})`;
   const classOverviewSelection = {
-    class_id: classes.id, class_cid: classes.cid, class_name: classes.name,
+    class_id: classes.id, class_name: classes.name,
     student_count: sql<number>`count(distinct ${classStudents.studentId})`,
     task_count: sql<number>`count(distinct ${practiceTaskClasses.taskId})`,
     total_records: sql<number>`count(distinct ${practiceRecords.id})`,
@@ -106,15 +104,15 @@ export function getOverview(visibleClassIds?: Set<number>, selectedClassId: numb
     total_duration: sql<number>`coalesce(sum(case when ${practiceRecords.status} = 'approved' then ${practiceRecords.duration} else 0 end), 0)`
   };
   const toClassOverview = (row: ClassOverviewRow): ClassOverview => ({
-    class_id: row.class_id, class_cid: row.class_cid, class_name: row.class_name,
+    class_id: row.class_id, class_name: row.class_name,
     student_count: toFiniteNumber(row.student_count), task_count: toFiniteNumber(row.task_count),
     total_records: toFiniteNumber(row.total_records), pending_count: toFiniteNumber(row.pending_count),
     approved_count: toFiniteNumber(row.approved_count), rejected_count: toFiniteNumber(row.rejected_count),
     total_duration: toFiniteNumber(row.total_duration)
   });
   const studentOverviewSelection = {
-    student_id: users.id, student_uid: users.uid, student_name: users.name,
-    class_id: classes.id, class_cid: classes.cid, class_name: classes.name,
+    student_id: users.id, student_uid: users.id, student_name: users.name,
+    class_id: classes.id, class_name: classes.name,
     total_records: totalRecordsExpression,
     pending_count: sql<number>`count(distinct case when ${practiceRecords.status} = 'pending' then ${practiceRecords.id} end)`,
     approved_count: sql<number>`count(distinct case when ${practiceRecords.status} = 'approved' then ${practiceRecords.id} end)`,
@@ -123,7 +121,7 @@ export function getOverview(visibleClassIds?: Set<number>, selectedClassId: numb
   };
   const toStudentOverview = (row: StudentOverviewRow): StudentOverview => ({
     student_id: row.student_id, student_uid: row.student_uid, student_name: row.student_name,
-    class_id: row.class_id, class_cid: row.class_cid, class_name: row.class_name,
+    class_id: row.class_id, class_name: row.class_name,
     total_records: toFiniteNumber(row.total_records), pending_count: toFiniteNumber(row.pending_count),
     approved_count: toFiniteNumber(row.approved_count), rejected_count: toFiniteNumber(row.rejected_count),
     total_duration: toFiniteNumber(row.total_duration)
@@ -136,7 +134,7 @@ export function getOverview(visibleClassIds?: Set<number>, selectedClassId: numb
     .leftJoin(practiceRecords, and(eq(practiceRecords.taskId, practiceTaskClasses.taskId), eq(practiceRecords.studentId, classStudents.studentId)))
     .where(visibleCondition)
     .groupBy(classes.id)
-    .orderBy(classes.cid)
+    .orderBy(classes.name)
     .all()
     .map(toClassOverview);
   const classRankings = db
@@ -147,7 +145,7 @@ export function getOverview(visibleClassIds?: Set<number>, selectedClassId: numb
     .leftJoin(practiceRecords, and(eq(practiceRecords.taskId, practiceTaskClasses.taskId), eq(practiceRecords.studentId, classStudents.studentId)))
     .where(visibleCondition)
     .groupBy(classes.id)
-    .orderBy(desc(classOverviewSelection.total_duration), desc(classOverviewSelection.total_records), asc(classes.name), asc(classes.cid))
+    .orderBy(desc(classOverviewSelection.total_duration), desc(classOverviewSelection.total_records), asc(classes.name))
     .limit(appConfig.overview_class_ranking_limit)
     .all()
     .map(toClassOverview);
@@ -160,7 +158,7 @@ export function getOverview(visibleClassIds?: Set<number>, selectedClassId: numb
     .leftJoin(practiceRecords, and(eq(practiceRecords.studentId, users.id), eq(practiceRecords.taskId, practiceTaskClasses.taskId)))
     .where(and(visibleCondition, eq(users.role, 'student'), isNull(users.deletedAt)))
     .groupBy(users.id, classes.id)
-    .orderBy(desc(totalDurationExpression), desc(totalRecordsExpression), asc(users.name), asc(users.uid))
+    .orderBy(desc(totalDurationExpression), desc(totalRecordsExpression), asc(users.name), asc(users.id))
     .limit(appConfig.overview_student_ranking_limit)
     .all()
     .map(toStudentOverview);

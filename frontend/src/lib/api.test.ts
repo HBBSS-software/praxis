@@ -61,10 +61,14 @@ describe('password helpers', () => {
     expect(plaintext).toBe('correct horse battery');
   });
 
-  test('validates plain password length', () => {
-    expect(validatePlainPassword('12345678')).toBeNull();
-    expect(validatePlainPassword('1234567')).toBe('密码至少需要 8 位。');
-    expect(validatePlainPassword('1'.repeat(33))).toBe('密码不能超过 32 位。');
+  test('validates plain password policy only in production', () => {
+    expect(validatePlainPassword('', { is_production: false })).toBe('密码不能为空。');
+    expect(validatePlainPassword('1234567', { is_production: false })).toBeNull();
+    expect(validatePlainPassword('1234567', { is_production: true })).toBe('密码至少需要 8 位。');
+    expect(validatePlainPassword('A1!'.repeat(11), { is_production: true })).toBe('密码不能超过 32 位。');
+    expect(validatePlainPassword('abcdefgh', { is_production: true })).toBe('密码必须包含大写字母、小写字母、数字和特殊符号。');
+    expect(validatePlainPassword('Abcdef1!', { is_production: true })).toBeNull();
+    expect(validatePlainPassword('1234567', { is_production: true }, { enforcePolicy: false })).toBeNull();
   });
 });
 

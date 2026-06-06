@@ -6,7 +6,7 @@ import type { CreateUserResult, UserRole, UserSummary } from '../../models';
 import { userRoles } from '../../models';
 import { getPinyinInitials } from '../../pinyin';
 import { db } from '../client';
-import { activeUserById, activeUserByUid, generatePlainPassword, nowIso, parseUidNumber, rolePrefixes, toUser, toUserSummary, userSearchCondition, toStudentSummary } from '../helpers';
+import { activeUserById, activeUserByUid, generatePlainPassword, nowIso, toUser, toUserSummary, userSearchCondition, toStudentSummary } from '../helpers';
 import { classStudents, classTeachers, practiceRecords, users } from '../schema';
 
 export function findUserById(id: number) {
@@ -14,18 +14,52 @@ export function findUserById(id: number) {
   return row ? toUser(row) : undefined;
 }
 
-export function findUserByUid(uid: string) {
+export function findUserByUid(uid: number) {
   const row = db.select().from(users).where(activeUserByUid(uid)).get();
   return row ? toUser(row) : undefined;
 }
 
-export function findTeachersByUids(uids: string[]) {
+export function findStudentByUid(uid: number) {
+  const row = db
+    .select()
+    .from(users)
+    .where(and(eq(users.id, uid), eq(users.role, 'student'), isNull(users.deletedAt)))
+    .get();
+  return row ? toUser(row) : undefined;
+}
+
+export function findStudentsByClassAndName(classId: number, name: string) {
+  return db
+    .select({ user: users })
+    .from(classStudents)
+    .innerJoin(users, eq(classStudents.studentId, users.id))
+    .where(and(eq(classStudents.classId, classId), eq(users.role, 'student'), eq(users.name, name), isNull(users.deletedAt)))
+    .all()
+    .map((row) => toUser(row.user));
+}
+
+export function findStaffByIdentifier(identifier: string) {
+  const trimmed = identifier.trim();
+  const parsedId = /^\d+$/.test(trimmed) ? Number(trimmed) : null;
+  const identityCondition = parsedId
+    ? sql`(${users.id} = ${parsedId} or ${users.name} = ${trimmed})`
+    : eq(users.name, trimmed);
+  return db
+    .select()
+    .from(users)
+    .where(and(inArray(users.role, ['teacher', 'admin']), identityCondition, isNull(users.deletedAt)))
+    .all()
+    .map(toUser);
+}
+
+export function findTeachersByUids(uids: number[]) {
   if (uids.length === 0) return [];
   return db
-    .select({ id: users.id, uid: users.uid })
+    .select({ id: users.id })
     .from(users)
-    .where(and(inArray(users.uid, uids), eq(users.role, 'teacher'), isNull(users.deletedAt)))
-    .all();
+    .where(and(inArray(users.id, uids), eq(users.role, 'teacher'), isNull(users.deletedAt)))
+    .all()
+    .map((row) => ({ ...row, uid: row.id }));
 }
 
 export function getUsersByRole(role?: UserRole) {
@@ -33,7 +67,7 @@ export function getUsersByRole(role?: UserRole) {
     ? and(eq(users.role, role), isNull(users.deletedAt))
     : isNull(users.deletedAt);
   return db
-    .select({ id: users.id, uid: users.uid, role: users.role, name: users.name, createdAt: users.createdAt })
+    .select({ id: users.id, role: users.role, name: users.name, englishName: users.englishName, createdAt: users.createdAt })
     .from(users)
     .where(where)
     .orderBy(desc(users.id))
@@ -47,7 +81,7 @@ export function searchUsersByRole(role: UserRole, query: string) {
     ? and(eq(users.role, role), isNull(users.deletedAt), searchCondition)
     : and(eq(users.role, role), isNull(users.deletedAt));
   return db
-    .select({ id: users.id, uid: users.uid, role: users.role, name: users.name, createdAt: users.createdAt })
+    .select({ id: users.id, role: users.role, name: users.name, englishName: users.englishName, createdAt: users.createdAt })
     .from(users)
     .where(where)
     .orderBy(desc(users.id))
@@ -57,7 +91,7 @@ export function searchUsersByRole(role: UserRole, query: string) {
 
 export function getAllStudents() {
   return db
-    .select({ id: users.id, uid: users.uid, name: users.name, createdAt: users.createdAt })
+    .select({ id: users.id, name: users.name, englishName: users.englishName, createdAt: users.createdAt })
     .from(users)
     .where(and(eq(users.role, 'student'), isNull(users.deletedAt)))
     .orderBy(desc(users.id))
@@ -65,28 +99,28 @@ export function getAllStudents() {
     .map(toStudentSummary);
 }
 
-export async function createUser(name: string, role: UserRole): Promise<CreateUserResult> {
+export async function createUser(name: string, role: UserRole, englishName: string | null = null): Promise<CreateUserResult> {
   const password = generatePlainPassword();
   const createdAt = nowIso();
-  const uid = allocateUids([role])[0]!;
   const hashedPassword = await hashPassword(password, 'low');
   const result = db.insert(users).values({
-    uid, password: hashedPassword, role, name,
+    password: hashedPassword, role, name, englishName,
     nameInitials: getPinyinInitials(name),
     createdAt, deletedAt: null
   }).run();
-  return { id: Number(result.lastInsertRowid), uid, role, name, password };
+  const id = Number(result.lastInsertRowid);
+  return { id, uid: id, role, name, english_name: englishName, password };
 }
 
-export async function createUsers(entries: Array<{ name: string; role: UserRole; classId?: number | null }>) {
+export async function createUsers(entries: Array<{ name: string; englishName?: string | null; role: UserRole; classId?: number | null }>) {
   if (entries.length === 0) return [];
   const passwords = entries.map(() => generatePlainPassword());
   const hashes = await hashPasswords(passwords, 'low');
   const createdAt = nowIso();
-  const uids = allocateUids(entries.map((entry) => entry.role));
   const rows = entries.map((entry, index) => ({
-    uid: uids[index]!, password: hashes[index]!, role: entry.role,
-    name: entry.name, nameInitials: getPinyinInitials(entry.name),
+    password: hashes[index]!, role: entry.role,
+    name: entry.name, englishName: entry.englishName ?? null,
+    nameInitials: getPinyinInitials(entry.name),
     createdAt, deletedAt: null as null
   }));
   return db.transaction((tx) => {
@@ -104,13 +138,16 @@ export async function createUsers(entries: Array<{ name: string; role: UserRole;
     if (studentAssignments.length > 0) tx.insert(classStudents).values(studentAssignments).run();
     if (teacherAssignments.length > 0) tx.insert(classTeachers).values(teacherAssignments).run();
     return rows.map((row, index) => ({
-      id: firstInsertedId + index, uid: row.uid, role: row.role, name: row.name, password: passwords[index]!
+      id: firstInsertedId + index, uid: firstInsertedId + index, role: row.role, name: row.name,
+      english_name: row.englishName, password: passwords[index]!
     }));
   });
 }
 
-export function updateUserName(id: number, name: string) {
-  const result = db.update(users).set({ name, nameInitials: getPinyinInitials(name) }).where(activeUserById(id)).run();
+export function updateUserName(id: number, name: string, englishName?: string | null) {
+  const values: Partial<typeof users.$inferInsert> = { name, nameInitials: getPinyinInitials(name) };
+  if (englishName !== undefined) values.englishName = englishName;
+  const result = db.update(users).set(values).where(activeUserById(id)).run();
   return result.changes > 0;
 }
 
@@ -122,14 +159,14 @@ export function updateUserPassword(id: number, hashedPassword: string) {
 export async function resetUserPasswords(ids: number[]) {
   if (ids.length === 0) return [];
   const activeUsers = db
-    .select({ id: users.id, uid: users.uid, role: users.role, name: users.name })
+    .select({ id: users.id, role: users.role, name: users.name, englishName: users.englishName })
     .from(users).where(and(inArray(users.id, ids), isNull(users.deletedAt))).all();
   if (activeUsers.length === 0) return [];
   const passwords = activeUsers.map(() => generatePlainPassword());
   const hashes = await hashPasswords(passwords, 'low');
   return db.transaction((tx) => activeUsers.map((user, index) => {
     tx.update(users).set({ password: hashes[index]! }).where(eq(users.id, user.id)).run();
-    return { id: user.id, uid: user.uid, role: user.role as UserRole, name: user.name, password: passwords[index]! };
+    return { id: user.id, uid: user.id, role: user.role as UserRole, name: user.name, english_name: user.englishName, password: passwords[index]! };
   }));
 }
 
@@ -139,7 +176,7 @@ export function deleteUser(id: number) {
   const now = nowIso();
   db.transaction((tx) => {
     tx.update(practiceRecords)
-      .set({ studentUidSnapshot: user.uid })
+      .set({ studentUidSnapshot: user.id })
       .where(and(eq(practiceRecords.studentId, user.id), sql`${practiceRecords.studentUidSnapshot} is null`))
       .run();
     if (user.role === 'teacher') tx.delete(classTeachers).where(eq(classTeachers.teacherId, user.id)).run();
@@ -152,34 +189,18 @@ export function isValidRole(role: unknown): role is UserRole {
   return userRoles.includes(role as UserRole);
 }
 
-export function allocateUids(roles: UserRole[]) {
-  const nextNumbers = new Map<UserRole, number>();
-  for (const role of new Set(roles)) {
-    const latest = db
-      .select({ uid: users.uid }).from(users)
-      .where(eq(users.role, role))
-      .orderBy(desc(users.id)).limit(1).get();
-    nextNumbers.set(role, latest ? parseUidNumber(latest.uid) + 1 : 1);
-  }
-  return roles.map((role) => {
-    const nextNumber = nextNumbers.get(role) ?? 1;
-    nextNumbers.set(role, nextNumber + 1);
-    return `${rolePrefixes[role]}${nextNumber.toString(16).padStart(5, '0')}`;
-  });
-}
-
 export function seedDefaultAdmin() {
   const row = db.select({ count: sql<number>`count(*)` }).from(users).get();
   if (row?.count && Number(row.count) > 0) return;
   const password = appConfig.initial_admin_password;
-  db.insert(users).values([{
-    uid: 'A00001',
+  const result = db.insert(users).values([{
     password: hashPasswordSync(password, 'low'),
     role: 'admin',
     name: '超级奶龙',
+    englishName: null,
     nameInitials: getPinyinInitials('超级奶龙'),
     createdAt: nowIso(),
     deletedAt: null
   }]).run();
-  console.log("欢迎使用 Praxis，初始 uid：A00001，初始密码：%s", password);
+  console.log("欢迎使用 Praxis，初始 uid：%s，初始密码：%s", Number(result.lastInsertRowid), password);
 }

@@ -1,159 +1,453 @@
-import { FileCheck2, LockKeyhole, ShieldCheck, UserRound, Zap } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, GraduationCap, LockKeyhole, UserRound, UsersRound } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Combobox,
+  ComboboxCollection,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxGroup,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  useComboboxPagedSearch
+} from '@/components/ui/combobox';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/components/ui/hover-card"
-import { login, validatePlainPassword } from '@/lib/api';
+  loginStaff,
+  loginStudentByName,
+  loginStudentByUid,
+  searchLoginClasses,
+  selectLoginCandidate,
+  validatePlainPassword,
+  type LoginCandidate,
+  type LoginResponse
+} from '@/lib/api';
+import { useSession } from '@/lib/auth';
 import { toastError } from '@/lib/feedback';
 import { getDefaultPathByRole } from '@/lib/session';
-import { useSession } from '@/lib/auth';
 import { useRuntimeConfig, useSiteName } from '@/lib/runtime-config';
 import { SiteFooter } from '@/shared/site-footer';
 
-export function LoginPage() {
+interface LoginClass {
+  id: number;
+  name: string;
+  created_at: string;
+}
+
+type PendingSelection = {
+  challenge: string;
+  candidates: LoginCandidate[];
+} | null;
+
+function isSelectionResponse(value: LoginResponse): value is { challenge: string; candidates: LoginCandidate[] } {
+  return 'challenge' in value;
+}
+
+function useLoginCompletion() {
   const navigate = useNavigate();
   const { signIn } = useSession();
-  const runtimeConfig = useRuntimeConfig();
-  const siteName = useSiteName();
-  const [uid, setUid] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const highlights = [
-    {
-      title: '流程清晰',
-      description: '实践提交、审核流转、通知反馈集中在一处，状态变化随时可追踪。',
-      icon: FileCheck2,
-      iconWrapperClassName: 'bg-sky-50 text-sky-700'
-    },
-    {
-      title: '数据集中',
-      description: '学生实践记录、教师审核意见统一存储，减少分散查找与重复核对，敏感信息加密存储，全方位保障数据安全。',
-      icon: ShieldCheck,
-      iconWrapperClassName: 'bg-emerald-50 text-emerald-700'
-    },
-    {
-      title: '操作高效',
-      description: '支持批量审核、智能筛选、自动提醒、数据导出等功能，大幅减轻重复工作，提升效率。',
-      icon: Zap,
-      iconWrapperClassName: 'bg-amber-50 text-amber-700'
+  const [selection, setSelection] = useState<PendingSelection>(null);
+  const [selecting, setSelecting] = useState(false);
+
+  function finish(data: { user: Parameters<typeof signIn>[0] }, password: string) {
+    signIn(data.user, data.user.password_setup_required ? password : null);
+
+    if (data.user.password_setup_required) {
+      toast('请先设置密码。');
     }
-  ] as const;
+
+    navigate(getDefaultPathByRole(data.user.role, data.user.password_setup_required), { replace: true });
+  }
+
+  function handleResponse(data: LoginResponse, password: string) {
+    if (isSelectionResponse(data)) {
+      setSelection({ challenge: data.challenge, candidates: data.candidates });
+      return;
+    }
+
+    finish(data, password);
+  }
+
+  async function selectCandidate(uid: number, password: string) {
+    if (!selection) return;
+
+    try {
+      setSelecting(true);
+      const data = await selectLoginCandidate(selection.challenge, uid);
+      setSelection(null);
+      finish(data, password);
+    } catch (error) {
+      toastError(error, '登录失败。');
+    } finally {
+      setSelecting(false);
+    }
+  }
+
+  return { selection, setSelection, selecting, handleResponse, selectCandidate };
+}
+
+export function LoginPage() {
+  const navigate = useNavigate();
+  return (
+    <AuthLayout>
+      <Card className="border-border/70 shadow-sm lg:self-center">
+        <CardHeader className="space-y-3 pb-4">
+          <div className="flex size-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <LockKeyhole className="size-6" />
+          </div>
+          <CardTitle className="text-2xl">登录系统</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          <Button className="h-12 justify-start gap-3" onClick={() => navigate('/login/student')}>
+            <GraduationCap className="size-5" />
+            我是学生
+          </Button>
+          <Button className="h-12 justify-start gap-3" variant="outline" onClick={() => navigate('/login/staff')}>
+            <UsersRound className="size-5" />
+            我是老师/管理员
+          </Button>
+        </CardContent>
+      </Card>
+    </AuthLayout>
+  );
+}
+
+export function StudentLoginPage() {
+  const navigate = useNavigate();
+  const runtimeConfig = useRuntimeConfig();
+  const loginCompletion = useLoginCompletion();
+  const [uid, setUid] = useState('');
+  const [uidPassword, setUidPassword] = useState('');
+  const [name, setName] = useState('');
+  const [namePassword, setNamePassword] = useState('');
+  const [selectedClass, setSelectedClass] = useState<LoginClass | null>(null);
+  const [classes, setClasses] = useState<LoginClass[]>([]);
+  const [loading, setLoading] = useState<'uid' | 'name' | null>(null);
+  const classSearch = useComboboxPagedSearch<LoginClass>({ items: classes, pageSize: 50, debounceDelay: 250 });
+
+  useEffect(() => {
+    let ignored = false;
+
+    searchLoginClasses(classSearch.debouncedQuery)
+      .then((data) => {
+        if (!ignored) setClasses(data.classes);
+      })
+      .catch((error) => {
+        if (!ignored) toastError(error, '搜索班级失败。');
+      });
+
+    return () => {
+      ignored = true;
+    };
+  }, [classSearch.debouncedQuery]);
 
   return (
-    <div className="flex min-h-screen flex-col px-4 py-8">
-      <div className="flex flex-1 items-center justify-center">
-        <div className="grid w-full max-w-6xl items-start gap-4 lg:gap-20 lg:grid-cols-[1fr_minmax(380px,460px)]">
-        <div className="hidden lg:block">
-          <div className="space-y-6">
-            <div className="space-y-5">
-              <div className="inline-flex rounded-full border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-                {siteName}
-              </div>
-              <div className="space-y-3">
-                <h1 className="max-w-xl text-4xl font-semibold leading-tight tracking-tight">一套系统，搞定社会实践全流程。</h1>
-                <p className="max-w-lg text-base text-muted-foreground">统一操作入口，让实践提交更便捷、审核更透明、管理更省心。</p>
-              </div>
-            </div>
-            <div className="grid gap-3 pt-6">
-              {highlights.map(({ title, description, icon: Icon, iconWrapperClassName }) => (
-                <Card key={title} className="border-border/60 bg-background/80 shadow-none">
-                  <CardContent className="flex items-start gap-4 p-4">
-                    <div className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${iconWrapperClassName}`}>
-                      <Icon className="size-5" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <p className="text-sm font-semibold tracking-tight">{title}</p>
-                      <p className="text-sm leading-6 text-muted-foreground">{description}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+    <AuthLayout>
+      <Card className="w-full border-border/70 shadow-sm">
+        <CardHeader className="space-y-4">
+          <Button type="button" variant="ghost" size="sm" className="w-fit px-2" onClick={() => navigate('/login')}>
+            <ArrowLeft className="size-4" />
+            返回
+          </Button>
+          <div className="flex size-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <GraduationCap className="size-5" />
           </div>
-        </div>
-
-        <Card className="border-border/70 shadow-sm lg:self-center">
-          <CardHeader className="space-y-3 pb-4">
-            <div className="flex size-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <LockKeyhole className="size-6" />
-            </div>
-            <CardTitle className="text-2xl">登录系统</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form
-              className="space-y-5"
-              onSubmit={async (event) => {
-                event.preventDefault();
-                const passwordError = validatePlainPassword(password, runtimeConfig);
-
-                if (passwordError) {
-                  toastError(new Error(passwordError));
-                  return;
-                }
-
-                setLoading(true);
-
-                try {
-                  const data = await login(uid.trim(), password);
-                  signIn(data.user, data.user.password_setup_required ? password : null);
-
-                  if (data.user.password_setup_required) {
-                    toast('请先设置密码。');
+          <CardTitle className="text-2xl">学生登录</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="name">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="name">姓名</TabsTrigger>
+              <TabsTrigger value="uid">UID</TabsTrigger>
+            </TabsList>
+            <TabsContent value="name" className="mt-5">
+              <form
+                className="space-y-4"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  if (!selectedClass) {
+                    toastError(new Error('请选择班级。'));
+                    return;
                   }
+                  if (!name.trim()) {
+                    toastError(new Error('姓名不能为空。'));
+                    return;
+                  }
+                  const passwordError = validatePlainPassword(namePassword, runtimeConfig, { enforcePolicy: false });
+                  if (passwordError) {
+                    toastError(new Error(passwordError));
+                    return;
+                  }
+                  try {
+                    setLoading('name');
+                    const data = await loginStudentByName(selectedClass.id, name.trim(), namePassword);
+                    loginCompletion.handleResponse(data, namePassword);
+                  } catch (error) {
+                    toastError(error, '登录失败。');
+                  } finally {
+                    setLoading(null);
+                  }
+                }}
+              >
+                <ClassCombobox search={classSearch} value={selectedClass} onChange={setSelectedClass} />
+                <Field label="姓名" icon={<UserRound className="size-4" />}>
+                  <Input value={name} onChange={(event) => setName(event.target.value)} className="pl-10" />
+                </Field>
+                <PasswordField value={namePassword} onChange={setNamePassword} />
+                <SubmitButton loading={loading === 'name'} />
+              </form>
+            </TabsContent>
+            <TabsContent value="uid" className="mt-5">
+              <form
+                className="space-y-4"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  const parsedUid = Number(uid.trim());
+                  if (!Number.isInteger(parsedUid) || parsedUid <= 0) {
+                    toastError(new Error('UID 无效。'));
+                    return;
+                  }
+                  const passwordError = validatePlainPassword(uidPassword, runtimeConfig, { enforcePolicy: false });
+                  if (passwordError) {
+                    toastError(new Error(passwordError));
+                    return;
+                  }
+                  try {
+                    setLoading('uid');
+                    const data = await loginStudentByUid(parsedUid, uidPassword);
+                    loginCompletion.handleResponse(data, uidPassword);
+                  } catch (error) {
+                    toastError(error, '登录失败。');
+                  } finally {
+                    setLoading(null);
+                  }
+                }}
+              >
+                <Field label="UID" icon={<UserRound className="size-4" />}>
+                  <Input inputMode="numeric" value={uid} onChange={(event) => setUid(event.target.value)} className="pl-10" />
+                </Field>
+                <PasswordField value={uidPassword} onChange={setUidPassword} />
+                <SubmitButton loading={loading === 'uid'} />
+              </form>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+      <CandidateDialog
+        password={namePassword || uidPassword}
+        selection={loginCompletion.selection}
+        selecting={loginCompletion.selecting}
+        onOpenChange={(open) => !open && loginCompletion.setSelection(null)}
+        onSelect={loginCompletion.selectCandidate}
+      />
+    </AuthLayout>
+  );
+}
 
-                  navigate(getDefaultPathByRole(data.user.role, data.user.password_setup_required), { replace: true });
-                } catch (nextError) {
-                  toastError(nextError, '登录失败。');
-                } finally {
-                  setLoading(false);
-                }
-              }}
-            >
-              <div className="space-y-2">
-                <Label htmlFor="uid">UID</Label>
-                <div className="relative">
-                  <UserRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input id="uid" value={uid} onChange={(event) => setUid(event.target.value)} className="pl-10" />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">密码</Label>
-                <div className="relative">
-                  <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="pl-10" />
-                </div>
-              </div>
-              <Button className="h-11 w-full" disabled={loading} type="submit">
-                {loading ? <Spinner className="size-4 text-current" /> : null}
-                {loading ? '登录中...' : '登录'}
-              </Button>
-              <div className="flex justify-end">
-                <HoverCard openDelay={10} closeDelay={100}>
-                  <HoverCardTrigger asChild>
-                    <Button type="button" variant="link">忘记密码</Button>
-                  </HoverCardTrigger>
-                  <HoverCardContent className="flex w-max flex-col gap-0.5">
-                    <div>如果您是学生，请联系班主任修改密码；</div>
-                    <div>如果您是教师，请联系管理员修改密码。</div>
-                  </HoverCardContent>
-                </HoverCard>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+export function StaffLoginPage() {
+  const navigate = useNavigate();
+  const runtimeConfig = useRuntimeConfig();
+  const loginCompletion = useLoginCompletion();
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  return (
+    <AuthLayout>
+      <Card className="w-full border-border/70 shadow-sm">
+        <CardHeader className="space-y-4">
+          <Button type="button" variant="ghost" size="sm" className="w-fit px-2" onClick={() => navigate('/login')}>
+            <ArrowLeft className="size-4" />
+            返回
+          </Button>
+          <div className="flex size-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <UsersRound className="size-5" />
+          </div>
+          <CardTitle className="text-2xl">老师/管理员登录</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="space-y-4"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!identifier.trim()) {
+                toastError(new Error('UID / 姓名不能为空。'));
+                return;
+              }
+              const passwordError = validatePlainPassword(password, runtimeConfig, { enforcePolicy: false });
+              if (passwordError) {
+                toastError(new Error(passwordError));
+                return;
+              }
+              try {
+                setLoading(true);
+                const data = await loginStaff(identifier.trim(), password);
+                loginCompletion.handleResponse(data, password);
+              } catch (error) {
+                toastError(error, '登录失败。');
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            <Field label="UID / 姓名" icon={<UserRound className="size-4" />}>
+              <Input value={identifier} onChange={(event) => setIdentifier(event.target.value)} className="pl-10" />
+            </Field>
+            <PasswordField value={password} onChange={setPassword} />
+            <SubmitButton loading={loading} />
+          </form>
+        </CardContent>
+      </Card>
+      <CandidateDialog
+        password={password}
+        selection={loginCompletion.selection}
+        selecting={loginCompletion.selecting}
+        onOpenChange={(open) => !open && loginCompletion.setSelection(null)}
+        onSelect={loginCompletion.selectCandidate}
+      />
+    </AuthLayout>
+  );
+}
+
+function AuthLayout({ children }: { children: ReactNode }) {
+  const siteName = useSiteName();
+
+  return (
+    <div className="flex min-h-screen flex-col bg-muted/30 px-4 py-8">
+      <div className="flex flex-1 items-center justify-center">
+        <div className="grid w-full max-w-md gap-5">
+          <div className="text-center text-sm font-medium text-muted-foreground">
+            {siteName}
+          </div>
+          {children}
         </div>
       </div>
       <SiteFooter />
     </div>
+  );
+}
+
+function Field({ label, icon, children }: { label: string; icon: ReactNode; children: ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <div className="relative">
+        <div className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-muted-foreground">
+          {icon}
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function PasswordField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <Field label="密码" icon={<LockKeyhole className="size-4" />}>
+      <Input type="password" value={value} onChange={(event) => onChange(event.target.value)} className="pl-10" />
+    </Field>
+  );
+}
+
+function SubmitButton({ loading }: { loading: boolean }) {
+  return (
+    <Button className="h-11 w-full" disabled={loading} type="submit">
+      {loading ? <Spinner className="size-4 text-current" /> : null}
+      {loading ? '登录中...' : '登录'}
+    </Button>
+  );
+}
+
+function ClassCombobox({
+  search,
+  value,
+  onChange
+}: {
+  search: ReturnType<typeof useComboboxPagedSearch<LoginClass>>;
+  value: LoginClass | null;
+  onChange: (value: LoginClass | null) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>班级</Label>
+      <Combobox
+        items={search.visibleItems}
+        value={value}
+        inputValue={search.query}
+        onInputValueChange={search.setQuery}
+        filter={null}
+        itemToStringLabel={(item) => item.name}
+        itemToStringValue={(item) => item.name}
+        onValueChange={(nextValue) => onChange(nextValue)}
+      >
+        <ComboboxInput className="w-full" placeholder="搜索班级" showClear />
+        <ComboboxContent>
+          <ComboboxEmpty>没有找到班级</ComboboxEmpty>
+          <ComboboxList onScroll={search.loadMoreItems}>
+            <ComboboxGroup items={search.visibleItems}>
+              <ComboboxCollection>
+                {(item: LoginClass) => (
+                  <ComboboxItem key={item.id} value={item}>
+                    {item.name}
+                  </ComboboxItem>
+                )}
+              </ComboboxCollection>
+            </ComboboxGroup>
+          </ComboboxList>
+        </ComboboxContent>
+      </Combobox>
+    </div>
+  );
+}
+
+function CandidateDialog({
+  password,
+  selection,
+  selecting,
+  onOpenChange,
+  onSelect
+}: {
+  password: string;
+  selection: PendingSelection;
+  selecting: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelect: (uid: number, password: string) => void;
+}) {
+  return (
+    <Dialog open={Boolean(selection)} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>选择账号</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-2">
+          {selection?.candidates.map((candidate) => (
+            <Button
+              key={candidate.uid}
+              type="button"
+              variant="outline"
+              className="h-auto justify-between gap-3 px-4 py-3 text-left"
+              disabled={selecting}
+              onClick={() => onSelect(candidate.uid, password)}
+            >
+              <span className="min-w-0">
+                <span className="block truncate font-medium">{candidate.name}</span>
+                <span className="block truncate text-xs text-muted-foreground">{candidate.english_name || '未填写英文名'}</span>
+              </span>
+              <span className="shrink-0 text-sm text-muted-foreground">UID {candidate.uid}</span>
+            </Button>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -64,7 +64,7 @@ function AdminStudentListPage() {
   const [search, setSearch] = useState<ListSearchState<StudentSearchField>>(defaultStudentSearch);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editing, setEditing] = useState<StudentWithClassSummary | null>(null);
-  const [form, setForm] = useState({ name: '', password: '', class_id: null as number | null });
+  const [form, setForm] = useState({ name: '', english_name: '', password: '', class_id: null as number | null });
   const [batchClassId, setBatchClassId] = useState<number | null>(null);
   const [batchResetOpen, setBatchResetOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
@@ -105,7 +105,7 @@ function AdminStudentListPage() {
     const query = search.query.trim();
     if (!query) return students;
 
-    return students.filter((student) => includesSearch(search.field === 'uid' ? student.uid : student.name, query));
+    return students.filter((student) => includesSearch(search.field === 'uid' ? String(student.uid) : student.name, query));
   }, [search, students]);
 
   const sortedStudents = useMemo(() => {
@@ -114,8 +114,8 @@ function AdminStudentListPage() {
       const rightDuration = durations[right.id] ?? 0;
       if (sortBy === 'duration-desc') return rightDuration - leftDuration || left.name.localeCompare(right.name);
       if (sortBy === 'duration-asc') return leftDuration - rightDuration || left.name.localeCompare(right.name);
-      if (sortBy === 'uid-desc') return right.uid.localeCompare(left.uid);
-      if (sortBy === 'uid-asc') return left.uid.localeCompare(right.uid);
+      if (sortBy === 'uid-desc') return right.uid - left.uid;
+      if (sortBy === 'uid-asc') return left.uid - right.uid;
       if (sortBy === 'class-asc') return compareStudentClass(left, right, 'asc');
       if (sortBy === 'class-desc') return compareStudentClass(left, right, 'desc');
       if (sortBy === 'name-desc') return right.name.localeCompare(left.name);
@@ -210,7 +210,7 @@ function AdminStudentListPage() {
             variant="outline"
             onClick={() => {
               setEditing(row.original);
-              setForm({ name: row.original.name, password: '', class_id: row.original.class_id });
+              setForm({ name: row.original.name, english_name: row.original.english_name ?? '', password: '', class_id: row.original.class_id });
             }}
           >
             编辑
@@ -243,11 +243,11 @@ function AdminStudentListPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">未分配班级</SelectItem>
-                      {classes.map((item) => (
-                        <SelectItem key={item.id} value={String(item.id)}>
-                          {item.name} ({item.cid})
-                        </SelectItem>
-                      ))}
+                        {classes.map((item) => (
+                          <SelectItem key={item.id} value={String(item.id)}>
+                          {item.name}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                   <Button size="sm" variant="outline" onClick={() => void updateSelectedClass()}>批量改班级</Button>
@@ -276,8 +276,8 @@ function AdminStudentListPage() {
                 <SelectItem value="duration-asc">总时长从低到高</SelectItem>
                 <SelectItem value="uid-asc">UID 从小到大</SelectItem>
                 <SelectItem value="uid-desc">UID 从大到小</SelectItem>
-                <SelectItem value="class-asc">班级 CID 从小到大</SelectItem>
-                <SelectItem value="class-desc">班级 CID 从大到小</SelectItem>
+                <SelectItem value="class-asc">班级从小到大</SelectItem>
+                <SelectItem value="class-desc">班级从大到小</SelectItem>
                 <SelectItem value="name-asc">姓名 A-Z</SelectItem>
                 <SelectItem value="name-desc">姓名 Z-A</SelectItem>
               </SelectContent>
@@ -307,6 +307,9 @@ function AdminStudentListPage() {
             <Field label="姓名">
               <Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
             </Field>
+            <Field label="英文名">
+              <Input value={form.english_name} onChange={(event) => setForm((current) => ({ ...current, english_name: event.target.value }))} />
+            </Field>
             <Field label="新密码">
               <Input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} />
             </Field>
@@ -325,6 +328,7 @@ function AdminStudentListPage() {
 
                   await unwrapResponse(createApiClient().admin.users({ id: editing.id }).put({
                     name: form.name.trim(),
+                    english_name: form.english_name.trim() || null,
                     password: form.password,
                     class_id: form.class_id
                   }));

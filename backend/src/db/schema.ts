@@ -2,15 +2,14 @@ import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from
 
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  uid: text('uid').notNull(),
   password: text('password').notNull(),
   role: text('role').notNull(),
   name: text('name').notNull(),
+  englishName: text('english_name'),
   nameInitials: text('name_initials').notNull().default(''),
   createdAt: text('created_at').notNull(),
   deletedAt: text('deleted_at')
 }, (table) => [
-  uniqueIndex('users_uid_unique').on(table.uid),
   index('users_role_idx').on(table.role),
   index('users_name_initials_idx').on(table.nameInitials),
   index('users_deleted_at_idx').on(table.deletedAt)
@@ -28,11 +27,10 @@ export const teacherStudents = sqliteTable('teacher_students', {
 
 export const classes = sqliteTable('classes', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  cid: text('cid').notNull(),
   name: text('name').notNull(),
   createdAt: text('created_at').notNull()
 }, (table) => [
-  uniqueIndex('classes_cid_unique').on(table.cid),
+  uniqueIndex('classes_name_unique').on(table.name),
   index('classes_created_at_idx').on(table.createdAt)
 ]);
 
@@ -88,7 +86,7 @@ export const practiceRecords = sqliteTable('practice_records', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   taskId: integer('task_id').references(() => practiceTasks.id, { onDelete: 'cascade' }),
   studentId: integer('student_id').notNull().references(() => users.id),
-  studentUidSnapshot: text('student_uid_snapshot'),
+  studentUidSnapshot: integer('student_uid_snapshot'),
   title: text('title').notNull(),
   content: text('content').notNull(),
   practiceDate: text('practice_date').notNull(),

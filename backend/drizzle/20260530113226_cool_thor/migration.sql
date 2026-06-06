@@ -18,7 +18,6 @@ CREATE TABLE `class_teachers` (
 --> statement-breakpoint
 CREATE TABLE `classes` (
 	`id` integer PRIMARY KEY AUTOINCREMENT,
-	`cid` text NOT NULL,
 	`name` text NOT NULL,
 	`created_at` text NOT NULL
 );
@@ -37,7 +36,7 @@ CREATE TABLE `practice_records` (
 	`id` integer PRIMARY KEY AUTOINCREMENT,
 	`task_id` integer,
 	`student_id` integer NOT NULL,
-	`student_uid_snapshot` text,
+	`student_uid_snapshot` integer,
 	`title` text NOT NULL,
 	`content` text NOT NULL,
 	`practice_date` text NOT NULL,
@@ -93,10 +92,10 @@ CREATE TABLE `temp_upload_deletions` (
 --> statement-breakpoint
 CREATE TABLE `users` (
 	`id` integer PRIMARY KEY AUTOINCREMENT,
-	`uid` text NOT NULL,
 	`password` text NOT NULL,
 	`role` text NOT NULL,
 	`name` text NOT NULL,
+	`english_name` text,
 	`name_initials` text DEFAULT '' NOT NULL,
 	`created_at` text NOT NULL,
 	`deleted_at` text
@@ -106,7 +105,7 @@ CREATE UNIQUE INDEX `class_students_student_unique` ON `class_students` (`studen
 CREATE INDEX `class_students_class_idx` ON `class_students` (`class_id`);--> statement-breakpoint
 CREATE INDEX `class_teachers_class_idx` ON `class_teachers` (`class_id`);--> statement-breakpoint
 CREATE INDEX `class_teachers_teacher_idx` ON `class_teachers` (`teacher_id`);--> statement-breakpoint
-CREATE UNIQUE INDEX `classes_cid_unique` ON `classes` (`cid`);--> statement-breakpoint
+CREATE UNIQUE INDEX `classes_name_unique` ON `classes` (`name`);--> statement-breakpoint
 CREATE INDEX `classes_created_at_idx` ON `classes` (`created_at`);--> statement-breakpoint
 CREATE INDEX `notifications_student_idx` ON `notifications` (`student_id`);--> statement-breakpoint
 CREATE INDEX `notifications_created_at_idx` ON `notifications` (`created_at`);--> statement-breakpoint
@@ -127,7 +126,6 @@ CREATE UNIQUE INDEX `teacher_students_student_unique` ON `teacher_students` (`st
 CREATE INDEX `teacher_students_teacher_idx` ON `teacher_students` (`teacher_id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `temp_upload_deletions_file_path_unique` ON `temp_upload_deletions` (`file_path`);--> statement-breakpoint
 CREATE INDEX `temp_upload_deletions_expires_at_idx` ON `temp_upload_deletions` (`expires_at`);--> statement-breakpoint
-CREATE UNIQUE INDEX `users_uid_unique` ON `users` (`uid`);--> statement-breakpoint
 CREATE INDEX `users_role_idx` ON `users` (`role`);--> statement-breakpoint
 CREATE INDEX `users_name_initials_idx` ON `users` (`name_initials`);--> statement-breakpoint
 CREATE INDEX `users_deleted_at_idx` ON `users` (`deleted_at`);

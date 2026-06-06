@@ -15,13 +15,13 @@ import { classes, classStudents, users, practiceRecords, tempUploadDeletions } f
 import { createUploadPathFromSource, removeUploadFile, resolveTmpUploadFilePath, resolveUploadFilePath } from './uploads';
 
 export function createRecord(input: CreateRecordInput) {
-  const student = db.select({ uid: users.uid }).from(users).where(eq(users.id, input.student_id)).get();
+  const student = db.select({ id: users.id }).from(users).where(eq(users.id, input.student_id)).get();
   const createdAt = nowIso();
   const images = prepareRecordImages(input.image_paths, input.cover_image_path);
   const result = db.insert(practiceRecords).values({
     taskId: input.task_id ?? null,
     studentId: input.student_id,
-    studentUidSnapshot: student?.uid ?? null,
+    studentUidSnapshot: student?.id ?? null,
     title: input.title, content: input.content,
     practiceDate: input.practice_date, location: input.location,
     duration: input.duration,
@@ -106,7 +106,7 @@ export function getTeacherRecordById(id: number, visibleStudentIds?: Set<number>
   return {
     ...toPracticeRecord(record.record),
     student_name: String(record.student_name),
-    student_uid: String(record.student_uid)
+    student_uid: record.student_uid
   } satisfies TeacherRecord;
 }
 
@@ -119,7 +119,7 @@ export function getRecordsForExport(filters: RecordFilters = {}, visibleStudentI
       duration: practiceRecords.duration, status: practiceRecords.status,
       teacher_comment: practiceRecords.teacherComment, created_at: practiceRecords.createdAt,
       image_paths: practiceRecords.imagePaths,
-      class_name: classes.name, class_cid: classes.cid,
+      class_name: classes.name,
       ...recordIdentitySelect()
     })
     .from(practiceRecords)
@@ -130,7 +130,7 @@ export function getRecordsForExport(filters: RecordFilters = {}, visibleStudentI
     .orderBy(desc(practiceRecords.createdAt))
     .all()
     .map((row) => ({
-      class_label: row.class_name && row.class_cid ? `${row.class_name} (${row.class_cid})` : '',
+      class_label: row.class_name ?? '',
       student_name: row.student_name, student_uid: row.student_uid,
       title: row.title, practice_date: row.practice_date, duration: row.duration,
       location: row.location ?? '', status: row.status as TeacherRecordSummary['status'],

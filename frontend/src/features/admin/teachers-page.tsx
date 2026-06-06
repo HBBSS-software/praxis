@@ -72,7 +72,7 @@ function UserListPage({
   const [search, setSearch] = useState<ListSearchState<UserSearchField>>(defaultUserSearch);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editing, setEditing] = useState<UserSummary | null>(null);
-  const [form, setForm] = useState({ name: '', password: '' });
+  const [form, setForm] = useState({ name: '', english_name: '', password: '' });
   const [batchResetOpen, setBatchResetOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [resetResult, setResetResult] = useState<CredentialsResult | null>(null);
@@ -112,15 +112,15 @@ function UserListPage({
     const query = search.query.trim();
     if (!query) return users;
 
-    return users.filter((user) => includesSearch(search.field === 'uid' ? user.uid : user.name, query));
+    return users.filter((user) => includesSearch(search.field === 'uid' ? String(user.uid) : user.name, query));
   }, [search, users]);
 
   const sortedUsers = useMemo(() => {
     return [...searchedUsers].sort((left, right) => {
-      if (sortBy === 'uid-desc') return right.uid.localeCompare(left.uid);
+      if (sortBy === 'uid-desc') return right.uid - left.uid;
       if (sortBy === 'name-asc') return left.name.localeCompare(right.name);
       if (sortBy === 'name-desc') return right.name.localeCompare(left.name);
-      return left.uid.localeCompare(right.uid);
+      return left.uid - right.uid;
     });
   }, [searchedUsers, sortBy]);
 
@@ -198,7 +198,7 @@ function UserListPage({
         return managedClasses.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {managedClasses.map((item) => (
-              <Badge key={item.id} variant="secondary">{item.name} ({item.cid})</Badge>
+              <Badge key={item.id} variant="secondary">{item.name}</Badge>
             ))}
           </div>
         ) : <span className="text-muted-foreground">未分配</span>;
@@ -214,7 +214,7 @@ function UserListPage({
             variant="outline"
             onClick={() => {
               setEditing(row.original);
-              setForm({ name: row.original.name, password: '' });
+              setForm({ name: row.original.name, english_name: row.original.english_name ?? '', password: '' });
             }}
           >
             编辑
@@ -290,6 +290,9 @@ function UserListPage({
             <Field label="姓名">
               <Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
             </Field>
+            <Field label="英文名">
+              <Input value={form.english_name} onChange={(event) => setForm((current) => ({ ...current, english_name: event.target.value }))} />
+            </Field>
             <Field label="新密码">
               <Input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} />
             </Field>
@@ -307,6 +310,7 @@ function UserListPage({
 
                   await unwrapResponse(createApiClient().admin.users({ id: editing.id }).put({
                     name: form.name.trim(),
+                    english_name: form.english_name.trim() || null,
                     password: form.password
                   }));
                   setEditing(null);

@@ -17,9 +17,8 @@ export const TITLE_MAX_LENGTH = appConfig.title_max_length;
 export const LOCATION_MAX_LENGTH = appConfig.location_max_length;
 export const CONTENT_MAX_LENGTH = appConfig.content_max_length;
 export const COMMENT_MAX_LENGTH = appConfig.comment_max_length;
-export const PASSWORD_MIN_LENGTH = appConfig.password_min_length;
-export const PASSWORD_MAX_LENGTH = appConfig.password_max_length;
-export const UID_MAX_LENGTH = appConfig.uid_max_length;
+export const PASSWORD_MIN_LENGTH = 8;
+export const PASSWORD_MAX_LENGTH = 32;
 export const MAX_RECORD_DURATION = appConfig.max_record_duration;
 
 export const userRoleSchema = z.enum(userRoles);
@@ -51,8 +50,33 @@ export const userSearchQuerySchema = z.object({
 });
 
 export const loginBodySchema = z.object({
-  uid: z.string().min(1).max(UID_MAX_LENGTH),
+  uid: z.string().min(1).max(32),
   password: requiredPasswordSchema
+});
+
+export const studentUidLoginBodySchema = z.object({
+  uid: z.number().int().positive(),
+  password: requiredPasswordSchema
+});
+
+export const studentNameLoginBodySchema = z.object({
+  class_id: z.number().int().positive(),
+  name: z.string().min(1).max(USER_NAME_MAX_LENGTH),
+  password: requiredPasswordSchema
+});
+
+export const staffLoginBodySchema = z.object({
+  identifier: z.string().min(1).max(64),
+  password: requiredPasswordSchema
+});
+
+export const loginSelectionBodySchema = z.object({
+  challenge: z.string().min(16).max(128),
+  uid: z.number().int().positive()
+});
+
+export const classSearchQuerySchema = z.object({
+  q: z.string().max(64).optional()
 });
 
 export const profileBodySchema = z.object({
@@ -67,6 +91,7 @@ export const passwordBodySchema = z.object({
 
 export const updateUserBodySchema = z.object({
   name: z.string().min(1).max(USER_NAME_MAX_LENGTH).optional(),
+  english_name: z.string().max(USER_NAME_MAX_LENGTH).nullable().optional(),
   password: optionalPasswordSchema.optional(),
   class_id: z.number().int().positive().nullable().optional()
 });
@@ -165,6 +190,7 @@ export function toPublicUser(user: PublicUser) {
     uid: user.uid,
     role: user.role,
     name: user.name,
+    english_name: user.english_name,
     password_setup_required: user.password_setup_required
   };
 }
@@ -206,9 +232,31 @@ export function validateName(name: string) {
   return null;
 }
 
+export function validateEnglishName(name: string | null | undefined) {
+  const trimmed = name?.trim() ?? '';
+
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.length > USER_NAME_MAX_LENGTH) {
+    return `英文名不能超过 ${USER_NAME_MAX_LENGTH} 个字符。`;
+  }
+
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) {
+    return '英文名不能包含控制字符。';
+  }
+
+  return null;
+}
+
 export function validatePassword(password: string) {
   if (!password) {
     return '密码不能为空。';
+  }
+
+  if (!appConfig.is_production) {
+    return null;
   }
 
   if (password.length < PASSWORD_MIN_LENGTH) {
@@ -217,6 +265,10 @@ export function validatePassword(password: string) {
 
   if (password.length > PASSWORD_MAX_LENGTH) {
     return `密码不能超过 ${PASSWORD_MAX_LENGTH} 位。`;
+  }
+
+  if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password) || !/[!-/:-@[-`{-~]/.test(password)) {
+    return '密码必须包含大写字母、小写字母、数字和特殊符号。';
   }
 
   return null;

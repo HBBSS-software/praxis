@@ -43,13 +43,13 @@ export function AdminUsersPage() {
   const { signOut } = useSession();
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const [classes, setClasses] = useState<ClassSummary[]>([]);
-  const [singleForm, setSingleForm] = useState({ name: '', role: 'student' as UserRole, class_id: null as number | null });
+  const [singleForm, setSingleForm] = useState({ name: '', english_name: '', role: 'student' as UserRole, class_id: null as number | null });
   const [singleResult, setSingleResult] = useState<CredentialsResult | null>(null);
   const [csvFileName, setCsvFileName] = useState('');
   const [csvEncoding, setCsvEncoding] = useState<CsvImportPreview['encoding'] | null>(null);
   const [csvResult, setCsvResult] = useState<CredentialsResult | null>(null);
   const [csvImporting, setCsvImporting] = useState(false);
-  const [batchEntries, setBatchEntries] = useState([{ name: '', role: 'student' as UserRole, class_id: null as number | null }]);
+  const [batchEntries, setBatchEntries] = useState([{ name: '', english_name: '', role: 'student' as UserRole, class_id: null as number | null }]);
   const [batchResult, setBatchResult] = useState<CredentialsResult | null>(null);
 
   useEffect(() => {
@@ -80,9 +80,12 @@ export function AdminUsersPage() {
               <CardTitle>单个创建</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-4">
                 <Field label="姓名">
                   <Input value={singleForm.name} onChange={(event) => setSingleForm((current) => ({ ...current, name: event.target.value }))} />
+                </Field>
+                <Field label="英文名">
+                  <Input value={singleForm.english_name} onChange={(event) => setSingleForm((current) => ({ ...current, english_name: event.target.value }))} />
                 </Field>
                 <SelectRole value={singleForm.role} onChange={(role) => setSingleForm((current) => ({ ...current, role }))} />
                 <SelectClass
@@ -194,7 +197,7 @@ export function AdminUsersPage() {
             <CardContent className="space-y-4">
               <div className="space-y-3">
                 {batchEntries.map((entry, index) => (
-                  <div key={`${index}-${entry.role}`} className="grid gap-3 rounded-xl bg-muted/40 p-4 md:grid-cols-[1.2fr_1fr_1fr_auto]">
+                  <div key={`${index}-${entry.role}`} className="grid gap-3 rounded-xl bg-muted/40 p-4 md:grid-cols-[1.2fr_1fr_1fr_1fr_auto]">
                     <Input
                       value={entry.name}
                       onChange={(event) =>
@@ -203,6 +206,15 @@ export function AdminUsersPage() {
                         )
                       }
                       placeholder="姓名"
+                    />
+                    <Input
+                      value={entry.english_name}
+                      onChange={(event) =>
+                        setBatchEntries((current) =>
+                          current.map((item, itemIndex) => itemIndex === index ? { ...item, english_name: event.target.value } : item)
+                        )
+                      }
+                      placeholder="英文名"
                     />
                     <Select
                       value={entry.role}
@@ -241,7 +253,7 @@ export function AdminUsersPage() {
                         <SelectItem value="__none__">不分配班级</SelectItem>
                         {classes.map((item) => (
                           <SelectItem key={item.id} value={String(item.id)}>
-                            {item.name} ({item.cid})
+                            {item.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -257,7 +269,7 @@ export function AdminUsersPage() {
                 ))}
               </div>
               <div className="flex flex-wrap gap-3">
-                <Button variant="outline" onClick={() => setBatchEntries((current) => [...current, { name: '', role: 'student', class_id: null }])}>
+                <Button variant="outline" onClick={() => setBatchEntries((current) => [...current, { name: '', english_name: '', role: 'student', class_id: null }])}>
                   <Plus className="size-4" />
                   新增一行
                 </Button>
@@ -323,11 +335,11 @@ function CsvFormatDialog({ children }: { children: React.ReactNode }) {
         <DialogHeader>
           <DialogTitle>CSV 格式</DialogTitle>
           <DialogDescription>
-            导入文件不包含表头，格式为 <code>姓名,用户类型,班级 ID</code>。用户类型可以为 <code>student</code>、<code>teacher</code> 或 <code>admin</code>。学生和教师可选填班级 ID，注意不要给 <code>admin</code> 填写班级 ID。以下是一个示例：
+            导入文件不包含表头，格式为 <code>中文名,英文名,用户类型,班级名称</code>。用户类型可以为 <code>student</code>、<code>teacher</code> 或 <code>admin</code>。学生和教师可选填班级名称，注意不要给 <code>admin</code> 填写班级。以下是一个示例：
           </DialogDescription>
         </DialogHeader>
         <pre className="overflow-x-auto rounded-xl border border-border/70 bg-muted/30 p-4 text-sm leading-6">
-          {`小奶龙,student,C0001\n大奶龙,teacher,C0001\n超级奶龙,admin,`}
+          {`小奶龙,Milk Dragon,student,一年级 1 班\n大奶龙,Big Dragon,teacher,一年级 1 班\n超级奶龙,,admin,`}
         </pre>
       </DialogContent>
     </Dialog>

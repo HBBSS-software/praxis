@@ -63,7 +63,7 @@ export function TeacherStudentsPage() {
   const [search, setSearch] = useState<ListSearchState<StudentSearchField>>(defaultStudentSearch);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [editing, setEditing] = useState<StudentWithClassSummary | null>(null);
-  const [form, setForm] = useState({ name: '', password: '', class_id: null as number | null });
+  const [form, setForm] = useState({ name: '', english_name: '', password: '', class_id: null as number | null });
   const [batchClassId, setBatchClassId] = useState<number | null>(null);
   const [batchResetOpen, setBatchResetOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
@@ -104,7 +104,7 @@ export function TeacherStudentsPage() {
     const query = search.query.trim();
     if (!query) return students;
 
-    return students.filter((student) => includesSearch(search.field === 'uid' ? student.uid : student.name, query));
+    return students.filter((student) => includesSearch(search.field === 'uid' ? String(student.uid) : student.name, query));
   }, [search, students]);
 
   const sortedStudents = useMemo(() => {
@@ -113,8 +113,8 @@ export function TeacherStudentsPage() {
       const rightDuration = durations[right.id] ?? 0;
       if (sortBy === 'duration-desc') return rightDuration - leftDuration || left.name.localeCompare(right.name);
       if (sortBy === 'duration-asc') return leftDuration - rightDuration || left.name.localeCompare(right.name);
-      if (sortBy === 'uid-desc') return right.uid.localeCompare(left.uid);
-      if (sortBy === 'uid-asc') return left.uid.localeCompare(right.uid);
+      if (sortBy === 'uid-desc') return right.uid - left.uid;
+      if (sortBy === 'uid-asc') return left.uid - right.uid;
       if (sortBy === 'class-asc') return compareStudentClass(left, right, 'asc');
       if (sortBy === 'class-desc') return compareStudentClass(left, right, 'desc');
       if (sortBy === 'name-desc') return right.name.localeCompare(left.name);
@@ -211,7 +211,7 @@ export function TeacherStudentsPage() {
           variant="outline"
           onClick={() => {
             setEditing(row.original);
-            setForm({ name: row.original.name, password: '', class_id: row.original.class_id });
+            setForm({ name: row.original.name, english_name: row.original.english_name ?? '', password: '', class_id: row.original.class_id });
           }}
         >
           <UserRoundCog className="size-4" />
@@ -241,11 +241,11 @@ export function TeacherStudentsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">未分配班级</SelectItem>
-                      {classes.map((item) => (
-                        <SelectItem key={item.id} value={String(item.id)}>
-                          {item.name} ({item.cid})
-                        </SelectItem>
-                      ))}
+                        {classes.map((item) => (
+                          <SelectItem key={item.id} value={String(item.id)}>
+                          {item.name}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                   <Button size="sm" variant="outline" onClick={() => void updateSelectedClass()}>批量改班级</Button>
@@ -271,8 +271,8 @@ export function TeacherStudentsPage() {
                 { label: '总时长从低到高', value: 'duration-asc' },
                 { label: 'UID 从小到大', value: 'uid-asc' },
                 { label: 'UID 从大到小', value: 'uid-desc' },
-                { label: '班级 CID 从小到大', value: 'class-asc' },
-                { label: '班级 CID 从大到小', value: 'class-desc' },
+                { label: '班级从小到大', value: 'class-asc' },
+                { label: '班级从大到小', value: 'class-desc' },
                 { label: '姓名 A-Z', value: 'name-asc' },
                 { label: '姓名 Z-A', value: 'name-desc' }
               ]}
@@ -300,6 +300,7 @@ export function TeacherStudentsPage() {
           </DialogHeader>
           <div className="space-y-4">
             <Field label="姓名"><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></Field>
+            <Field label="英文名"><Input value={form.english_name} onChange={(event) => setForm((current) => ({ ...current, english_name: event.target.value }))} /></Field>
             <Field label="新密码"><Input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} /></Field>
             <SelectClass classes={classes} value={form.class_id} onChange={(class_id) => setForm((current) => ({ ...current, class_id }))} />
             <Button
@@ -316,6 +317,7 @@ export function TeacherStudentsPage() {
                   await unwrapResponse(
                     createApiClient().teacher.students({ id: editing.id }).put({
                       name: form.name.trim(),
+                      english_name: form.english_name.trim() || null,
                       password: form.password,
                       class_id: form.class_id
                     })

@@ -126,16 +126,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "cid",
-      "entityType": "columns",
-      "table": "classes"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "name",
       "entityType": "columns",
       "table": "classes"
@@ -281,7 +271,7 @@
       "table": "practice_records"
     },
     {
-      "type": "text",
+      "type": "integer",
       "notNull": false,
       "autoincrement": false,
       "default": null,
@@ -606,16 +596,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "uid",
-      "entityType": "columns",
-      "table": "users"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "password",
       "entityType": "columns",
       "table": "users"
@@ -637,6 +617,16 @@
       "default": null,
       "generated": null,
       "name": "name",
+      "entityType": "columns",
+      "table": "users"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "english_name",
       "entityType": "columns",
       "table": "users"
     },
@@ -1012,14 +1002,14 @@
     {
       "columns": [
         {
-          "value": "cid",
+          "value": "name",
           "isExpression": false
         }
       ],
       "isUnique": true,
       "where": null,
       "origin": "manual",
-      "name": "classes_cid_unique",
+      "name": "classes_name_unique",
       "entityType": "indexes",
       "table": "classes"
     },
@@ -1306,20 +1296,6 @@
       "name": "temp_upload_deletions_expires_at_idx",
       "entityType": "indexes",
       "table": "temp_upload_deletions"
-    },
-    {
-      "columns": [
-        {
-          "value": "uid",
-          "isExpression": false
-        }
-      ],
-      "isUnique": true,
-      "where": null,
-      "origin": "manual",
-      "name": "users_uid_unique",
-      "entityType": "indexes",
-      "table": "users"
     },
     {
       "columns": [

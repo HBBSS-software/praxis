@@ -31,6 +31,7 @@ import {
   validateComment,
   validateContent,
   validateDuration,
+  validateEnglishName,
   validateLocation,
   validateName,
   validatePassword,
@@ -639,7 +640,13 @@ export const teacherRoutes = new Hono<AppBindings>()
     if (body.name !== undefined) {
       const error = validateName(body.name);
       if (error) return apiError(c, 400, error);
-      database.updateUserName(studentId, body.name.trim());
+      const englishNameError = validateEnglishName(body.english_name);
+      if (englishNameError) return apiError(c, 400, englishNameError);
+      database.updateUserName(studentId, body.name.trim(), body.english_name?.trim() || null);
+    } else if (body.english_name !== undefined) {
+      const englishNameError = validateEnglishName(body.english_name);
+      if (englishNameError) return apiError(c, 400, englishNameError);
+      database.updateUserName(studentId, student.name, body.english_name?.trim() || null);
     }
 
     if (body.password !== undefined && body.password !== '') {

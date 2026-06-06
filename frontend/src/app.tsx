@@ -23,6 +23,8 @@ function lazyPage<TModule extends Record<string, unknown>>(
 }
 
 const LoginPage = lazyPage(() => import('@/features/auth-page'), 'LoginPage');
+const StudentLoginPage = lazyPage(() => import('@/features/auth-page'), 'StudentLoginPage');
+const StaffLoginPage = lazyPage(() => import('@/features/auth-page'), 'StaffLoginPage');
 const SetupPasswordPage = lazyPage(() => import('@/features/setup-password-page'), 'SetupPasswordPage');
 const StudentDashboardPage = lazyPage(() => import('@/features/student'), 'StudentDashboardPage');
 const StudentUploadPage = lazyPage(() => import('@/features/student'), 'StudentUploadPage');
@@ -89,6 +91,16 @@ function LoginGuard() {
   return user ? <Navigate to={getDefaultPathByRole(user.role, user.password_setup_required)} replace /> : <DeferredRoute><LoginPage /></DeferredRoute>;
 }
 
+function StudentLoginGuard() {
+  const { user } = useSession();
+  return user ? <Navigate to={getDefaultPathByRole(user.role, user.password_setup_required)} replace /> : <DeferredRoute><StudentLoginPage /></DeferredRoute>;
+}
+
+function StaffLoginGuard() {
+  const { user } = useSession();
+  return user ? <Navigate to={getDefaultPathByRole(user.role, user.password_setup_required)} replace /> : <DeferredRoute><StaffLoginPage /></DeferredRoute>;
+}
+
 export function App() {
   return (
     <SessionProvider>
@@ -98,6 +110,8 @@ export function App() {
           <Routes>
             <Route path="/" element={<RootRedirect />} />
             <Route path="/login" element={<LoginGuard />} />
+            <Route path="/login/student" element={<StudentLoginGuard />} />
+            <Route path="/login/staff" element={<StaffLoginGuard />} />
             <Route path="/setup-password" element={<DeferredRoute><SetupPasswordPage /></DeferredRoute>} />
 
             <Route path="/student" element={<RoleLayout role="student" />}>

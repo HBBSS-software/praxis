@@ -3,20 +3,14 @@ import crypto from 'node:crypto';
 import { and, eq, getTableColumns, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 
 import { appConfig } from '../config';
-import type { PracticeRecord, PracticeTask, RecordFilters, User, UserRole, UserSummary } from '../models';
-import { MAX_RECORD_IMAGES, userRoles } from '../models';
+import type { PracticeRecord, PracticeTask, RecordFilters, User, UserSummary } from '../models';
+import { MAX_RECORD_IMAGES } from '../models';
 import { db } from './client';
 import { classes, classStudents, notifications, practiceRecords, practiceTasks, users, tempUploadDeletions } from './schema';
 
 export const deletedUserName = '已删除用户';
 export const uploadPathPattern = /^\/uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 export const tmpUploadPathPattern = /^\/tmp-uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
-export const rolePrefixes: Record<UserRole, string> = {
-  admin: 'A',
-  teacher: 'T',
-  student: 'S'
-};
-
 type UserRow = typeof users.$inferSelect;
 type ClassRow = typeof classes.$inferSelect;
 type PracticeTaskRow = typeof practiceTasks.$inferSelect;
@@ -37,10 +31,11 @@ export function generatePlainPassword() {
 export function toUser(row: UserRow): User {
   return {
     id: row.id,
-    uid: row.uid,
+    uid: row.id,
     password: row.password,
-    role: row.role as UserRole,
+    role: row.role as User['role'],
     name: row.name,
+    english_name: row.englishName,
     created_at: row.createdAt
   };
 }
@@ -81,29 +76,30 @@ export function toPracticeTask(row: PracticeTaskRow): PracticeTask {
   };
 }
 
-export function toStudentSummary(row: Pick<UserRow, 'id' | 'uid' | 'name' | 'createdAt'>) {
+export function toStudentSummary(row: Pick<UserRow, 'id' | 'name' | 'englishName' | 'createdAt'>) {
   return {
     id: row.id,
-    uid: row.uid,
+    uid: row.id,
     name: row.name,
+    english_name: row.englishName,
     created_at: row.createdAt
   };
 }
 
-export function toUserSummary(row: Pick<UserRow, 'id' | 'uid' | 'role' | 'name' | 'createdAt'>): UserSummary {
+export function toUserSummary(row: Pick<UserRow, 'id' | 'role' | 'name' | 'englishName' | 'createdAt'>): UserSummary {
   return {
     id: row.id,
-    uid: row.uid,
-    role: row.role as UserRole,
+    uid: row.id,
+    role: row.role as UserSummary['role'],
     name: row.name,
+    english_name: row.englishName,
     created_at: row.createdAt
   };
 }
 
-export function toClassSummary(row: Pick<ClassRow, 'id' | 'cid' | 'name' | 'createdAt'>) {
+export function toClassSummary(row: Pick<ClassRow, 'id' | 'name' | 'createdAt'>) {
   return {
     id: row.id,
-    cid: row.cid,
     name: row.name,
     created_at: row.createdAt
   };
@@ -128,8 +124,8 @@ export function activeUserById(id: number) {
   return and(eq(users.id, id), isNull(users.deletedAt));
 }
 
-export function activeUserByUid(uid: string) {
-  return and(eq(users.uid, uid), isNull(users.deletedAt));
+export function activeUserByUid(uid: number) {
+  return and(eq(users.id, uid), isNull(users.deletedAt));
 }
 
 export function parseImagePaths(value: string | null) {
@@ -176,7 +172,7 @@ export function userSearchCondition(query: string) {
   const normalized = normalizeSearchQuery(query);
   if (!normalized) return undefined;
   const pattern = `%${normalized}%`;
-  return sql`(${users.uid} like ${pattern} escape '\\' or ${users.name} like ${pattern} escape '\\' or ${users.nameInitials} like ${pattern} escape '\\')`;
+  return sql`(${users.id} like ${pattern} escape '\\' or ${users.name} like ${pattern} escape '\\' or coalesce(${users.englishName}, '') like ${pattern} escape '\\' or ${users.nameInitials} like ${pattern} escape '\\')`;
 }
 
 export function normalizeSearchQuery(query: string) {
@@ -189,11 +185,6 @@ export function uniquePositiveIds(ids: number[]) {
 
 export function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
-}
-
-export function parseUidNumber(uid: string) {
-  const numeric = Number.parseInt(uid.slice(1), 16);
-  return Number.isFinite(numeric) ? numeric : 0;
 }
 
 export function countWords(value: string) {
@@ -240,6 +231,6 @@ export function buildRecordWhere(filters: RecordFilters = {}, visibleStudentIds?
 export function recordIdentitySelect() {
   return {
     student_name: sql<string>`case when ${users.id} is null or ${users.deletedAt} is not null then ${deletedUserName} else ${users.name} end`,
-    student_uid: sql<string>`case when ${users.id} is null then coalesce(${practiceRecords.studentUidSnapshot}, '') else ${users.uid} end`
+    student_uid: sql<number>`case when ${users.id} is null then coalesce(${practiceRecords.studentUidSnapshot}, 0) else ${users.id} end`
   };
 }

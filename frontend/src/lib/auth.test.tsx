@@ -8,9 +8,10 @@ afterEach(cleanup);
 
 const mockUser: StoredUser = {
   id: 1,
-  uid: 'A00001',
+  uid: 1,
   role: 'admin',
   name: '管理员',
+  english_name: null,
   password_setup_required: false
 };
 

@@ -100,7 +100,7 @@ export function SelectClass({
           <SelectItem value="__none__">不分配班级</SelectItem>
           {classes.map((item) => (
             <SelectItem key={item.id} value={String(item.id)}>
-              {item.name} ({item.cid})
+              {item.name}
             </SelectItem>
           ))}
         </SelectContent>
@@ -109,23 +109,23 @@ export function SelectClass({
   );
 }
 
-export function formatStudentClass(student: Pick<StudentWithClassSummary, 'class_cid' | 'class_name'>) {
-  return student.class_cid && student.class_name ? `${student.class_cid} ${student.class_name}` : <span className="text-muted-foreground">未分配</span>;
+export function formatStudentClass(student: Pick<StudentWithClassSummary, 'class_name'>) {
+  return student.class_name ? student.class_name : <span className="text-muted-foreground">未分配</span>;
 }
 
-export function getStudentClassSortValue(student: Pick<StudentWithClassSummary, 'class_cid'>) {
-  return student.class_cid ?? null;
+export function getStudentClassSortValue(student: Pick<StudentWithClassSummary, 'class_name'>) {
+  return student.class_name ?? null;
 }
 
-export function compareStudentClass(left: Pick<StudentWithClassSummary, 'class_cid' | 'uid'>, right: Pick<StudentWithClassSummary, 'class_cid' | 'uid'>, direction: 'asc' | 'desc') {
+export function compareStudentClass(left: Pick<StudentWithClassSummary, 'class_name' | 'uid'>, right: Pick<StudentWithClassSummary, 'class_name' | 'uid'>, direction: 'asc' | 'desc') {
   const leftClass = getStudentClassSortValue(left);
   const rightClass = getStudentClassSortValue(right);
 
-  if (!leftClass && !rightClass) return left.uid.localeCompare(right.uid);
+  if (!leftClass && !rightClass) return left.uid - right.uid;
   if (!leftClass) return 1;
   if (!rightClass) return -1;
 
-  const result = leftClass.localeCompare(rightClass) || left.uid.localeCompare(right.uid);
+  const result = leftClass.localeCompare(rightClass) || left.uid - right.uid;
   return direction === 'asc' ? result : -result;
 }
 

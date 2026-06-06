@@ -1,6 +1,7 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { getConnInfo } from '@hono/node-server/conninfo';
+import { randomBytes } from 'node:crypto';
 
 import { clearLoginFailures, getRemainingLockoutMs, recordLoginFailure } from '../auth/login-attempts';
 import { trustProxy } from '../auth/config';
@@ -9,17 +10,25 @@ import { decryptEnvelope, EnvelopeDecryptError, getPublicKey } from '../auth/pas
 import database from '../database';
 import {
   apiError,
+  classSearchQuerySchema,
+  loginSelectionBodySchema,
   loginBodySchema,
   passwordBodySchema,
   profileBodySchema,
   requireAuthenticatedUser,
+  staffLoginBodySchema,
+  studentNameLoginBodySchema,
+  studentUidLoginBodySchema,
   validateName,
   validatePassword,
   validationHook
 } from '../http';
+import type { User } from '../models';
 import { authMiddleware, signAccessToken, setAuthCookie, clearAuthCookie, type AppBindings } from '../plugins/auth';
 
 const dummyPasswordHash = await hashPassword('not-the-real-password');
+const loginChallenges = new Map<string, { userIds: Set<number>; expiresAt: number }>();
+const loginChallengeTtlMs = 5 * 60 * 1000;
 
 function resolveDirectClientAddress(c: Parameters<typeof getConnInfo>[0]) {
   try {
@@ -53,17 +62,189 @@ function buildNetworkAttemptKey(clientAddress: string) {
   return `net:${clientAddress}`;
 }
 
+function buildLoginAttemptKey(kind: string, identifier: string, clientAddress: string) {
+  return `${kind}:${identifier}@${clientAddress}`;
+}
+
+function decryptLoginPassword(envelope: string) {
+  try {
+    return decryptEnvelope(envelope);
+  } catch (error) {
+    if (error instanceof EnvelopeDecryptError) {
+      throw error;
+    }
+
+    throw error;
+  }
+}
+
+function toLoginCandidate(user: User) {
+  return {
+    uid: user.uid,
+    role: user.role,
+    name: user.name,
+    english_name: user.english_name
+  };
+}
+
+function toAuthUser(user: User) {
+  return {
+    id: user.id,
+    uid: user.uid,
+    role: user.role,
+    name: user.name,
+    english_name: user.english_name,
+    password_setup_required: isLowCostPasswordHash(user.password)
+  };
+}
+
+async function finishLogin(user: User, c: Context<AppBindings>) {
+  const authUser = toAuthUser(user);
+  const token = await signAccessToken(authUser);
+  setAuthCookie(c, token);
+  c.header('cache-control', 'no-store');
+  return c.json({ token, user: authUser });
+}
+
+function createLoginChallenge(users: User[]) {
+  const challenge = randomBytes(32).toString('base64url');
+  loginChallenges.set(challenge, {
+    userIds: new Set(users.map((user) => user.id)),
+    expiresAt: Date.now() + loginChallengeTtlMs
+  });
+  return challenge;
+}
+
+function cleanupLoginChallenges() {
+  const now = Date.now();
+  for (const [challenge, value] of loginChallenges) {
+    if (value.expiresAt <= now) {
+      loginChallenges.delete(challenge);
+    }
+  }
+}
+
+async function resolveLogin(c: Context<AppBindings>, kind: string, identifier: string, candidates: User[], passwordEnvelope: string) {
+  let password: string;
+
+  try {
+    password = decryptLoginPassword(passwordEnvelope);
+  } catch (error) {
+    if (error instanceof EnvelopeDecryptError) {
+      c.header('cache-control', 'no-store');
+      return apiError(c, 400, error.message);
+    }
+
+    throw error;
+  }
+
+  if (!password) {
+    return apiError(c, 400, '密码不能为空。');
+  }
+
+  const clientAddress = resolveClientAddress(c);
+  const attemptKey = buildLoginAttemptKey(kind, identifier, clientAddress);
+  const remainingMs = getRemainingLockoutMs(attemptKey);
+
+  if (remainingMs > 0) {
+    c.header('cache-control', 'no-store');
+    return apiError(c, 429, `登录失败次数过多，请在 ${Math.ceil(remainingMs / 1000)} 秒后重试。`);
+  }
+
+  if (candidates.length === 0) {
+    await verifyPassword(password, dummyPasswordHash);
+    recordLoginFailure(attemptKey);
+    c.header('cache-control', 'no-store');
+    return apiError(c, 401, '账号或密码错误。');
+  }
+
+  const matched: User[] = [];
+
+  for (const user of candidates) {
+    if (await verifyPassword(password, user.password)) {
+      matched.push(user);
+    }
+  }
+
+  if (matched.length === 0) {
+    recordLoginFailure(attemptKey);
+    c.header('cache-control', 'no-store');
+    return apiError(c, 401, '账号或密码错误。');
+  }
+
+  clearLoginFailures(attemptKey);
+
+  if (matched.length === 1) {
+    return await finishLogin(matched[0]!, c);
+  }
+
+  c.header('cache-control', 'no-store');
+  return c.json({
+    challenge: createLoginChallenge(matched),
+    candidates: matched.map(toLoginCandidate)
+  });
+}
+
 export const authRoutes = new Hono<AppBindings>()
   .use('*', authMiddleware)
   .get('/public-key', (c) => {
     c.header('cache-control', 'no-store');
     return c.json(getPublicKey());
   })
+  .get('/classes/search', zValidator('query', classSearchQuerySchema, validationHook), (c) => {
+    const query = c.req.valid('query');
+    return c.json({ classes: database.searchClasses(query.q?.trim() ?? '') });
+  })
+  .post('/login/student-uid', zValidator('json', studentUidLoginBodySchema, validationHook), async (c) => {
+    const body = c.req.valid('json');
+    const user = database.findStudentByUid(body.uid);
+    return await resolveLogin(c, 'student-uid', String(body.uid), user ? [user] : [], body.password);
+  })
+  .post('/login/student-name', zValidator('json', studentNameLoginBodySchema, validationHook), async (c) => {
+    const body = c.req.valid('json');
+    const targetClass = database.findClassById(body.class_id);
+
+    if (!targetClass) {
+      return apiError(c, 404, '班级不存在。');
+    }
+
+    return await resolveLogin(
+      c,
+      'student-name',
+      `${body.class_id}:${body.name.trim()}`,
+      database.findStudentsByClassAndName(body.class_id, body.name.trim()),
+      body.password
+    );
+  })
+  .post('/login/staff', zValidator('json', staffLoginBodySchema, validationHook), async (c) => {
+    const body = c.req.valid('json');
+    return await resolveLogin(c, 'staff', body.identifier.trim(), database.findStaffByIdentifier(body.identifier), body.password);
+  })
+  .post('/login/select', zValidator('json', loginSelectionBodySchema, validationHook), async (c) => {
+    cleanupLoginChallenges();
+    const body = c.req.valid('json');
+    const challenge = loginChallenges.get(body.challenge);
+
+    if (!challenge || !challenge.userIds.has(body.uid)) {
+      c.header('cache-control', 'no-store');
+      return apiError(c, 401, '登录选择已失效，请重新登录。');
+    }
+
+    loginChallenges.delete(body.challenge);
+    const user = database.findUserByUid(body.uid);
+
+    if (!user) {
+      c.header('cache-control', 'no-store');
+      return apiError(c, 401, '登录选择已失效，请重新登录。');
+    }
+
+    return await finishLogin(user, c);
+  })
   .post('/login', zValidator('json', loginBodySchema, validationHook), async (c) => {
     const body = c.req.valid('json');
-    const uid = body.uid.trim().toUpperCase();
+    const uid = Number(body.uid.trim());
     const clientAddress = resolveClientAddress(c);
-    const uidAttemptKey = buildUidAttemptKey(uid, clientAddress);
+    const uidAttemptKey = buildUidAttemptKey(String(uid), clientAddress);
     const networkAttemptKey = buildNetworkAttemptKey(clientAddress);
 
     let password: string;
@@ -79,7 +260,7 @@ export const authRoutes = new Hono<AppBindings>()
       throw error;
     }
 
-    if (!uid || !password) {
+    if (!Number.isInteger(uid) || uid <= 0 || !password) {
       return apiError(c, 400, 'UID 和密码不能为空。');
     }
 
@@ -123,6 +304,7 @@ export const authRoutes = new Hono<AppBindings>()
       uid: user.uid,
       role: user.role,
       name: user.name,
+      english_name: user.english_name,
       password_setup_required: passwordSetupRequired
     };
 

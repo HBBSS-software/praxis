@@ -91,8 +91,8 @@ export function TaskFormDialog({
   const loadClassOptions = useCallback(async (query: string) => {
     const normalized = query.trim().toLowerCase();
     return classes
-      .filter((item) => !normalized || item.name.toLowerCase().includes(normalized) || item.cid.toLowerCase().includes(normalized))
-      .map((item) => ({ label: `${item.name} (${item.cid})`, value: String(item.id) }));
+      .filter((item) => !normalized || item.name.toLowerCase().includes(normalized))
+      .map((item) => ({ label: item.name, value: String(item.id) }));
   }, [classes]);
 
   return (

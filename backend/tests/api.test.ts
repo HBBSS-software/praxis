@@ -42,6 +42,7 @@ type LoginAttemptsModule = typeof import('../src/auth/login-attempts');
 type CsvImportModule = typeof import('../src/csv/user-import');
 type AppModule = typeof import('../src/app');
 type PasswordModule = typeof import('../src/auth/password');
+type ConfigModule = typeof import('../src/config');
 
 let database: DatabaseModule['default'];
 let app: AppModule['app'];
@@ -53,14 +54,16 @@ let parseUserImportCsvText: CsvImportModule['parseUserImportCsvText'];
 let createUserCredentialsCsv: CsvImportModule['createUserCredentialsCsv'];
 let hashPassword: PasswordModule['hashPassword'];
 let isLowCostPasswordHash: PasswordModule['isLowCostPasswordHash'];
+let appConfig: ConfigModule['appConfig'];
 
 beforeAll(async () => {
-  const [databaseModule, loginAttemptsModule, csvImportModule, appModule, passwordModule] = await Promise.all([
+  const [databaseModule, loginAttemptsModule, csvImportModule, appModule, passwordModule, configModule] = await Promise.all([
     import('../src/database'),
     import('../src/auth/login-attempts'),
     import('../src/csv/user-import'),
     import('../src/app'),
-    import('../src/auth/password')
+    import('../src/auth/password'),
+    import('../src/config')
   ]);
 
   database = databaseModule.default;
@@ -73,6 +76,7 @@ beforeAll(async () => {
   createUserCredentialsCsv = csvImportModule.createUserCredentialsCsv;
   hashPassword = passwordModule.hashPassword;
   isLowCostPasswordHash = passwordModule.isLowCostPasswordHash;
+  appConfig = configModule.appConfig;
 
   await database.createUsers([
     { name: '测试教师', role: 'teacher' },
@@ -156,8 +160,8 @@ async function encryptPassword(plaintext: string) {
   return [keyId, toBase64Url(cipherText), toBase64Url(iv), toBase64Url(aesPayload)].join('.');
 }
 
-async function loginAs(uid: string, password: string) {
-  const response = await jsonRequest('/api/auth/login', { uid, password: await encryptPassword(password) }, { method: 'POST' });
+async function loginAs(uid: number | string, password: string) {
+  const response = await jsonRequest('/api/auth/login', { uid: String(uid), password: await encryptPassword(password) }, { method: 'POST' });
   const payload = await readJson(response);
 
   if (!response.ok) {
@@ -167,8 +171,8 @@ async function loginAs(uid: string, password: string) {
   return payload.token as string;
 }
 
-async function signTokenWithAudience(uid: string, audience: string) {
-  const user = database.findUserByUid(uid);
+async function signTokenWithAudience(uid: number | string, audience: string) {
+  const user = database.findUserByUid(Number(uid));
 
   if (!user) {
     throw new Error(`user not found: ${uid}`);
@@ -179,6 +183,7 @@ async function signTokenWithAudience(uid: string, audience: string) {
     uid: user.uid,
     role: user.role,
     name: user.name,
+    english_name: user.english_name,
     password_setup_required: false
   })
     .setProtectedHeader({ alg: 'HS256' })
@@ -189,8 +194,8 @@ async function signTokenWithAudience(uid: string, audience: string) {
     .sign(new TextEncoder().encode(testJwtSecret));
 }
 
-async function setNormalPassword(uid: string, password: string) {
-  const user = database.findUserByUid(uid);
+async function setNormalPassword(uid: number | string, password: string) {
+  const user = database.findUserByUid(Number(uid));
 
   if (!user) {
     throw new Error(`user not found: ${uid}`);
@@ -241,13 +246,13 @@ describe('database bootstrap and users', () => {
       { name: '批量学生', role: 'student', classId: targetClass.id }
     ]);
 
-    expect(createdStudent.uid).toMatch(/^S/);
+    expect(createdStudent.uid).toBe(createdStudent.id);
     expect(createdStudent.password).toHaveLength(8);
     expect(database.findUserById(createdStudent.id)?.password).toMatch(/^argon2id\$low-v2\$[0-9a-f]+\$[0-9a-f]+$/);
     expect(isLowCostPasswordHash(database.findUserById(createdStudent.id)?.password ?? '')).toBe(true);
-    expect(createdUsers[0]?.uid).toMatch(/^T/);
-    expect(createdUsers[1]?.uid).toMatch(/^A/);
-    expect(createdUsers[2]?.uid).toMatch(/^S/);
+    expect(createdUsers[0]?.uid).toBe(createdUsers[0]?.id);
+    expect(createdUsers[1]?.uid).toBe(createdUsers[1]?.id);
+    expect(createdUsers[2]?.uid).toBe(createdUsers[2]?.id);
     expect(database.getUsersByRole('teacher').some((user) => user.uid === createdUsers[0]?.uid)).toBe(true);
     expect(createdUsers[2] ? database.getStudentClassId(createdUsers[2].id) : null).toBe(targetClass.id);
     expect(database.isValidRole('teacher')).toBe(true);
@@ -275,7 +280,7 @@ describe('database bootstrap and users', () => {
 
 describe('assignments, records and notifications', () => {
   test('assigns teachers and students to a class and supports removing assignments', () => {
-    const teacher = database.findUserByUid('T00001');
+    const teacher = database.findUserByUid(2);
     const students = database.getAllStudents().slice(0, 2);
     const targetClass = database.createClass('测试班级');
 
@@ -297,7 +302,7 @@ describe('assignments, records and notifications', () => {
   });
 
   test('creates, updates and deletes practice records', () => {
-    const student = database.findUserByUid('S00002');
+    const student = database.findUserByUid(4);
     expect(student).toBeTruthy();
 
     const createdRecord = database.createRecord({
@@ -336,7 +341,7 @@ describe('assignments, records and notifications', () => {
   });
 
   test('cleans up replaced and deleted record images', () => {
-    const student = database.findUserByUid('S00002');
+    const student = database.findUserByUid(4);
     expect(student).toBeTruthy();
 
     const firstImage = createTempUpload(`test-record-image-${Date.now()}-1.webp`, 'first');
@@ -380,7 +385,7 @@ describe('assignments, records and notifications', () => {
   });
 
   test('keeps reused record images and removes only deleted images', () => {
-    const student = database.findUserByUid('S00002');
+    const student = database.findUserByUid(4);
     expect(student).toBeTruthy();
 
     const firstImage = createTempUpload(`test-record-image-${Date.now()}-keep-1.webp`, 'first');
@@ -423,7 +428,7 @@ describe('assignments, records and notifications', () => {
   });
 
   test('keeps deleted student records visible to the assigned teacher', async () => {
-    const teacher = database.findUserByUid('T00001');
+    const teacher = database.findUserByUid(2);
     const student = await database.createUser('将被删除的学生', 'student');
     const targetClass = database.createClass('历史班级');
 
@@ -452,7 +457,7 @@ describe('assignments, records and notifications', () => {
   });
 
   test('tracks unread notifications and aggregate statistics', () => {
-    const student = database.findUserByUid('S00001');
+    const student = database.findUserByUid(3);
     expect(student).toBeTruthy();
 
     const notification = database.createNotification(student!.id, 'approved', '你的记录已通过。');
@@ -473,7 +478,7 @@ describe('route behavior', () => {
   test('requires users with random initial passwords to set a new password after login', async () => {
     const createdUser = await database.createUser('待设置密码用户', 'student');
     const response = await jsonRequest('/api/auth/login', {
-      uid: createdUser.uid,
+      uid: String(createdUser.uid),
       password: await encryptPassword(createdUser.password)
     }, { method: 'POST' });
     const payload = await readJson(response);
@@ -510,7 +515,7 @@ describe('route behavior', () => {
     expect(decodeJwt(changePasswordPayload.token as string).aud).toBe('student');
 
     const reloginResponse = await jsonRequest('/api/auth/login', {
-      uid: createdUser.uid,
+      uid: String(createdUser.uid),
       password: await encryptPassword('new-password-01')
     }, { method: 'POST' });
     const reloginPayload = await readJson(reloginResponse);
@@ -523,6 +528,44 @@ describe('route behavior', () => {
     });
   });
 
+  test('searches login classes and resolves duplicate student name login by selection', async () => {
+    const targetClass = database.createClass(`登录班级 ${Date.now()}`);
+    const [firstStudent, secondStudent] = await database.createUsers([
+      { name: '重名学生', englishName: 'First Student', role: 'student', classId: targetClass.id },
+      { name: '重名学生', englishName: 'Second Student', role: 'student', classId: targetClass.id }
+    ]);
+    await database.updateUserPassword(firstStudent!.id, await hashPassword('same-pass-01'));
+    await database.updateUserPassword(secondStudent!.id, await hashPassword('same-pass-01'));
+
+    const searchResponse = await apiRequest(`/api/auth/classes/search?q=${encodeURIComponent('登录班级')}`);
+    const searchPayload = await readJson(searchResponse);
+    expect(searchResponse.status).toBe(200);
+    expect((searchPayload.classes as Array<{ id: number }>).some((item) => item.id === targetClass.id)).toBe(true);
+
+    const loginResponse = await jsonRequest('/api/auth/login/student-name', {
+      class_id: targetClass.id,
+      name: '重名学生',
+      password: await encryptPassword('same-pass-01')
+    }, { method: 'POST' });
+    const loginPayload = await readJson(loginResponse);
+
+    expect(loginResponse.status).toBe(200);
+    expect(loginPayload.challenge).toEqual(expect.any(String));
+    expect(loginPayload.candidates).toMatchObject([
+      { uid: firstStudent!.uid, name: '重名学生', english_name: 'First Student' },
+      { uid: secondStudent!.uid, name: '重名学生', english_name: 'Second Student' }
+    ]);
+
+    const selectResponse = await jsonRequest('/api/auth/login/select', {
+      challenge: loginPayload.challenge,
+      uid: secondStudent!.uid
+    }, { method: 'POST' });
+    const selectPayload = await readJson(selectResponse);
+
+    expect(selectResponse.status).toBe(200);
+    expect(selectPayload.user).toMatchObject({ uid: secondStudent!.uid, name: '重名学生' });
+  });
+
   test('exposes runtime values from config', async () => {
     const response = await apiRequest('/api/config');
     const payload = await readJson(response);
@@ -530,11 +573,12 @@ describe('route behavior', () => {
     expect(response.status).toBe(200);
     expect(payload.site_name).toBe('Test Praxis');
     expect(payload.upload_image_max_size_bytes).toBe(5 * 1024 * 1024);
+    expect(payload.is_production).toBe(false);
   });
 
   test('rejects malformed password envelopes in the backend', async () => {
-    await setNormalPassword('T00001', 'teacher-pass-01');
-    const token = await loginAs('T00001', 'teacher-pass-01');
+    await setNormalPassword('2', 'teacher-pass-01');
+    const token = await loginAs('2', 'teacher-pass-01');
     expect(decodeJwt(token).aud).toBe('teacher');
     const response = await jsonRequest('/api/auth/password', {
       current_password: await encryptPassword('teacher-pass-01'),
@@ -550,9 +594,48 @@ describe('route behavior', () => {
     expect((await readJson(response)).error).toBe('密码格式无效。');
   });
 
+  test('enforces strong password policy only in production', async () => {
+    await setNormalPassword('2', 'teacher-pass-01');
+    const token = await loginAs('2', 'teacher-pass-01');
+    const wasProduction = appConfig.is_production;
+
+    try {
+      appConfig.is_production = true;
+
+      const weakResponse = await jsonRequest('/api/auth/password', {
+        current_password: await encryptPassword('teacher-pass-01'),
+        new_password: await encryptPassword('new-password-01')
+      }, {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${token}`
+        }
+      });
+
+      expect(weakResponse.status).toBe(400);
+      expect((await readJson(weakResponse)).error).toBe('密码必须包含大写字母、小写字母、数字和特殊符号。');
+
+      appConfig.is_production = false;
+
+      const devResponse = await jsonRequest('/api/auth/password', {
+        current_password: await encryptPassword('teacher-pass-01'),
+        new_password: await encryptPassword('new-password-01')
+      }, {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${token}`
+        }
+      });
+
+      expect(devResponse.status).toBe(200);
+    } finally {
+      appConfig.is_production = wasProduction;
+    }
+  });
+
   test('rejects non-image content during upload even if the declared type is allowed', async () => {
-    await setNormalPassword('S00001', 'student-pass-01');
-    const token = await loginAs('S00001', 'student-pass-01');
+    await setNormalPassword('3', 'student-pass-01');
+    const token = await loginAs('3', 'student-pass-01');
     expect(decodeJwt(token).aud).toBe('student');
     const formData = new FormData();
     formData.set('image', new File(['not really an image'], 'fake.png', { type: 'image/png' }));
@@ -569,8 +652,8 @@ describe('route behavior', () => {
   });
 
   test('rejects oversized images during upload', async () => {
-    await setNormalPassword('S00001', 'student-pass-01');
-    const token = await loginAs('S00001', 'student-pass-01');
+    await setNormalPassword('3', 'student-pass-01');
+    const token = await loginAs('3', 'student-pass-01');
     const oversizedImage = new Uint8Array(5 * 1024 * 1024 + 1);
     oversizedImage.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     const formData = new FormData();
@@ -588,21 +671,21 @@ describe('route behavior', () => {
   });
 
   test('restricts uploaded images to permitted users', async () => {
-    await setNormalPassword('S00001', 'student-pass-01');
-    await setNormalPassword('S00002', 'student-pass-02');
-    await setNormalPassword('T00001', 'teacher-pass-01');
-    await setNormalPassword('A00001', 'admin-pass-01');
+    await setNormalPassword('3', 'student-pass-01');
+    await setNormalPassword('4', 'student-pass-02');
+    await setNormalPassword('2', 'teacher-pass-01');
+    await setNormalPassword('1', 'admin-pass-01');
 
-    const student = database.findUserByUid('S00001')!;
-    const teacher = database.findUserByUid('T00001')!;
+    const student = database.findUserByUid(3)!;
+    const teacher = database.findUserByUid(2)!;
     const targetClass = database.createClass('图片权限班级');
     database.assignTeachersToClass(targetClass.id, [teacher.id]);
     database.assignStudentsToClass(targetClass.id, [student.id]);
 
-    const studentToken = await loginAs('S00001', 'student-pass-01');
-    const otherStudentToken = await loginAs('S00002', 'student-pass-02');
-    const teacherToken = await loginAs('T00001', 'teacher-pass-01');
-    const adminToken = await loginAs('A00001', 'admin-pass-01');
+    const studentToken = await loginAs('3', 'student-pass-01');
+    const otherStudentToken = await loginAs('4', 'student-pass-02');
+    const teacherToken = await loginAs('2', 'teacher-pass-01');
+    const adminToken = await loginAs('1', 'admin-pass-01');
 
     const imageBytes = new Uint8Array([
       0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -672,10 +755,10 @@ describe('route behavior', () => {
   });
 
   test('rejects future practice dates', async () => {
-    await setNormalPassword('S00001', 'student-pass-01');
-    const student = database.findUserByUid('S00001')!;
+    await setNormalPassword('3', 'student-pass-01');
+    const student = database.findUserByUid(3)!;
     const task = createOpenTaskForStudent(student.id);
-    const token = await loginAs('S00001', 'student-pass-01');
+    const token = await loginAs('3', 'student-pass-01');
     const tomorrowDate = new Date();
     tomorrowDate.setDate(tomorrowDate.getDate() + 1);
     const tomorrow = `${tomorrowDate.getFullYear()}-${String(tomorrowDate.getMonth() + 1).padStart(2, '0')}-${String(tomorrowDate.getDate()).padStart(2, '0')}`;
@@ -701,8 +784,8 @@ describe('route behavior', () => {
   });
 
   test('resubmits rejected record as pending after student edit', async () => {
-    await setNormalPassword('S00001', 'student-pass-01');
-    const student = database.findUserByUid('S00001')!;
+    await setNormalPassword('3', 'student-pass-01');
+    const student = database.findUserByUid(3)!;
     const task = createOpenTaskForStudent(student.id);
     const record = database.createRecord({
       task_id: task.id,
@@ -743,8 +826,8 @@ describe('route behavior', () => {
   });
 
   test('keeps existing images when student edit omits image fields', async () => {
-    await setNormalPassword('S00001', 'student-pass-01');
-    const student = database.findUserByUid('S00001')!;
+    await setNormalPassword('3', 'student-pass-01');
+    const student = database.findUserByUid(3)!;
     const task = createOpenTaskForStudent(student.id);
     const image = createTempUpload(`test-record-image-${Date.now()}-student-keep.webp`, 'image');
     const record = database.createRecord({
@@ -786,8 +869,8 @@ describe('route behavior', () => {
   });
 
   test('prevents admins from deleting themselves', async () => {
-    await setNormalPassword('A00001', 'admin-pass-01');
-    const token = await loginAs('A00001', 'admin-pass-01');
+    await setNormalPassword('1', 'admin-pass-01');
+    const token = await loginAs('1', 'admin-pass-01');
     expect(decodeJwt(token).aud).toBe('admin');
 
     const response = await jsonRequest('/api/admin/users/1', undefined, {
@@ -802,8 +885,8 @@ describe('route behavior', () => {
   });
 
   test('rejects tokens whose audience does not match the user role', async () => {
-    await setNormalPassword('S00001', 'student-pass-01');
-    const token = await signTokenWithAudience('S00001', 'admin');
+    await setNormalPassword('3', 'student-pass-01');
+    const token = await signTokenWithAudience('3', 'admin');
     const response = await apiRequest('/api/students/me/records', {
       headers: {
         authorization: `Bearer ${token}`
@@ -815,8 +898,8 @@ describe('route behavior', () => {
   });
 
   test('creates teachers with one selected class from single and batch forms', async () => {
-    await setNormalPassword('A00001', 'admin-pass-01');
-    const token = await loginAs('A00001', 'admin-pass-01');
+    await setNormalPassword('1', 'admin-pass-01');
+    const token = await loginAs('1', 'admin-pass-01');
     const singleClass = database.createClass('单个教师班级');
     const batchClass = database.createClass('批量教师班级');
 
@@ -855,8 +938,8 @@ describe('route behavior', () => {
   });
 
   test('rejects oversized csv imports in the backend', async () => {
-    await setNormalPassword('A00001', 'admin-pass-01');
-    const token = await loginAs('A00001', 'admin-pass-01');
+    await setNormalPassword('1', 'admin-pass-01');
+    const token = await loginAs('1', 'admin-pass-01');
     const oversizedCsv = new Uint8Array(50 * 1024 * 1024 + 1);
     oversizedCsv.set(new TextEncoder().encode('张三,student\n'));
     const formData = new FormData();
@@ -873,12 +956,12 @@ describe('route behavior', () => {
     expect((await readJson(response)).error).toBe('CSV 文件大小不能超过 50 MiB。');
   });
 
-  test('imports csv users with optional student and teacher class cid', async () => {
-    await setNormalPassword('A00001', 'admin-pass-01');
-    const token = await loginAs('A00001', 'admin-pass-01');
+  test('imports csv users with optional student and teacher class name', async () => {
+    await setNormalPassword('1', 'admin-pass-01');
+    const token = await loginAs('1', 'admin-pass-01');
     const targetClass = database.createClass('CSV 导入班级');
     const formData = new FormData();
-    formData.set('file', new File([`CSV 学生,student,${targetClass.cid}\nCSV 教师,teacher,${targetClass.cid}\nCSV 管理员,admin,\n`], 'users.csv', { type: 'text/csv' }));
+    formData.set('file', new File([`CSV 学生,CSV Student,student,${targetClass.name}\nCSV 教师,CSV Teacher,teacher,${targetClass.name}\nCSV 管理员,,admin,\n`], 'users.csv', { type: 'text/csv' }));
 
     const response = await formRequest('/api/admin/users/import', formData, {
       method: 'POST',
@@ -890,18 +973,18 @@ describe('route behavior', () => {
 
     expect(response.status).toBe(200);
     expect((payload.users as Array<{ id: number; role: string }>)).toHaveLength(3);
-    expect(payload.credentialsCsv).toContain('"name","uid","role","password"');
+    expect(payload.credentialsCsv).toContain('"name","english_name","uid","role","password"');
     const student = (payload.users as Array<{ id: number; role: string }>).find((user) => user.role === 'student');
     const teacher = (payload.users as Array<{ id: number; role: string }>).find((user) => user.role === 'teacher');
     expect(student ? database.getStudentClassId(student.id) : null).toBe(targetClass.id);
     expect(teacher ? database.getTeacherClassIds(teacher.id) : []).toContain(targetClass.id);
   });
 
-  test('rejects csv class cid problems by role', async () => {
-    await setNormalPassword('A00001', 'admin-pass-01');
-    const token = await loginAs('A00001', 'admin-pass-01');
+  test('rejects csv class name problems by role', async () => {
+    await setNormalPassword('1', 'admin-pass-01');
+    const token = await loginAs('1', 'admin-pass-01');
     const adminClassData = new FormData();
-    adminClassData.set('file', new File(['CSV 管理员,admin,C0001\n'], 'users.csv', { type: 'text/csv' }));
+    adminClassData.set('file', new File(['CSV 管理员,,admin,不存在班级\n'], 'users.csv', { type: 'text/csv' }));
 
     const adminClassResponse = await formRequest('/api/admin/users/import/preview', adminClassData, {
       method: 'POST',
@@ -911,10 +994,10 @@ describe('route behavior', () => {
     });
 
     expect(adminClassResponse.status).toBe(400);
-    expect((await readJson(adminClassResponse)).error).toBe('第 1 行错误：管理员不能填写班级 ID。');
+    expect((await readJson(adminClassResponse)).error).toBe('第 1 行错误：管理员不能填写班级。');
 
     const missingClassData = new FormData();
-    missingClassData.set('file', new File(['CSV 学生,student,Cffff\n'], 'users.csv', { type: 'text/csv' }));
+    missingClassData.set('file', new File(['CSV 学生,,student,不存在班级\n'], 'users.csv', { type: 'text/csv' }));
 
     const missingClassResponse = await formRequest('/api/admin/users/import/preview', missingClassData, {
       method: 'POST',
@@ -924,12 +1007,12 @@ describe('route behavior', () => {
     });
 
     expect(missingClassResponse.status).toBe(400);
-    expect((await readJson(missingClassResponse)).error).toBe('第 1 行错误：班级 ID 不存在或错误。');
+    expect((await readJson(missingClassResponse)).error).toBe('第 1 行错误：班级不存在或错误。');
   });
 
   test('escapes formula injection in task record export', async () => {
-    await setNormalPassword('A00001', 'admin-pass-01');
-    const token = await loginAs('A00001', 'admin-pass-01');
+    await setNormalPassword('1', 'admin-pass-01');
+    const token = await loginAs('1', 'admin-pass-01');
     const student = await database.createUser('导出测试学生', 'student');
     const targetClass = database.createClass(`导出班级 ${Date.now()}`);
 
@@ -970,17 +1053,17 @@ describe('route behavior', () => {
 
     expect(dataLine).toContain('"\'=cmd|""/c calc""!A0"');
     expect(dataLine).toContain('"\'@SUM(1+1)"');
-    expect(dataLine).toContain(`"${targetClass.name} (${targetClass.cid})"`);
+    expect(dataLine).toContain(`"${targetClass.name}"`);
     expect(dataLine).not.toContain(',"=cmd');
   });
 
   test('locks failed logins per uid and source without blocking other accounts from the same address', async () => {
-    await setNormalPassword('S00001', 'student-pass-01');
-    await setNormalPassword('S00002', 'student-pass-02');
+    await setNormalPassword('3', 'student-pass-01');
+    await setNormalPassword('4', 'student-pass-02');
     const headers = { 'x-real-ip': '203.0.113.10' };
 
     for (let index = 0; index < 3; index += 1) {
-      const response = await jsonRequest('/api/auth/login', { uid: 'S00001', password: await encryptPassword('wrong-password') }, {
+      const response = await jsonRequest('/api/auth/login', { uid: '3', password: await encryptPassword('wrong-password') }, {
         method: 'POST',
         headers
       });
@@ -988,14 +1071,14 @@ describe('route behavior', () => {
       expect(response.status).toBe(401);
     }
 
-    const lockedResponse = await jsonRequest('/api/auth/login', { uid: 'S00001', password: await encryptPassword('student-pass-01') }, {
+    const lockedResponse = await jsonRequest('/api/auth/login', { uid: '3', password: await encryptPassword('student-pass-01') }, {
       method: 'POST',
       headers
     });
 
     expect(lockedResponse.status).toBe(429);
 
-    const otherUserResponse = await jsonRequest('/api/auth/login', { uid: 'S00002', password: await encryptPassword('student-pass-02') }, {
+    const otherUserResponse = await jsonRequest('/api/auth/login', { uid: '4', password: await encryptPassword('student-pass-02') }, {
       method: 'POST',
       headers
     });
@@ -1006,7 +1089,7 @@ describe('route behavior', () => {
 
 describe('login attempt lockout', () => {
   test('locks a user after repeated failures and clears correctly', () => {
-    const key = 'S00001';
+    const key = '3';
     const now = 1_700_000_000_000;
 
     clearLoginFailures(key);
@@ -1026,44 +1109,45 @@ describe('login attempt lockout', () => {
 
 describe('CSV user import parser', () => {
   test('parses UTF-8 CSV text content', async () => {
-    const parsed = await parseUserImportCsvText('张三,student,\n李老师,teacher,\n', { columnCount: 3 });
+    const parsed = await parseUserImportCsvText('张三,,student,\n李老师,,teacher,\n', { columnCount: 4 });
 
     expect(parsed.encoding).toBe('utf-8');
     expect(parsed.totalCount).toBe(2);
     expect(parsed.studentCount).toBe(1);
     expect(parsed.entries[0]?.name).toBe('张三');
-    expect(parsed.entries[0]?.classCid).toBeNull();
+    expect(parsed.entries[0]?.className).toBeNull();
   });
 
-  test('parses CSV text content with class cid', async () => {
-    const parsed = await parseUserImportCsvText('张三,student,C0001\n李老师,teacher,\n', { columnCount: 3 });
+  test('parses CSV text content with class name', async () => {
+    const parsed = await parseUserImportCsvText('张三,San Zhang,student,一班\n李老师,,teacher,\n', { columnCount: 4 });
 
     expect(parsed.totalCount).toBe(2);
-    expect(parsed.entries[0]?.classCid).toBe('C0001');
-    expect(parsed.entries[1]?.classCid).toBeNull();
+    expect(parsed.entries[0]?.englishName).toBe('San Zhang');
+    expect(parsed.entries[0]?.className).toBe('一班');
+    expect(parsed.entries[1]?.className).toBeNull();
   });
 
   test('generates user credentials CSV with escaping', async () => {
     const csv = await createUserCredentialsCsv([
-      { id: 1, name: '张,三', uid: 'S00001', role: 'student', password: 'abc12345' }
+      { id: 1, name: '张,三', english_name: null, uid: 3, role: 'student', password: 'abc12345' }
     ]);
 
-    expect(csv).toBe('"name","uid","role","password"\n"张,三","S00001","student","abc12345"\n');
+    expect(csv).toBe('"name","english_name","uid","role","password"\n"张,三","","3","student","abc12345"\n');
   });
 
   test('rejects two-column CSV rows', async () => {
-    await expect(parseUserImportCsvText('张三,student\n', { columnCount: 3 })).rejects.toThrow(
-      '第 1 行格式无效，必须包含 3 列。'
+    await expect(parseUserImportCsvText('张三,student\n', { columnCount: 4 })).rejects.toThrow(
+      '第 1 行格式无效，必须包含 4 列。'
     );
   });
 
   test('parses UTF-16 CSV buffer', async () => {
     const utf16Buffer = new Uint8Array([
       0xff, 0xfe,
-      0x20, 0x5f, 0x09, 0x4e, 0x2c, 0x00, 0x73, 0x00, 0x74, 0x00, 0x75, 0x00, 0x64, 0x00, 0x65, 0x00, 0x6e, 0x00, 0x74, 0x00, 0x2c, 0x00, 0x0a, 0x00
+      0x20, 0x5f, 0x09, 0x4e, 0x2c, 0x00, 0x2c, 0x00, 0x73, 0x00, 0x74, 0x00, 0x75, 0x00, 0x64, 0x00, 0x65, 0x00, 0x6e, 0x00, 0x74, 0x00, 0x2c, 0x00, 0x0a, 0x00
     ]);
 
-    const parsed = await parseUserImportCsvBuffer(utf16Buffer, { columnCount: 3 });
+    const parsed = await parseUserImportCsvBuffer(utf16Buffer, { columnCount: 4 });
 
     expect(parsed.encoding).toBe('utf-16');
     expect(parsed.totalCount).toBe(1);
@@ -1072,11 +1156,11 @@ describe('CSV user import parser', () => {
 
   test('parses GBK CSV buffer', async () => {
     const gbkBuffer = new Uint8Array([
-      0xd5, 0xc5, 0xc8, 0xfd, 0x2c, 0x73, 0x74, 0x75, 0x64, 0x65, 0x6e, 0x74,
+      0xd5, 0xc5, 0xc8, 0xfd, 0x2c, 0x2c, 0x73, 0x74, 0x75, 0x64, 0x65, 0x6e, 0x74,
       0x2c, 0x0a
     ]);
 
-    const parsed = await parseUserImportCsvBuffer(gbkBuffer, { columnCount: 3 });
+    const parsed = await parseUserImportCsvBuffer(gbkBuffer, { columnCount: 4 });
 
     expect(parsed.encoding).toBe('gbk');
     expect(parsed.entries[0]?.name).toBe('张三');

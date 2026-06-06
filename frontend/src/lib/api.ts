@@ -6,6 +6,7 @@ import { API_URL, MAX_RECORD_IMAGES, type AppRuntimeConfig, type CreatedUser, ty
 
 export const fallbackPasswordMinLength = 8;
 export const fallbackPasswordMaxLength = 32;
+const passwordSpecialPattern = /[!-/:-@[-`{-~]/;
 
 export class ApiResponseError extends Error {
   status: number;
@@ -130,20 +131,29 @@ function toPathParam(value: number | string) {
   return String(value);
 }
 
-export function validatePlainPassword(password: string, config?: Pick<AppRuntimeConfig, 'password_min_length' | 'password_max_length'>) {
-  const minLength = config?.password_min_length ?? fallbackPasswordMinLength;
-  const maxLength = config?.password_max_length ?? fallbackPasswordMaxLength;
-
+export function validatePlainPassword(
+  password: string,
+  config?: Pick<AppRuntimeConfig, 'is_production'>,
+  options: { enforcePolicy?: boolean } = {}
+) {
   if (!password) {
     return '密码不能为空。';
   }
 
-  if (password.length < minLength) {
-    return `密码至少需要 ${minLength} 位。`;
+  if (!config?.is_production || options.enforcePolicy === false) {
+    return null;
   }
 
-  if (password.length > maxLength) {
-    return `密码不能超过 ${maxLength} 位。`;
+  if (password.length < fallbackPasswordMinLength) {
+    return `密码至少需要 ${fallbackPasswordMinLength} 位。`;
+  }
+
+  if (password.length > fallbackPasswordMaxLength) {
+    return `密码不能超过 ${fallbackPasswordMaxLength} 位。`;
+  }
+
+  if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password) || !passwordSpecialPattern.test(password)) {
+    return '密码必须包含大写字母、小写字母、数字和特殊符号。';
   }
 
   return null;
@@ -311,6 +321,10 @@ function createRpcClient(token?: string | null) {
 export function createApiClient() {
   const client = createRpcClient();
   type AuthLoginJson = Parameters<typeof client.auth.login.$post>[0]['json'];
+  type AuthStudentUidLoginJson = Parameters<typeof client.auth.login['student-uid']['$post']>[0]['json'];
+  type AuthStudentNameLoginJson = Parameters<typeof client.auth.login['student-name']['$post']>[0]['json'];
+  type AuthStaffLoginJson = Parameters<typeof client.auth.login.staff['$post']>[0]['json'];
+  type AuthLoginSelectJson = Parameters<typeof client.auth.login.select['$post']>[0]['json'];
   type AuthPasswordJson = Parameters<typeof client.auth.password.$put>[0]['json'];
   type AuthProfileJson = Parameters<typeof client.auth.profile.$put>[0]['json'];
   type AdminUsersPostJson = Parameters<typeof client.admin.users.$post>[0]['json'];
@@ -461,7 +475,28 @@ export function createApiClient() {
     auth: {
       login: {
         post: (body: AuthLoginJson) =>
-          sendWithEncryptedPassword(body, ['password'], (json) => wrapRpcResponse(client.auth.login.$post({ json })))
+          sendWithEncryptedPassword(body, ['password'], (json) => wrapRpcResponse(client.auth.login.$post({ json }))),
+        studentUid: {
+          post: (body: AuthStudentUidLoginJson) =>
+            sendWithEncryptedPassword(body, ['password'], (json) => wrapRpcResponse(client.auth.login['student-uid'].$post({ json })))
+        },
+        studentName: {
+          post: (body: AuthStudentNameLoginJson) =>
+            sendWithEncryptedPassword(body, ['password'], (json) => wrapRpcResponse(client.auth.login['student-name'].$post({ json })))
+        },
+        staff: {
+          post: (body: AuthStaffLoginJson) =>
+            sendWithEncryptedPassword(body, ['password'], (json) => wrapRpcResponse(client.auth.login.staff.$post({ json })))
+        },
+        select: {
+          post: (body: AuthLoginSelectJson) => wrapRpcResponse(client.auth.login.select.$post({ json: body }))
+        }
+      },
+      classes: {
+        search: {
+          get: ({ query }: { query?: { q?: string } } = {}) =>
+            wrapRpcResponse(client.auth.classes.search.$get({ query: { q: query?.q } }))
+        }
       },
       me: {
         get: () => wrapRpcResponse(client.auth.me.$get())
@@ -655,9 +690,43 @@ export async function unwrapResponse<T>(requestPromise: ApiResult): Promise<T> {
   return response.data as T;
 }
 
+export interface LoginCandidate {
+  uid: number;
+  role: UserRole;
+  name: string;
+  english_name: string | null;
+}
+
+export type LoginResponse = { token: string; user: StoredUser } | { challenge: string; candidates: LoginCandidate[] };
+
 export async function login(uid: string, password: string): Promise<{ user: StoredUser }> {
   const api = createApiClient();
   return unwrapResponse(api.auth.login.post({ uid, password }));
+}
+
+export async function loginStudentByUid(uid: number, password: string): Promise<LoginResponse> {
+  const api = createApiClient();
+  return unwrapResponse(api.auth.login.studentUid.post({ uid, password }));
+}
+
+export async function loginStudentByName(classId: number, name: string, password: string): Promise<LoginResponse> {
+  const api = createApiClient();
+  return unwrapResponse(api.auth.login.studentName.post({ class_id: classId, name, password }));
+}
+
+export async function loginStaff(identifier: string, password: string): Promise<LoginResponse> {
+  const api = createApiClient();
+  return unwrapResponse(api.auth.login.staff.post({ identifier, password }));
+}
+
+export async function selectLoginCandidate(challenge: string, uid: number): Promise<{ token: string; user: StoredUser }> {
+  const api = createApiClient();
+  return unwrapResponse(api.auth.login.select.post({ challenge, uid }));
+}
+
+export async function searchLoginClasses(query: string): Promise<{ classes: Array<{ id: number; name: string; created_at: string }> }> {
+  const api = createApiClient();
+  return unwrapResponse(api.auth.classes.search.get({ query: { q: query } }));
 }
 
 export function formatUploadImageMaxSize(bytes: number) {

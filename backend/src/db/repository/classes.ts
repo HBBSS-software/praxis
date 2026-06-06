@@ -2,14 +2,13 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import type { ClassAssignments, ClassSummary, StudentWithClassSummary, UserRole } from '../../models';
 import { db } from '../client';
-import { nowIso, toClassSummary, toStudentSummary, userSearchCondition, parseUidNumber } from '../helpers';
+import { nowIso, normalizeSearchQuery, toClassSummary, toStudentSummary, userSearchCondition } from '../helpers';
 import { classes, classStudents, classTeachers, practiceTaskClasses, users } from '../schema';
 
 export function createClass(name: string) {
   const createdAt = nowIso();
-  const cid = allocateClassCid();
-  const result = db.insert(classes).values({ cid, name, createdAt }).run();
-  return { id: Number(result.lastInsertRowid), cid, name, created_at: createdAt } satisfies ClassSummary;
+  const result = db.insert(classes).values({ name, createdAt }).run();
+  return { id: Number(result.lastInsertRowid), name, created_at: createdAt } satisfies ClassSummary;
 }
 
 export function findClassById(id: number) {
@@ -17,8 +16,8 @@ export function findClassById(id: number) {
   return row ? toClassSummary(row) : null;
 }
 
-export function findClassByCid(cid: string) {
-  const row = db.select().from(classes).where(eq(classes.cid, cid)).get();
+export function findClassByName(name: string) {
+  const row = db.select().from(classes).where(eq(classes.name, name)).get();
   return row ? toClassSummary(row) : null;
 }
 
@@ -29,21 +28,33 @@ export function updateClassName(id: number, name: string) {
 
 export function getClasses() {
   return db
-    .select({ id: classes.id, cid: classes.cid, name: classes.name, createdAt: classes.createdAt })
+    .select({ id: classes.id, name: classes.name, createdAt: classes.createdAt })
     .from(classes)
-    .orderBy(classes.cid)
+    .orderBy(classes.name)
+    .all()
+    .map(toClassSummary);
+}
+
+export function searchClasses(query: string): ClassSummary[] {
+  const normalized = normalizeSearchQuery(query);
+  const where = normalized ? sql`${classes.name} like ${`%${normalized}%`} escape '\\'` : undefined;
+  return db
+    .select({ id: classes.id, name: classes.name, createdAt: classes.createdAt })
+    .from(classes)
+    .where(where)
+    .orderBy(classes.name)
     .all()
     .map(toClassSummary);
 }
 
 export function getTeacherClasses(teacherId: number) {
   return db
-    .select({ id: classes.id, cid: classes.cid, name: classes.name, createdAt: classes.createdAt })
+    .select({ id: classes.id, name: classes.name, createdAt: classes.createdAt })
     .from(classTeachers)
     .innerJoin(classes, eq(classTeachers.classId, classes.id))
     .innerJoin(users, eq(classTeachers.teacherId, users.id))
     .where(and(eq(classTeachers.teacherId, teacherId), eq(users.role, 'teacher'), isNull(users.deletedAt)))
-    .orderBy(classes.cid)
+    .orderBy(classes.name)
     .all()
     .map(toClassSummary);
 }
@@ -111,7 +122,7 @@ export function getAllClassAssignments(): ClassAssignments {
 
 export function getClassStudents(classId: number) {
   return db
-    .select({ id: users.id, uid: users.uid, name: users.name, createdAt: users.createdAt })
+    .select({ id: users.id, name: users.name, englishName: users.englishName, createdAt: users.createdAt })
     .from(classStudents)
     .innerJoin(users, eq(classStudents.studentId, users.id))
     .where(and(eq(classStudents.classId, classId), eq(users.role, 'student'), isNull(users.deletedAt)))
@@ -122,7 +133,7 @@ export function getClassStudents(classId: number) {
 
 export function getTeacherStudents(teacherId: number) {
   return db
-    .select({ id: users.id, uid: users.uid, name: users.name, createdAt: users.createdAt })
+    .select({ id: users.id, name: users.name, englishName: users.englishName, createdAt: users.createdAt })
     .from(classTeachers)
     .innerJoin(classStudents, eq(classTeachers.classId, classStudents.classId))
     .innerJoin(users, eq(classStudents.studentId, users.id))
@@ -145,8 +156,8 @@ export function searchStudents(query: string, visibleStudentIds?: Set<number>, c
   }
   return db
     .select({
-      id: users.id, uid: users.uid, name: users.name, createdAt: users.createdAt,
-      class_id: classStudents.classId, class_cid: classes.cid, class_name: classes.name
+      id: users.id, name: users.name, englishName: users.englishName, createdAt: users.createdAt,
+      class_id: classStudents.classId, class_name: classes.name
     })
     .from(users)
     .leftJoin(classStudents, eq(classStudents.studentId, users.id))
@@ -155,8 +166,8 @@ export function searchStudents(query: string, visibleStudentIds?: Set<number>, c
     .orderBy(desc(users.id))
     .all()
     .map((row) => ({
-      id: row.id, uid: row.uid, name: row.name, created_at: row.createdAt,
-      class_id: row.class_id, class_cid: row.class_cid, class_name: row.class_name
+      id: row.id, uid: row.id, name: row.name, english_name: row.englishName, created_at: row.createdAt,
+      class_id: row.class_id, class_name: row.class_name
     }));
 }
 
@@ -167,8 +178,8 @@ export function searchStudentsForClassAssignment(query: string, classId: number 
   conditions.push(classId ? sql`(${classStudents.classId} is null or ${classStudents.classId} = ${classId})` : sql`${classStudents.classId} is null`);
   return db
     .select({
-      id: users.id, uid: users.uid, name: users.name, createdAt: users.createdAt,
-      class_id: classStudents.classId, class_cid: classes.cid, class_name: classes.name
+      id: users.id, name: users.name, englishName: users.englishName, createdAt: users.createdAt,
+      class_id: classStudents.classId, class_name: classes.name
     })
     .from(users)
     .leftJoin(classStudents, eq(classStudents.studentId, users.id))
@@ -177,16 +188,16 @@ export function searchStudentsForClassAssignment(query: string, classId: number 
     .orderBy(desc(users.id))
     .all()
     .map((row) => ({
-      id: row.id, uid: row.uid, name: row.name, created_at: row.createdAt,
-      class_id: row.class_id, class_cid: row.class_cid, class_name: row.class_name
+      id: row.id, uid: row.id, name: row.name, english_name: row.englishName, created_at: row.createdAt,
+      class_id: row.class_id, class_name: row.class_name
     }));
 }
 
 export function getAssignedStudents(): StudentWithClassSummary[] {
   return db
     .select({
-      id: users.id, uid: users.uid, name: users.name, createdAt: users.createdAt,
-      class_id: classStudents.classId, class_cid: classes.cid, class_name: classes.name
+      id: users.id, name: users.name, englishName: users.englishName, createdAt: users.createdAt,
+      class_id: classStudents.classId, class_name: classes.name
     })
     .from(classStudents)
     .innerJoin(users, eq(classStudents.studentId, users.id))
@@ -195,8 +206,8 @@ export function getAssignedStudents(): StudentWithClassSummary[] {
     .orderBy(desc(users.id))
     .all()
     .map((row) => ({
-      id: row.id, uid: row.uid, name: row.name, created_at: row.createdAt,
-      class_id: row.class_id, class_cid: row.class_cid, class_name: row.class_name
+      id: row.id, uid: row.id, name: row.name, english_name: row.englishName, created_at: row.createdAt,
+      class_id: row.class_id, class_name: row.class_name
     }));
 }
 
@@ -229,19 +240,11 @@ export function getStudentClassId(studentId: number) {
 
 export function getClassesForTask(taskId: number): ClassSummary[] {
   return db
-    .select({ id: classes.id, cid: classes.cid, name: classes.name, createdAt: classes.createdAt })
+    .select({ id: classes.id, name: classes.name, createdAt: classes.createdAt })
     .from(practiceTaskClasses)
     .innerJoin(classes, eq(practiceTaskClasses.classId, classes.id))
     .where(eq(practiceTaskClasses.taskId, taskId))
-    .orderBy(classes.cid)
+    .orderBy(classes.name)
     .all()
     .map(toClassSummary);
-}
-
-export function allocateClassCid() {
-  const latest = db
-    .select({ cid: classes.cid }).from(classes)
-    .orderBy(desc(classes.id)).limit(1).get();
-  const nextNumber = latest ? parseUidNumber(latest.cid) + 1 : 1;
-  return `C${nextNumber.toString(16).padStart(4, '0')}`;
 }

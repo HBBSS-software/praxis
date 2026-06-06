@@ -81,8 +81,7 @@ export interface AppRuntimeConfig {
   icp_beian: string;
   upload_image_max_size_bytes: number;
   timezone: string;
-  password_min_length: number;
-  password_max_length: number;
+  is_production: boolean;
 }
 
 export interface ApiError {

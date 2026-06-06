@@ -33,6 +33,11 @@ function UserCredentialsResult({
 
   const columns = useMemo<Array<ColumnDef<CreatedUser>>>(() => [
     { accessorKey: 'name', header: '姓名' },
+    {
+      accessorKey: 'english_name',
+      header: '英文名',
+      cell: ({ row }) => row.original.english_name || <span className="text-muted-foreground">未填写</span>
+    },
     { accessorKey: 'uid', header: 'UID' },
     { accessorKey: 'role', header: '角色' },
     {

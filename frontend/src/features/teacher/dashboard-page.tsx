@@ -80,10 +80,7 @@ export function TeacherDashboardPage() {
       id: 'class',
       header: '班级',
       cell: ({ row }) => (
-        <div>
-          <p className="font-medium">{row.original.class_name}</p>
-          <p className="text-xs text-muted-foreground">{row.original.class_cid}</p>
-        </div>
+        <span className="font-medium">{row.original.class_name}</span>
       )
     },
     { accessorKey: 'student_count', header: '学生数' },
@@ -113,10 +110,7 @@ export function TeacherDashboardPage() {
       id: 'class',
       header: '班级',
       cell: ({ row }) => (
-        <div>
-          <p className="font-medium">{row.original.class_name}</p>
-          <p className="text-xs text-muted-foreground">{row.original.class_cid}</p>
-        </div>
+        <span className="font-medium">{row.original.class_name}</span>
       )
     },
     { accessorKey: 'total_records', header: '记录总数' },
@@ -147,7 +141,7 @@ export function TeacherDashboardPage() {
               {classes.length > 1 ? <SelectItem value="all">总览</SelectItem> : null}
               {classes.map((item) => (
                 <SelectItem key={item.id} value={String(item.id)}>
-                  {item.name} ({item.cid})
+                  {item.name}
                 </SelectItem>
               ))}
             </SelectContent>

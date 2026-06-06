@@ -11,8 +11,9 @@ export interface CsvFormatRequirement {
 export interface CsvUserImportEntry {
   lineNumber: number;
   name: string;
+  englishName: string | null;
   role: UserRole;
-  classCid: string | null;
+  className: string | null;
 }
 
 export interface ParsedCsvUserImport {
@@ -39,8 +40,9 @@ export async function parseUserImportCsvText(
   const rows = await parseCsvRows(text, requirement);
   const entries = rows.map(({ lineNumber, columns }) => {
     const name = columns[0] ?? '';
-    const role = columns[1] ?? '';
-    const classCid = columns[2] ?? '';
+    const englishName = columns[1] ?? '';
+    const role = columns[2] ?? '';
+    const className = columns[3] ?? '';
 
     if (!name) {
       throw new Error(`第 ${lineNumber} 行姓名为空。`);
@@ -53,8 +55,9 @@ export async function parseUserImportCsvText(
     return {
       lineNumber,
       name,
+      englishName: englishName || null,
       role: role as UserRole,
-      classCid: classCid || null
+      className: className || null
     };
   });
 
@@ -70,12 +73,13 @@ export async function createUserCredentialsCsv(users: CreateUserResult[]) {
   return await writeToString(
     users.map((user) => ({
       name: user.name,
+      english_name: user.english_name ?? '',
       uid: user.uid,
       role: user.role,
       password: user.password
     })),
     {
-      headers: ['name', 'uid', 'role', 'password'],
+      headers: ['name', 'english_name', 'uid', 'role', 'password'],
       quoteColumns: true,
       includeEndRowDelimiter: true
     }

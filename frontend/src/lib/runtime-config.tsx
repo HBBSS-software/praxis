@@ -8,8 +8,7 @@ const defaultRuntimeConfig: AppRuntimeConfig = {
   icp_beian: '',
   upload_image_max_size_bytes: 5 * 1024 * 1024,
   timezone: 'UTC+8',
-  password_min_length: 8,
-  password_max_length: 32
+  is_production: false
 };
 
 const RuntimeConfigContext = createContext(defaultRuntimeConfig);

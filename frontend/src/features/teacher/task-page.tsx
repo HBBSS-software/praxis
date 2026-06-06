@@ -106,8 +106,8 @@ export function TeacherTaskPage() {
   const loadClassOptions = useCallback(async (query: string) => {
     const normalized = query.trim().toLowerCase();
     return classes
-      .filter((item) => !normalized || item.name.toLowerCase().includes(normalized) || item.cid.toLowerCase().includes(normalized))
-      .map((item) => ({ label: `${item.name} (${item.cid})`, value: String(item.id) }));
+      .filter((item) => !normalized || item.name.toLowerCase().includes(normalized))
+      .map((item) => ({ label: item.name, value: String(item.id) }));
   }, [classes]);
 
   const searchStudents = useCallback(async (query: string) => {
@@ -169,7 +169,6 @@ export function TeacherTaskPage() {
                 {task.classes.map((item) => (
                   <div key={item.id} className="rounded-lg border bg-muted/20 px-3 py-2">
                     <p className="truncate text-sm font-medium">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">{item.cid}</p>
                   </div>
                 ))}
               </div>

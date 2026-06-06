@@ -71,7 +71,7 @@ export function AccountCard({
                   className="space-y-4"
                   onSubmit={async (event) => {
                     event.preventDefault();
-                    const passwordError = validatePlainPassword(nameForm.current_password, runtimeConfig);
+                    const passwordError = validatePlainPassword(nameForm.current_password, runtimeConfig, { enforcePolicy: false });
 
                     if (passwordError) {
                       toastError(new Error(passwordError));
@@ -120,7 +120,7 @@ export function AccountCard({
                     return;
                   }
 
-                  const currentPasswordError = validatePlainPassword(passwordForm.current_password, runtimeConfig);
+                  const currentPasswordError = validatePlainPassword(passwordForm.current_password, runtimeConfig, { enforcePolicy: false });
                   const newPasswordError = validatePlainPassword(passwordForm.new_password, runtimeConfig);
 
                   if (currentPasswordError || newPasswordError) {

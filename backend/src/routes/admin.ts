@@ -16,6 +16,7 @@ import {
   updateUserBodySchema,
   userSearchQuerySchema,
   userRoleSchema,
+  validateEnglishName,
   validateName,
   validatePassword,
   validationHook
@@ -24,6 +25,7 @@ import { authMiddleware, type AppBindings } from '../plugins/auth';
 
 const createUserBodySchema = z.object({
   name: z.string(),
+  english_name: z.string().nullable().optional(),
   role: userRoleSchema,
   class_id: z.number().int().positive().nullable().optional()
 });
@@ -81,41 +83,42 @@ async function readImportFile(file: File) {
     throw new Error('CSV 文件大小不能超过 50 MiB。');
   }
 
-  return parseUserImportCsvBuffer(new Uint8Array(await file.arrayBuffer()), { columnCount: 3 });
+  return parseUserImportCsvBuffer(new Uint8Array(await file.arrayBuffer()), { columnCount: 4 });
 }
 
 function validateImportEntries(entries: CsvUserImportEntry[]) {
   return entries.map((entry) => {
     const nameError = validateName(entry.name);
-    const classCid = entry.classCid ? normalizeClassCid(entry.classCid) : null;
+    const englishNameError = validateEnglishName(entry.englishName);
+    const className = entry.className?.trim() || null;
 
     if (nameError) {
       throw new Error(`第 ${entry.lineNumber} 行错误：${nameError}`);
     }
 
-    if (entry.role === 'admin' && classCid) {
-      throw new Error(`第 ${entry.lineNumber} 行错误：管理员不能填写班级 ID。`);
+    if (englishNameError) {
+      throw new Error(`第 ${entry.lineNumber} 行错误：${englishNameError}`);
     }
 
-    const targetClass = classCid ? database.findClassByCid(classCid) : null;
+    if (entry.role === 'admin' && className) {
+      throw new Error(`第 ${entry.lineNumber} 行错误：管理员不能填写班级。`);
+    }
 
-    if ((entry.role === 'student' || entry.role === 'teacher') && classCid && !targetClass) {
-      throw new Error(`第 ${entry.lineNumber} 行错误：班级 ID 不存在或错误。`);
+    const targetClass = className ? database.findClassByName(className) : null;
+
+    if ((entry.role === 'student' || entry.role === 'teacher') && className && !targetClass) {
+      throw new Error(`第 ${entry.lineNumber} 行错误：班级不存在或错误。`);
     }
 
     return {
       lineNumber: entry.lineNumber,
       name: entry.name.trim(),
+      englishName: entry.englishName?.trim() || null,
       role: entry.role,
       classId: targetClass?.id ?? null,
-      class_cid: classCid
+      class_name: className
     };
   });
-}
-
-function normalizeClassCid(value: string) {
-  const trimmed = value.trim();
-  return trimmed ? `${trimmed[0]?.toUpperCase() ?? ''}${trimmed.slice(1).toLowerCase()}` : null;
 }
 
 async function parseCsvBody(c: Context<AppBindings>) {
@@ -143,14 +146,19 @@ export const adminRoutes = new Hono<AppBindings>()
   .post('/users', zValidator('json', createUserBodySchema, validationHook), async (c) => {
     const body = c.req.valid('json');
     const nameError = validateName(body.name);
+    const englishNameError = validateEnglishName(body.english_name);
 
     if (nameError) {
       return apiError(c, 400, nameError);
     }
 
+    if (englishNameError) {
+      return apiError(c, 400, englishNameError);
+    }
+
     try {
       const classId = resolveClassId(body.role, body.class_id);
-      const user = await database.createUser(body.name.trim(), body.role);
+      const user = await database.createUser(body.name.trim(), body.role, body.english_name?.trim() || null);
 
       if (classId && user.role === 'student') {
         database.assignStudentsToClass(classId, [user.id]);
@@ -169,19 +177,25 @@ export const adminRoutes = new Hono<AppBindings>()
   })
   .post('/users/batch', zValidator('json', batchCreateUsersBodySchema, validationHook), async (c) => {
     const body = c.req.valid('json');
-    const normalized: Array<{ name: string; role: 'admin' | 'teacher' | 'student'; classId: number | null }> = [];
+    const normalized: Array<{ name: string; englishName: string | null; role: 'admin' | 'teacher' | 'student'; classId: number | null }> = [];
 
     for (let index = 0; index < body.entries.length; index += 1) {
       const entry = body.entries[index]!;
       const nameError = validateName(entry.name);
+      const englishNameError = validateEnglishName(entry.english_name);
 
       if (nameError) {
         return apiError(c, 400, `第 ${index + 1} 行错误：${nameError}`);
       }
 
+      if (englishNameError) {
+        return apiError(c, 400, `第 ${index + 1} 行错误：${englishNameError}`);
+      }
+
       try {
         normalized.push({
           name: entry.name.trim(),
+          englishName: entry.english_name?.trim() || null,
           role: entry.role,
           classId: resolveClassId(entry.role, entry.class_id)
         });
@@ -214,7 +228,7 @@ export const adminRoutes = new Hono<AppBindings>()
         encoding: parsed.encoding,
         totalCount: parsed.totalCount,
         studentCount: parsed.studentCount,
-        entries: entries.map(({ classId: _classId, ...entry }) => entry)
+        entries: entries.map(({ classId: _classId, englishName, ...entry }) => ({ ...entry, english_name: englishName }))
       });
     } catch (error) {
       return apiError(c, 400, error instanceof Error ? error.message : 'CSV 文件无效。');
@@ -229,7 +243,7 @@ export const adminRoutes = new Hono<AppBindings>()
       }
 
       const parsed = await readImportFile(file);
-      const entries = validateImportEntries(parsed.entries).map(({ class_cid: _classCid, ...entry }) => entry);
+      const entries = validateImportEntries(parsed.entries).map(({ class_name: _className, ...entry }) => entry);
       const users = await database.createUsers(entries);
 
       return c.json({
@@ -266,12 +280,25 @@ export const adminRoutes = new Hono<AppBindings>()
 
     if (body.name !== undefined) {
       const error = validateName(body.name);
+      const englishNameError = validateEnglishName(body.english_name);
 
       if (error) {
         return apiError(c, 400, error);
       }
 
-      database.updateUserName(user.id, body.name.trim());
+      if (englishNameError) {
+        return apiError(c, 400, englishNameError);
+      }
+
+      database.updateUserName(user.id, body.name.trim(), body.english_name?.trim() || null);
+    } else if (body.english_name !== undefined) {
+      const englishNameError = validateEnglishName(body.english_name);
+
+      if (englishNameError) {
+        return apiError(c, 400, englishNameError);
+      }
+
+      database.updateUserName(user.id, user.name, body.english_name?.trim() || null);
     }
 
     if (body.password !== undefined && body.password !== '') {

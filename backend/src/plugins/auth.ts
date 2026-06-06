@@ -127,6 +127,7 @@ export const authMiddleware = createMiddleware<AppBindings>(async (c, next) => {
       uid: currentUser.uid,
       role: currentUser.role,
       name: currentUser.name,
+      english_name: currentUser.english_name,
       password_setup_required: passwordSetupRequired
     };
 

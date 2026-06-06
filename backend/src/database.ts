@@ -22,6 +22,9 @@ class SQLiteDatabase {
   isValidRole = repo.isValidRole;
   findUserById = repo.findUserById;
   findUserByUid = repo.findUserByUid;
+  findStudentByUid = repo.findStudentByUid;
+  findStudentsByClassAndName = repo.findStudentsByClassAndName;
+  findStaffByIdentifier = repo.findStaffByIdentifier;
   findTeachersByUids = repo.findTeachersByUids;
   getUsersByRole = repo.getUsersByRole;
   searchUsersByRole = repo.searchUsersByRole;
@@ -35,9 +38,10 @@ class SQLiteDatabase {
 
   createClass = repo.createClass;
   findClassById = repo.findClassById;
-  findClassByCid = repo.findClassByCid;
+  findClassByName = repo.findClassByName;
   updateClassName = repo.updateClassName;
   getClasses = repo.getClasses;
+  searchClasses = repo.searchClasses;
   getTeacherClasses = repo.getTeacherClasses;
   assignTeachersToClass = repo.assignTeachersToClass;
   removeTeachersFromClass = repo.removeTeachersFromClass;
