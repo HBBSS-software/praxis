@@ -19,6 +19,7 @@ import {
   staffLoginBodySchema,
   studentNameLoginBodySchema,
   studentUidLoginBodySchema,
+  toPublicUser,
   validateName,
   validatePassword,
   validationHook
@@ -424,8 +425,16 @@ export const authRoutes = new Hono<AppBindings>()
       return apiError(c, 401, '当前密码错误。');
     }
 
-    database.updateUserName(userRecord.id, body.name.trim());
-    return c.json({ message: '姓名修改成功。' });
+    const name = body.name.trim();
+    database.updateUserName(userRecord.id, name);
+
+    return c.json({
+      message: '姓名修改成功。',
+      user: toPublicUser({
+        ...currentUser,
+        name
+      })
+    });
   })
   .post('/logout', (c) => {
     clearAuthCookie(c);

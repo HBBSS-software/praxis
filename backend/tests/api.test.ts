@@ -594,6 +594,29 @@ describe('route behavior', () => {
     expect((await readJson(response)).error).toBe('密码格式无效。');
   });
 
+  test('updates profile and returns the latest user', async () => {
+    await setNormalPassword('2', 'teacher-pass-01');
+    const token = await loginAs('2', 'teacher-pass-01');
+    const response = await jsonRequest('/api/auth/profile', {
+      name: '新教师姓名',
+      current_password: await encryptPassword('teacher-pass-01')
+    }, {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+    const payload = await readJson(response);
+
+    expect(response.status).toBe(200);
+    expect(payload.user).toMatchObject({
+      uid: 2,
+      name: '新教师姓名',
+      role: 'teacher',
+      password_setup_required: false
+    });
+  });
+
   test('enforces strong password policy only in production', async () => {
     await setNormalPassword('2', 'teacher-pass-01');
     const token = await loginAs('2', 'teacher-pass-01');

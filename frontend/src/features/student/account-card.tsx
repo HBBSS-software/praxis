@@ -1,12 +1,13 @@
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { ApiResponseError, createApiClient, unwrapResponse, validatePlainPassword } from '@/lib/api';
 import { useSession } from '@/lib/auth';
 import { toastError, toastSuccess } from '@/lib/feedback';
 import { useRuntimeConfig } from '@/lib/runtime-config';
+import type { StoredUser } from '@/lib/types';
 import { Field, StudentPageFrame } from './shared';
 
 export function StudentAccountPage() {
@@ -18,7 +19,7 @@ export function AccountCard({
 }: {
   allowNameChange: boolean;
 }) {
-  const { user, signOut } = useSession();
+  const { user, signOut, updateUser } = useSession();
   const runtimeConfig = useRuntimeConfig();
   const [nameForm, setNameForm] = useState({ name: user?.name ?? '', current_password: '' });
   const [passwordForm, setPasswordForm] = useState({ current_password: '', new_password: '', confirm_password: '' });
@@ -34,7 +35,6 @@ export function AccountCard({
           <Card>
             <CardHeader>
               <CardTitle>修改姓名</CardTitle>
-              <CardDescription>保存后请重新登录。</CardDescription>
             </CardHeader>
             <CardContent>
               <form
@@ -50,8 +50,9 @@ export function AccountCard({
 
                   setSubmitting('name');
                   try {
-                    await unwrapResponse(createApiClient().auth.profile.put(nameForm));
-                    toastSuccess('姓名修改成功，重新登录后生效。');
+                    const data = await unwrapResponse<{ user: StoredUser }>(createApiClient().auth.profile.put(nameForm));
+                    updateUser(data.user);
+                    toastSuccess('姓名修改成功。');
                     setNameForm((current) => ({ ...current, current_password: '' }));
                   } catch (nextError) {
                     if (nextError instanceof ApiResponseError && nextError.status === 401) {
@@ -79,7 +80,6 @@ export function AccountCard({
         <Card>
           <CardHeader>
             <CardTitle>修改密码</CardTitle>
-            <CardDescription>修改后请使用新密码登录。</CardDescription>
           </CardHeader>
           <CardContent>
             <form
@@ -101,12 +101,13 @@ export function AccountCard({
 
                 setSubmitting('password');
                 try {
-                  await unwrapResponse(
+                  const data = await unwrapResponse<{ user: StoredUser }>(
                     createApiClient().auth.password.put({
                       current_password: passwordForm.current_password,
                       new_password: passwordForm.new_password
                     })
                   );
+                  updateUser(data.user);
                   toastSuccess('密码修改成功。');
                   setPasswordForm({ current_password: '', new_password: '', confirm_password: '' });
                 } catch (nextError) {
