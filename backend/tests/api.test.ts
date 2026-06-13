@@ -1217,6 +1217,35 @@ describe('route behavior', () => {
     expect((await readJson(response)).error).toBe('认证令牌权限范围无效。');
   });
 
+  test('allows public auth routes when cookie token audience is stale', async () => {
+    await setNormalPassword('3', 'student-pass-01');
+    const staleToken = await signTokenWithAudience('3', 'admin');
+    const cookie = `auth_token=${staleToken}`;
+    const challengeResponse = await apiRequest('/api/auth/pqseal-challenge', {
+      headers: { cookie }
+    });
+
+    expect(challengeResponse.status).toBe(200);
+
+    const loginResponse = await jsonRequest('/api/auth/login', pqseal.sealFields(
+      await challengeResponse.json(),
+      { uid: '3', password: 'student-pass-01' },
+      ['password']
+    ), {
+      method: 'POST',
+      headers: { cookie }
+    });
+    const loginPayload = await readJson(loginResponse);
+
+    expect(loginResponse.status).toBe(200);
+    expect(decodeJwt(loginPayload.token as string).aud).toBe('student');
+    expect(loginPayload.user).toMatchObject({
+      uid: 3,
+      role: 'student',
+      password_setup_required: false
+    });
+  });
+
   test('creates teachers with one selected class from single and batch forms', async () => {
     await setNormalPassword('1', 'admin-pass-01');
     const token = await loginAs('1', 'admin-pass-01');

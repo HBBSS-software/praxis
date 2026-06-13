@@ -47,6 +47,30 @@ function isPasswordSetupAllowedRequest(path: string, method: string) {
   return path === '/api/auth/password' && method === 'PUT';
 }
 
+function isPublicAuthRequest(path: string, method: string) {
+  if (method === 'OPTIONS') {
+    return true;
+  }
+
+  if (path === '/api/auth/pqseal-challenge' && method === 'GET') {
+    return true;
+  }
+
+  if (path === '/api/auth/classes/search' && method === 'GET') {
+    return true;
+  }
+
+  if (path === '/api/auth/logout' && method === 'POST') {
+    return true;
+  }
+
+  return path === '/api/auth/login' && method === 'POST'
+    || path === '/api/auth/login/student-uid' && method === 'POST'
+    || path === '/api/auth/login/student-name' && method === 'POST'
+    || path === '/api/auth/login/staff' && method === 'POST'
+    || path === '/api/auth/login/select' && method === 'POST';
+}
+
 function readBearerToken(authorization?: string | null) {
   if (!authorization) {
     return {
@@ -139,6 +163,13 @@ export const authMiddleware = createMiddleware<AppBindings>(async (c, next) => {
     c.set('user', authUser);
 
     if (!tokenAudienceMatchesUser(verified.payload.aud, authUser)) {
+      if (isPublicAuthRequest(c.req.path, c.req.method)) {
+        c.set('authError', null);
+        c.set('user', null);
+        await next();
+        return;
+      }
+
       if (passwordSetupRequired && verified.payload.aud === 'unauthorized' && isPasswordSetupAllowedRequest(c.req.path, c.req.method)) {
         await next();
         return;
@@ -150,6 +181,13 @@ export const authMiddleware = createMiddleware<AppBindings>(async (c, next) => {
     }
 
     if (passwordSetupRequired && !isPasswordSetupAllowedRequest(c.req.path, c.req.method)) {
+      if (isPublicAuthRequest(c.req.path, c.req.method)) {
+        c.set('authError', null);
+        c.set('user', null);
+        await next();
+        return;
+      }
+
       return c.json({ error: '请设置密码。' }, 403);
     }
   } catch {
