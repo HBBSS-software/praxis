@@ -37,6 +37,7 @@ import { useShiftMultiSelect } from '@/lib/shift-selection';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { ClassAssignments, ClassSummary, CreatedUser, CreatedUserPayload, CreatedUsersPayload, CsvImportEntry, CsvImportPreview, StudentSummary, StudentWithClassSummary, TeacherStatistics, UserRole, UserSummary } from '@/lib/types';
 import { includesSearch, ListSearchBar, type ListSearchState } from '@/shared/list-search-bar';
+import { PasswordRequirements } from '@/shared/password-requirements';
 import { UserCredentialsResult } from '@/shared/user-credentials-result';
 import { AdminPageFrame, Field, SortButton, type CredentialsResult } from './shared';
 
@@ -286,6 +287,7 @@ function UserListPage({
             </Field>
             <Field label="新密码">
               <Input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} />
+              <PasswordRequirements password={form.password} isProduction={runtimeConfig.is_production} />
             </Field>
             <Button
               onClick={async () => {

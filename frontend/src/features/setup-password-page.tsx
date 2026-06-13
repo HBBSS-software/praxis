@@ -12,6 +12,7 @@ import { useSession } from '@/lib/auth';
 import { toastError, toastSuccess } from '@/lib/feedback';
 import { useRuntimeConfig } from '@/lib/runtime-config';
 import { getDefaultPathByRole } from '@/lib/session';
+import { PasswordRequirements } from '@/shared/password-requirements';
 import { SiteFooter } from '@/shared/site-footer';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -79,12 +80,6 @@ export function SetupPasswordPage() {
             <CardTitle className="text-xl sm:text-2xl">设置密码</CardTitle>
             <CardDescription className="text-sm leading-6">
               当前使用的是系统随机生成的初始密码。设置新密码后，才能进入系统面板。
-              {runtimeConfig.is_production ? (
-                <>
-                  <br />
-                  新密码需为 8 到 32 位，并包含大写字母、小写字母、数字和特殊符号。
-                </>
-              ) : null}
             </CardDescription>
           </div>
           <div className="rounded-2xl bg-muted p-3 text-sm sm:p-4">
@@ -146,6 +141,7 @@ export function SetupPasswordPage() {
                   required
                 />
               </div>
+              <PasswordRequirements password={form.new_password} isProduction={runtimeConfig.is_production} />
             </Field>
             <Field label="确认密码">
               <Input

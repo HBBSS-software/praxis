@@ -8,6 +8,7 @@ import { useSession } from '@/lib/auth';
 import { toastError, toastSuccess } from '@/lib/feedback';
 import { useRuntimeConfig } from '@/lib/runtime-config';
 import type { StoredUser } from '@/lib/types';
+import { PasswordRequirements } from '@/shared/password-requirements';
 import { Field, StudentPageFrame } from './shared';
 
 export function StudentAccountPage() {
@@ -126,6 +127,7 @@ export function AccountCard({
               </Field>
               <Field label="新密码">
                 <Input type="password" value={passwordForm.new_password} onChange={(event) => setPasswordForm((current) => ({ ...current, new_password: event.target.value }))} required />
+                <PasswordRequirements password={passwordForm.new_password} isProduction={runtimeConfig.is_production} />
               </Field>
               <Field label="确认密码">
                 <Input type="password" value={passwordForm.confirm_password} onChange={(event) => setPasswordForm((current) => ({ ...current, confirm_password: event.target.value }))} required />

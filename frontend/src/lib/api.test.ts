@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createPQSealServer, type FieldSealedObject } from 'pqseal';
-import { ApiResponseError, formatUploadImageMaxSize, sealPasswordFieldsForApi, unwrapResponse, validatePlainPassword } from './api';
+import { ApiResponseError, formatUploadImageMaxSize, getPasswordRequirementStates, sealPasswordFieldsForApi, unwrapResponse, validatePlainPassword } from './api';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -64,6 +64,35 @@ describe('password helpers', () => {
     expect(validatePlainPassword('abcdefgh', { is_production: true })).toBe('密码必须包含大写字母、小写字母、数字和特殊符号。');
     expect(validatePlainPassword('Abcdef1!', { is_production: true })).toBeNull();
     expect(validatePlainPassword('1234567', { is_production: true }, { enforcePolicy: false })).toBeNull();
+  });
+
+  test('reports dynamic password requirement states', () => {
+    const states = Object.fromEntries(getPasswordRequirementStates('').map((item) => [item.id, item.met]));
+    expect(states).toEqual({
+      length: false,
+      uppercase: false,
+      lowercase: false,
+      number: false,
+      special: false
+    });
+
+    const validStates = Object.fromEntries(getPasswordRequirementStates('Abcdef1!').map((item) => [item.id, item.met]));
+    expect(validStates).toEqual({
+      length: true,
+      uppercase: true,
+      lowercase: true,
+      number: true,
+      special: true
+    });
+  });
+
+  test('identifies missing password requirements', () => {
+    expect(Object.fromEntries(getPasswordRequirementStates('Abc1!').map((item) => [item.id, item.met]))).toMatchObject({ length: false });
+    expect(Object.fromEntries(getPasswordRequirementStates('A1!'.repeat(11)).map((item) => [item.id, item.met]))).toMatchObject({ length: false });
+    expect(Object.fromEntries(getPasswordRequirementStates('abcdef1!').map((item) => [item.id, item.met]))).toMatchObject({ uppercase: false });
+    expect(Object.fromEntries(getPasswordRequirementStates('ABCDEF1!').map((item) => [item.id, item.met]))).toMatchObject({ lowercase: false });
+    expect(Object.fromEntries(getPasswordRequirementStates('Abcdefg!').map((item) => [item.id, item.met]))).toMatchObject({ number: false });
+    expect(Object.fromEntries(getPasswordRequirementStates('Abcdef12').map((item) => [item.id, item.met]))).toMatchObject({ special: false });
   });
 });
 

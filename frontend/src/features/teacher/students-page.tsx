@@ -41,6 +41,7 @@ import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { ClassSummary, CreatedUser, CreatedUsersPayload, StudentSummary, StudentWithClassSummary, TeacherRecord, TeacherRecordSummary, TeacherStatistics, UserSummary } from '@/lib/types';
 import { UserCredentialsResult } from '@/shared/user-credentials-result';
 import { includesSearch, ListSearchBar, type ListSearchState } from '@/shared/list-search-bar';
+import { PasswordRequirements } from '@/shared/password-requirements';
 import { compareStudentClass, Field, FilterSelect, formatStudentClass, PageFrame, SelectClass, SortButton, type CredentialsResult } from './shared';
 
 type StudentSearchField = 'name' | 'uid';
@@ -293,7 +294,10 @@ export function TeacherStudentsPage() {
           <div className="space-y-4">
             <Field label="姓名"><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></Field>
             <Field label="英文名"><Input value={form.english_name} onChange={(event) => setForm((current) => ({ ...current, english_name: event.target.value }))} /></Field>
-            <Field label="新密码"><Input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} /></Field>
+            <Field label="新密码">
+              <Input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} />
+              <PasswordRequirements password={form.password} isProduction={runtimeConfig.is_production} />
+            </Field>
             <SelectClass classes={classes} value={form.class_id} onChange={(class_id) => setForm((current) => ({ ...current, class_id }))} />
             <Button
               onClick={async () => {

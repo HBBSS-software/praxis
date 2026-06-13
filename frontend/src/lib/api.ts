@@ -6,7 +6,13 @@ import { API_URL, MAX_RECORD_IMAGES, type AppRuntimeConfig, type CreatedUser, ty
 
 export const fallbackPasswordMinLength = 8;
 export const fallbackPasswordMaxLength = 32;
-const passwordSpecialPattern = /[!-/:-@[-`{-~]/;
+export const passwordSpecialPattern = /[!-/:-@[-`{-~]/;
+
+export type PasswordRequirement = {
+  id: 'length' | 'uppercase' | 'lowercase' | 'number' | 'special';
+  label: string;
+  met: boolean;
+};
 
 export class ApiResponseError extends Error {
   status: number;
@@ -157,6 +163,36 @@ export function validatePlainPassword(
   }
 
   return null;
+}
+
+export function getPasswordRequirementStates(password: string): PasswordRequirement[] {
+  return [
+    {
+      id: 'length',
+      label: `${fallbackPasswordMinLength} 到 ${fallbackPasswordMaxLength} 位`,
+      met: password.length >= fallbackPasswordMinLength && password.length <= fallbackPasswordMaxLength
+    },
+    {
+      id: 'uppercase',
+      label: '包含大写字母',
+      met: /[A-Z]/.test(password)
+    },
+    {
+      id: 'lowercase',
+      label: '包含小写字母',
+      met: /[a-z]/.test(password)
+    },
+    {
+      id: 'number',
+      label: '包含数字',
+      met: /\d/.test(password)
+    },
+    {
+      id: 'special',
+      label: '包含特殊符号',
+      met: passwordSpecialPattern.test(password)
+    }
+  ];
 }
 
 async function fetchPasswordSealChallenge(): Promise<ChallengeBundle> {
