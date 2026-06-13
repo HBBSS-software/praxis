@@ -315,13 +315,13 @@ function CsvFormatDialog({ children }: { children: React.ReactNode }) {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>CSV 格式</DialogTitle>
+          <DialogTitle>CSV 导入格式</DialogTitle>
           <DialogDescription>
-            每行按 <code>中文名,英文名,用户类型,班级名称</code> 填写。用户类型填写 <code>student</code>、<code>teacher</code> 或 <code>admin</code>；管理员的班级留空。
+            每行填写 <code>中文名,英文名,用户类型,班级名称</code>，英文名和班级名称选填。用户类型填写 <code>student</code>、<code>teacher</code> 或 <code>admin</code>；管理员的班级留空。
           </DialogDescription>
         </DialogHeader>
         <pre className="overflow-x-auto rounded-2xl bg-muted p-3 text-sm leading-6 sm:p-4">
-          {`小奶龙,Milk Dragon,student,一年级 1 班\n大奶龙,Big Dragon,teacher,一年级 1 班\n超级奶龙,,admin,`}
+          {`小奶龙,MilkDragon,student,一年级 1 班\n大奶龙,MilkDragonPlus,teacher,一年级 1 班\n超级奶龙,,admin,`}
         </pre>
       </DialogContent>
     </Dialog>

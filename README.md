@@ -75,8 +75,4 @@ pnpm start
 
 | 角色 | UID | 密码 |
 | --- | --- | --- |
-| 管理员 | `1` | `initial_admin_password` |
-
-## CSV 导入
-
-用户导入文件不包含表头，格式为 `中文名,英文名,用户类型,班级名称`。英文名和班级名称可以留空，用户类型为 `student`、`teacher` 或 `admin`。
+| 管理员 | `1` | 在 `initial_admin_password` 中配置 |
