@@ -20,8 +20,7 @@
     "db:push": "drizzle-kit push",
     "db:migrate": "tsx backend/scripts/migrate.ts",
     "db:migrate:name-initials": "tsx backend/scripts/migrate-name-initials.ts",
-    "db:studio": "drizzle-kit studio",
-    "prepare": "husky"
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -80,7 +79,6 @@
     "concurrently": "^9.2.1",
     "drizzle-kit": "1.0.0-beta.21",
     "happy-dom": "^20.9.0",
-    "husky": "^9.1.7",
     "tailwindcss": "^4.3.0",
     "typescript": "^5.9.3",
     "vite": "^8.0.14",
