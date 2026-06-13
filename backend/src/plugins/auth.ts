@@ -40,6 +40,10 @@ function isPasswordSetupAllowedRequest(path: string, method: string) {
     return true;
   }
 
+  if (path === '/api/auth/pqseal-challenge') {
+    return true;
+  }
+
   return path === '/api/auth/password' && method === 'PUT';
 }
 

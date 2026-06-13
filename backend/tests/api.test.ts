@@ -1,10 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createCipheriv, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { decodeJwt, SignJWT } from 'jose';
-import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
+import { createPQSealClient } from 'pqseal';
 
 const testDbPath = `/tmp/praxis-test-db-${Date.now()}.db`;
 const testConfigPath = `/tmp/praxis-test-config-${Date.now()}.toml`;
@@ -13,6 +12,7 @@ const testTmpUploadDir = fileURLToPath(new URL('../data/tmp-uploads', import.met
 const cleanupUploadFiles = new Set<string>();
 const testJwtSecret = 'test-jwt-secret-12345678901234567890';
 const testJwtIssuer = 'praxis';
+const pqseal = createPQSealClient();
 
 globalThis.__praxisConfigFile = testConfigPath;
 globalThis.__praxisDatabaseFile = testDbPath;
@@ -132,35 +132,18 @@ async function readJson(response: Response) {
   return await response.json() as Record<string, unknown>;
 }
 
-function fromBase64Url(value: string) {
-  return Buffer.from(value, 'base64url');
-}
-
-function toBase64Url(bytes: Uint8Array) {
-  return Buffer.from(bytes).toString('base64url');
-}
-
-// Mirrors the frontend `encryptPasswordFields`: fetch the current public key,
-// ML-KEM-768 encapsulate to derive the AES-256 key, then AES-256-GCM encrypt
-// the plaintext into a `keyId.kemCipherText.iv.aesCipherTextWithTag` envelope.
-async function encryptPassword(plaintext: string) {
-  const response = await apiRequest('/api/auth/public-key');
-  const payload = await readJson(response);
-  const keyId = payload.key_id as string;
-  const publicKey = fromBase64Url(payload.public_key as string);
-
-  const { cipherText, sharedSecret } = ml_kem768.encapsulate(publicKey);
-  const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', Buffer.from(sharedSecret), iv);
-  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-  const authTag = cipher.getAuthTag();
-  const aesPayload = Buffer.concat([encrypted, authTag]);
-
-  return [keyId, toBase64Url(cipherText), toBase64Url(iv), toBase64Url(aesPayload)].join('.');
+async function sealPasswordFields<T extends Record<string, unknown>>(body: T, keys: Array<keyof T>) {
+  const response = await apiRequest('/api/auth/pqseal-challenge');
+  const bundle = await response.json();
+  return pqseal.sealFields(bundle, body, keys);
 }
 
 async function loginAs(uid: number | string, password: string) {
-  const response = await jsonRequest('/api/auth/login', { uid: String(uid), password: await encryptPassword(password) }, { method: 'POST' });
+  const response = await jsonRequest(
+    '/api/auth/login',
+    await sealPasswordFields({ uid: String(uid), password }, ['password']),
+    { method: 'POST' }
+  );
   const payload = await readJson(response);
 
   if (!response.ok) {
@@ -477,10 +460,11 @@ describe('assignments, records and notifications', () => {
 describe('route behavior', () => {
   test('requires users with random initial passwords to set a new password after login', async () => {
     const createdUser = await database.createUser('待设置密码用户', 'student');
-    const response = await jsonRequest('/api/auth/login', {
-      uid: String(createdUser.uid),
-      password: await encryptPassword(createdUser.password)
-    }, { method: 'POST' });
+    const response = await jsonRequest(
+      '/api/auth/login',
+      await sealPasswordFields({ uid: String(createdUser.uid), password: createdUser.password }, ['password']),
+      { method: 'POST' }
+    );
     const payload = await readJson(response);
 
     expect(response.status).toBe(200);
@@ -500,10 +484,10 @@ describe('route behavior', () => {
     expect(blockedResponse.status).toBe(403);
     expect((await readJson(blockedResponse)).error).toBe('请设置密码。');
 
-    const changePasswordResponse = await jsonRequest('/api/auth/password', {
-      current_password: await encryptPassword(createdUser.password),
-      new_password: await encryptPassword('new-password-01')
-    }, {
+    const changePasswordResponse = await jsonRequest('/api/auth/password', await sealPasswordFields({
+      current_password: createdUser.password,
+      new_password: 'new-password-01'
+    }, ['current_password', 'new_password']), {
       method: 'PUT',
       headers: {
         authorization: `Bearer ${token}`
@@ -514,10 +498,11 @@ describe('route behavior', () => {
     const changePasswordPayload = await readJson(changePasswordResponse);
     expect(decodeJwt(changePasswordPayload.token as string).aud).toBe('student');
 
-    const reloginResponse = await jsonRequest('/api/auth/login', {
-      uid: String(createdUser.uid),
-      password: await encryptPassword('new-password-01')
-    }, { method: 'POST' });
+    const reloginResponse = await jsonRequest(
+      '/api/auth/login',
+      await sealPasswordFields({ uid: String(createdUser.uid), password: 'new-password-01' }, ['password']),
+      { method: 'POST' }
+    );
     const reloginPayload = await readJson(reloginResponse);
 
     expect(reloginResponse.status).toBe(200);
@@ -542,11 +527,11 @@ describe('route behavior', () => {
     expect(searchResponse.status).toBe(200);
     expect((searchPayload.classes as Array<{ id: number }>).some((item) => item.id === targetClass.id)).toBe(true);
 
-    const loginResponse = await jsonRequest('/api/auth/login/student-name', {
+    const loginResponse = await jsonRequest('/api/auth/login/student-name', await sealPasswordFields({
       class_id: targetClass.id,
       name: '重名学生',
-      password: await encryptPassword('same-pass-01')
-    }, { method: 'POST' });
+      password: 'same-pass-01'
+    }, ['password']), { method: 'POST' });
     const loginPayload = await readJson(loginResponse);
 
     expect(loginResponse.status).toBe(200);
@@ -609,7 +594,7 @@ describe('route behavior', () => {
     const token = await loginAs('2', 'teacher-pass-01');
     expect(decodeJwt(token).aud).toBe('teacher');
     const response = await jsonRequest('/api/auth/password', {
-      current_password: await encryptPassword('teacher-pass-01'),
+      current_password: '',
       new_password: 'not-a-valid-envelope'
     }, {
       method: 'PUT',
@@ -625,10 +610,10 @@ describe('route behavior', () => {
   test('updates profile and returns the latest user', async () => {
     await setNormalPassword('2', 'teacher-pass-01');
     const token = await loginAs('2', 'teacher-pass-01');
-    const response = await jsonRequest('/api/auth/profile', {
+    const response = await jsonRequest('/api/auth/profile', await sealPasswordFields({
       name: '新教师姓名',
-      current_password: await encryptPassword('teacher-pass-01')
-    }, {
+      current_password: 'teacher-pass-01'
+    }, ['current_password']), {
       method: 'PUT',
       headers: {
         authorization: `Bearer ${token}`
@@ -653,10 +638,10 @@ describe('route behavior', () => {
     try {
       appConfig.is_production = true;
 
-      const weakResponse = await jsonRequest('/api/auth/password', {
-        current_password: await encryptPassword('teacher-pass-01'),
-        new_password: await encryptPassword('new-password-01')
-      }, {
+      const weakResponse = await jsonRequest('/api/auth/password', await sealPasswordFields({
+        current_password: 'teacher-pass-01',
+        new_password: 'new-password-01'
+      }, ['current_password', 'new_password']), {
         method: 'PUT',
         headers: {
           authorization: `Bearer ${token}`
@@ -668,10 +653,10 @@ describe('route behavior', () => {
 
       appConfig.is_production = false;
 
-      const devResponse = await jsonRequest('/api/auth/password', {
-        current_password: await encryptPassword('teacher-pass-01'),
-        new_password: await encryptPassword('new-password-01')
-      }, {
+      const devResponse = await jsonRequest('/api/auth/password', await sealPasswordFields({
+        current_password: 'teacher-pass-01',
+        new_password: 'new-password-01'
+      }, ['current_password', 'new_password']), {
         method: 'PUT',
         headers: {
           authorization: `Bearer ${token}`
@@ -1408,7 +1393,7 @@ describe('route behavior', () => {
     const headers = { 'x-real-ip': '203.0.113.10' };
 
     for (let index = 0; index < 3; index += 1) {
-      const response = await jsonRequest('/api/auth/login', { uid: '3', password: await encryptPassword('wrong-password') }, {
+      const response = await jsonRequest('/api/auth/login', await sealPasswordFields({ uid: '3', password: 'wrong-password' }, ['password']), {
         method: 'POST',
         headers
       });
@@ -1416,14 +1401,14 @@ describe('route behavior', () => {
       expect(response.status).toBe(401);
     }
 
-    const lockedResponse = await jsonRequest('/api/auth/login', { uid: '3', password: await encryptPassword('student-pass-01') }, {
+    const lockedResponse = await jsonRequest('/api/auth/login', await sealPasswordFields({ uid: '3', password: 'student-pass-01' }, ['password']), {
       method: 'POST',
       headers
     });
 
     expect(lockedResponse.status).toBe(429);
 
-    const otherUserResponse = await jsonRequest('/api/auth/login', { uid: '4', password: await encryptPassword('student-pass-02') }, {
+    const otherUserResponse = await jsonRequest('/api/auth/login', await sealPasswordFields({ uid: '4', password: 'student-pass-02' }, ['password']), {
       method: 'POST',
       headers
     });

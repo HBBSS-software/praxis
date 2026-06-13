@@ -1,5 +1,5 @@
 import { hc } from 'hono/client';
-import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
+import { createPQSealClient, type ChallengeBundle } from 'pqseal';
 
 import type { Api } from '../../../backend/src/app';
 import { API_URL, MAX_RECORD_IMAGES, type AppRuntimeConfig, type CreatedUser, type CreatedUsersPayload, type CsvImportPreview, type StoredUser, type UploadResult, type UserRole } from './types';
@@ -22,7 +22,7 @@ type ApiResult = Promise<{ data: unknown; error: unknown; status: number }>;
 const fallbackUploadImageMaxSize = 5 * 1024 * 1024;
 const uploadImageTypes = new Set(['image/jpeg', 'image/png', 'image/gif']);
 const uploadImageNamePattern = /\.(jpe?g|png|gif)$/i;
-const textEncoder = new TextEncoder();
+const pqseal = createPQSealClient();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -159,143 +159,56 @@ export function validatePlainPassword(
   return null;
 }
 
-type PublicKeyResponse = {
-  key_id: string;
-  public_key: string;
-  algorithm: string;
-  expires_at: string;
-};
-
-type CachedPublicKey = {
-  keyId: string;
-  publicKey: Uint8Array;
-  expiresAtMs: number;
-};
-
-let cachedPublicKey: CachedPublicKey | null = null;
-
-function base64UrlToBytes(value: string) {
-  const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-  const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-
-  return bytes;
-}
-
-function bytesToBase64Url(bytes: Uint8Array) {
-  let binary = '';
-
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-async function fetchPublicKey(): Promise<CachedPublicKey> {
-  const response = await fetch(`${getApiOrigin()}/api/auth/public-key`, {
+async function fetchPasswordSealChallenge(): Promise<ChallengeBundle> {
+  const response = await fetch(`${getApiOrigin()}/api/auth/pqseal-challenge`, {
     headers: { accept: 'application/json' }
   });
 
   if (!response.ok) {
-    throw new ApiResponseError(response.status, '无法获取加密公钥，请稍后重试。');
+    throw new ApiResponseError(response.status, '无法获取加密挑战，请稍后重试。');
   }
 
-  const payload = await response.json() as PublicKeyResponse;
-  return {
-    keyId: payload.key_id,
-    publicKey: base64UrlToBytes(payload.public_key),
-    expiresAtMs: Date.parse(payload.expires_at)
-  };
+  return await response.json() as ChallengeBundle;
 }
 
-async function getPublicKey(forceRefresh = false): Promise<CachedPublicKey> {
-  if (!forceRefresh && cachedPublicKey && Date.now() < cachedPublicKey.expiresAtMs) {
-    return cachedPublicKey;
-  }
-
-  cachedPublicKey = await fetchPublicKey();
-  return cachedPublicKey;
-}
-
-function clearPublicKeyCache() {
-  cachedPublicKey = null;
-}
-
-/**
- * Encrypts a plaintext password into a `keyId.kemCipherText.iv.aesCipherTextWithTag`
- * envelope: ML-KEM-768 encapsulation derives a 32-byte shared secret used as the
- * AES-256-GCM key. WebCrypto appends the 16-byte GCM tag to the ciphertext, which
- * the backend splits off before verifying.
- */
-export async function encryptPasswordForApi(password: string, key: CachedPublicKey) {
-  const { cipherText, sharedSecret } = ml_kem768.encapsulate(key.publicKey);
-  const aesKey = await crypto.subtle.importKey('raw', sharedSecret, 'AES-GCM', false, ['encrypt']);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = new Uint8Array(
-    await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, textEncoder.encode(password))
-  );
-
-  return [
-    key.keyId,
-    bytesToBase64Url(cipherText),
-    bytesToBase64Url(iv),
-    bytesToBase64Url(encrypted)
-  ].join('.');
-}
-
-async function encryptPasswordFields<T extends Record<string, unknown>>(
+export async function sealPasswordFieldsForApi<T extends Record<string, unknown>>(
   body: T,
-  keys: Array<keyof T>,
-  forceRefresh = false
+  keys: Array<keyof T>
 ) {
-  const publicKey = await getPublicKey(forceRefresh);
-  const nextBody = { ...body };
+  const activeKeys = keys.filter((key) => {
+    const value = body[key];
+    return typeof value === 'string' && value !== '';
+  });
 
-  for (const key of keys) {
-    const value = nextBody[key];
-
-    if (typeof value === 'string' && value !== '') {
-      nextBody[key] = await encryptPasswordForApi(value, publicKey) as T[keyof T];
-    }
+  if (activeKeys.length === 0) {
+    return body;
   }
 
-  return nextBody;
+  return pqseal.sealFields(await fetchPasswordSealChallenge(), body, activeKeys);
 }
 
-// A 400 whose message references the key/ciphertext/decryption means the server
-// could not decrypt — typically because the in-memory key rotated or the server
-// restarted since we cached the public key. Those are recoverable by fetching a
-// fresh key and retrying; genuine validation errors (e.g. 密码至少需要 8 位) are not.
-function isStaleKeyError(result: { status: number; error: unknown }) {
+function isSealChallengeError(result: { status: number; error: unknown }) {
   if (result.status !== 400) {
     return false;
   }
 
   const message = extractErrorMessage(result.error) ?? '';
-  return message.includes('密钥') || message.includes('密文') || message.includes('解密');
+  return message.includes('加密挑战') || message.includes('解密');
 }
 
-async function sendWithEncryptedPassword<T extends Record<string, unknown>>(
+async function sendWithSealedPassword<T extends Record<string, unknown>>(
   body: T,
   keys: Array<keyof T>,
-  send: (encrypted: T) => ApiResult
+  send: (encrypted: Record<string, unknown>) => ApiResult
 ): ApiResult {
-  const encrypted = await encryptPasswordFields(body, keys);
-  const result = await send(encrypted);
+  const sealed = await sealPasswordFieldsForApi(body, keys);
+  const result = await send(sealed);
 
-  if (!isStaleKeyError(result)) {
+  if (!isSealChallengeError(result)) {
     return result;
   }
 
-  clearPublicKeyCache();
-  const retried = await encryptPasswordFields(body, keys, true);
-  return send(retried);
+  return send(await sealPasswordFieldsForApi(body, keys));
 }
 
 export function getApiOrigin() {
@@ -320,13 +233,19 @@ function createRpcClient(token?: string | null) {
 
 export function createApiClient() {
   const client = createRpcClient();
-  type AuthLoginJson = Parameters<typeof client.auth.login.$post>[0]['json'];
-  type AuthStudentUidLoginJson = Parameters<typeof client.auth.login['student-uid']['$post']>[0]['json'];
-  type AuthStudentNameLoginJson = Parameters<typeof client.auth.login['student-name']['$post']>[0]['json'];
-  type AuthStaffLoginJson = Parameters<typeof client.auth.login.staff['$post']>[0]['json'];
+  type AuthLoginJson = { uid: string; password: string };
+  type AuthStudentUidLoginJson = { uid: number; password: string };
+  type AuthStudentNameLoginJson = { class_id: number; name: string; password: string };
+  type AuthStaffLoginJson = { identifier: string; password: string };
   type AuthLoginSelectJson = Parameters<typeof client.auth.login.select['$post']>[0]['json'];
-  type AuthPasswordJson = Parameters<typeof client.auth.password.$put>[0]['json'];
-  type AuthProfileJson = Parameters<typeof client.auth.profile.$put>[0]['json'];
+  type AuthPasswordJson = { current_password: string; new_password: string };
+  type AuthProfileJson = { current_password: string; name: string };
+  type UserUpdateWithPasswordJson = {
+    name?: string;
+    english_name?: string | null;
+    password?: string;
+    class_id?: number | null;
+  };
   type AdminUsersPostJson = Parameters<typeof client.admin.users.$post>[0]['json'];
   type AdminUsersDeleteJson = Parameters<typeof client.admin.users.$delete>[0]['json'];
   type AdminUsersBatchJson = Parameters<typeof client.admin.users.batch.$post>[0]['json'];
@@ -345,13 +264,12 @@ export function createApiClient() {
   type TeacherStudentsClassJson = Parameters<typeof client.teacher.students.class.$patch>[0]['json'];
 
   const adminUserRoute = ({ id }: { id: number }) => {
-    type Body = Parameters<typeof client.admin.users[':id']['$put']>[0]['json'];
     return {
-      put: (body: Body) =>
-        sendWithEncryptedPassword(body, ['password'], (json) =>
+      put: (body: UserUpdateWithPasswordJson) =>
+        sendWithSealedPassword(body, ['password'], (json) =>
           wrapRpcResponse(client.admin.users[':id'].$put({
             param: { id: toPathParam(id) },
-            json
+            json: json as Parameters<typeof client.admin.users[':id']['$put']>[0]['json']
           }))
         ),
       delete: () =>
@@ -450,13 +368,12 @@ export function createApiClient() {
   });
 
   const teacherStudentRoute = ({ id }: { id: number }) => {
-    type Body = Parameters<typeof client.teacher.students[':id']['$put']>[0]['json'];
     return {
-      put: (body: Body) =>
-        sendWithEncryptedPassword(body, ['password'], (json) =>
+      put: (body: UserUpdateWithPasswordJson) =>
+        sendWithSealedPassword(body, ['password'], (json) =>
           wrapRpcResponse(client.teacher.students[':id'].$put({
             param: { id: toPathParam(id) },
-            json
+            json: json as Parameters<typeof client.teacher.students[':id']['$put']>[0]['json']
           }))
         ),
       records: {
@@ -475,18 +392,22 @@ export function createApiClient() {
     auth: {
       login: {
         post: (body: AuthLoginJson) =>
-          sendWithEncryptedPassword(body, ['password'], (json) => wrapRpcResponse(client.auth.login.$post({ json }))),
+          sendWithSealedPassword(body, ['password'], (json) =>
+            wrapRpcResponse(client.auth.login.$post({ json: json as Parameters<typeof client.auth.login.$post>[0]['json'] }))),
         studentUid: {
           post: (body: AuthStudentUidLoginJson) =>
-            sendWithEncryptedPassword(body, ['password'], (json) => wrapRpcResponse(client.auth.login['student-uid'].$post({ json })))
+            sendWithSealedPassword(body, ['password'], (json) =>
+              wrapRpcResponse(client.auth.login['student-uid'].$post({ json: json as Parameters<typeof client.auth.login['student-uid']['$post']>[0]['json'] })))
         },
         studentName: {
           post: (body: AuthStudentNameLoginJson) =>
-            sendWithEncryptedPassword(body, ['password'], (json) => wrapRpcResponse(client.auth.login['student-name'].$post({ json })))
+            sendWithSealedPassword(body, ['password'], (json) =>
+              wrapRpcResponse(client.auth.login['student-name'].$post({ json: json as Parameters<typeof client.auth.login['student-name']['$post']>[0]['json'] })))
         },
         staff: {
           post: (body: AuthStaffLoginJson) =>
-            sendWithEncryptedPassword(body, ['password'], (json) => wrapRpcResponse(client.auth.login.staff.$post({ json })))
+            sendWithSealedPassword(body, ['password'], (json) =>
+              wrapRpcResponse(client.auth.login.staff.$post({ json: json as Parameters<typeof client.auth.login.staff['$post']>[0]['json'] })))
         },
         select: {
           post: (body: AuthLoginSelectJson) => wrapRpcResponse(client.auth.login.select.$post({ json: body }))
@@ -503,12 +424,13 @@ export function createApiClient() {
       },
       password: {
         put: (body: AuthPasswordJson) =>
-          sendWithEncryptedPassword(body, ['current_password', 'new_password'], (json) =>
-            wrapRpcResponse(client.auth.password.$put({ json })))
+          sendWithSealedPassword(body, ['current_password', 'new_password'], (json) =>
+            wrapRpcResponse(client.auth.password.$put({ json: json as Parameters<typeof client.auth.password.$put>[0]['json'] })))
       },
       profile: {
         put: (body: AuthProfileJson) =>
-          sendWithEncryptedPassword(body, ['current_password'], (json) => wrapRpcResponse(client.auth.profile.$put({ json })))
+          sendWithSealedPassword(body, ['current_password'], (json) =>
+            wrapRpcResponse(client.auth.profile.$put({ json: json as Parameters<typeof client.auth.profile.$put>[0]['json'] })))
       },
       logout: {
         post: () => wrapRpcResponse(client.auth.logout.$post())

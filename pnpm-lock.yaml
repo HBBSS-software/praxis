@@ -23,9 +23,6 @@ importers:
       '@hono/zod-validator':
         specifier: ^0.7.6
         version: 0.7.6(hono@4.12.23)(zod@3.25.76)
-      '@noble/post-quantum':
-        specifier: ^0.6.1
-        version: 0.6.1
       '@radix-ui/react-alert-dialog':
         specifier: ^1.1.15
         version: 1.1.15(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -92,6 +89,9 @@ importers:
       pinyin-pro:
         specifier: ^3.28.1
         version: 3.28.1
+      pqseal:
+        specifier: ^1.0.0
+        version: 1.0.0
       radix-ui:
         specifier: ^1.4.3
         version: 1.4.3(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -3759,6 +3759,10 @@ packages:
 
   powershell-utils@0.1.0:
     resolution: {integrity: sha512-dM0jVuXJPsDN6DvRpea484tCUaMiXWjuCn++HGTqUWzGDjv5tZkEZldAJ/UMlqRYGFrD/etByo4/xOuC/snX2A==}
+    engines: {node: '>=20'}
+
+  pqseal@1.0.0:
+    resolution: {integrity: sha512-6hiMkJ5jB9GP5s7AXyKA3A6oCMLlFD7YxdfE81npteTnkVCWSNnJoSqddCpB/sfamcDReKDCql+uLO3Cwf8neg==}
     engines: {node: '>=20'}
 
   pretty-format@27.5.1:
@@ -7698,6 +7702,12 @@ snapshots:
       source-map-js: 1.2.1
 
   powershell-utils@0.1.0: {}
+
+  pqseal@1.0.0:
+    dependencies:
+      '@noble/ciphers': 2.2.0
+      '@noble/hashes': 2.2.0
+      '@noble/post-quantum': 0.6.1
 
   pretty-format@27.5.1:
     dependencies:

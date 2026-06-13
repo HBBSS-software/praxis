@@ -3,7 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
 import { hashPassword } from '../auth/password';
-import { decryptEnvelope, EnvelopeDecryptError } from '../auth/password-key-manager';
+import { openPasswordFields, PasswordSealError } from '../auth/password-seal';
 import { createUserCredentialsCsv } from '../csv/user-import';
 import { formatCsv } from '../csv/export';
 import database from '../database';
@@ -672,7 +672,7 @@ export const teacherRoutes = new Hono<AppBindings>()
   })
   .put('/teacher/students/:id', zValidator('param', recordIdParamSchema, validationHook), zValidator('json', updateUserBodySchema, validationHook), async (c) => {
     const studentId = Number(c.req.valid('param').id);
-    const body = c.req.valid('json');
+    let body = c.req.valid('json');
     const user = c.get('user')!;
     const student = database.findUserById(studentId);
 
@@ -682,6 +682,16 @@ export const teacherRoutes = new Hono<AppBindings>()
 
     if (!canManageStudent(studentId, user.id, user.role)) {
       return apiError(c, 403, '无权管理该学生。');
+    }
+
+    try {
+      body = openPasswordFields(body, ['password'], { required: false });
+    } catch (error) {
+      if (error instanceof PasswordSealError) {
+        return apiError(c, 400, error.message);
+      }
+
+      throw error;
     }
 
     if (body.name !== undefined) {
@@ -697,17 +707,7 @@ export const teacherRoutes = new Hono<AppBindings>()
     }
 
     if (body.password !== undefined && body.password !== '') {
-      let password: string;
-
-      try {
-        password = decryptEnvelope(body.password);
-      } catch (error) {
-        if (error instanceof EnvelopeDecryptError) {
-          return apiError(c, 400, error.message);
-        }
-
-        throw error;
-      }
+      const password = body.password;
 
       const error = validatePassword(password);
       if (error) return apiError(c, 400, error);

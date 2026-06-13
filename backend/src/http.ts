@@ -25,16 +25,29 @@ export const userRoleSchema = z.enum(userRoles);
 export const recordStatusSchema = z.enum(recordStatuses);
 export const recordSortSchema = z.enum(['created_at_desc', 'created_at_asc', 'score_desc', 'score_asc'] satisfies [RecordSort, RecordSort, RecordSort, RecordSort]);
 export const notificationTypeSchema = z.enum(notificationTypes);
-const passwordEnvelopePattern = /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+){3}$/;
-const requiredPasswordSchema = z
-  .string()
-  .min(1, '密码不能为空。')
-  .max(4096, '密码格式无效。')
-  .regex(passwordEnvelopePattern, '密码格式无效。');
-const optionalPasswordSchema = z
-  .string()
-  .max(4096, '密码格式无效。')
-  .refine((value) => value === '' || passwordEnvelopePattern.test(value), '密码格式无效。');
+const pqSealTextSchema = z.string().min(1).max(4096).regex(/^[A-Za-z0-9_-]+$/, '密码格式无效。');
+const pqSealEnvelopeSchema = z.object({
+  v: z.literal(1),
+  kem: z.string().min(1).max(64),
+  challenge: pqSealTextSchema,
+  ciphertext: pqSealTextSchema,
+  data: pqSealTextSchema
+}, {
+  required_error: '密码格式无效。',
+  invalid_type_error: '密码格式无效。'
+}).strict();
+const pqSealedFieldsSchema = z.object({
+  __pqseal: pqSealEnvelopeSchema,
+  __pqsealFields: z.array(z.string().min(1).max(64), {
+    required_error: '密码格式无效。',
+    invalid_type_error: '密码格式无效。'
+  }).min(1).max(8)
+});
+const optionalPqSealedFieldsSchema = z.object({
+  __pqseal: pqSealEnvelopeSchema.optional(),
+  __pqsealFields: z.array(z.string().min(1).max(64)).min(1).max(8).optional()
+});
+const optionalPasswordSchema = z.literal('');
 
 export const idParamSchema = z.object({
   id: z.string().regex(positiveIdPattern)
@@ -51,25 +64,21 @@ export const userSearchQuerySchema = z.object({
 });
 
 export const loginBodySchema = z.object({
-  uid: z.string().min(1).max(32),
-  password: requiredPasswordSchema
-});
+  uid: z.string().min(1).max(32)
+}).merge(pqSealedFieldsSchema);
 
 export const studentUidLoginBodySchema = z.object({
-  uid: z.number().int().positive(),
-  password: requiredPasswordSchema
-});
+  uid: z.number().int().positive()
+}).merge(pqSealedFieldsSchema);
 
 export const studentNameLoginBodySchema = z.object({
   class_id: z.number().int().positive(),
-  name: z.string().min(1).max(USER_NAME_MAX_LENGTH),
-  password: requiredPasswordSchema
-});
+  name: z.string().min(1).max(USER_NAME_MAX_LENGTH)
+}).merge(pqSealedFieldsSchema);
 
 export const staffLoginBodySchema = z.object({
-  identifier: z.string().min(1).max(64),
-  password: requiredPasswordSchema
-});
+  identifier: z.string().min(1).max(64)
+}).merge(pqSealedFieldsSchema);
 
 export const loginSelectionBodySchema = z.object({
   challenge: z.string().min(16).max(128),
@@ -81,21 +90,17 @@ export const classSearchQuerySchema = z.object({
 });
 
 export const profileBodySchema = z.object({
-  current_password: requiredPasswordSchema,
   name: z.string().min(1).max(USER_NAME_MAX_LENGTH)
-});
+}).merge(pqSealedFieldsSchema);
 
-export const passwordBodySchema = z.object({
-  current_password: requiredPasswordSchema,
-  new_password: requiredPasswordSchema
-});
+export const passwordBodySchema = pqSealedFieldsSchema;
 
 export const updateUserBodySchema = z.object({
   name: z.string().min(1).max(USER_NAME_MAX_LENGTH).optional(),
   english_name: z.string().max(USER_NAME_MAX_LENGTH).nullable().optional(),
   password: optionalPasswordSchema.optional(),
   class_id: z.number().int().positive().nullable().optional()
-});
+}).merge(optionalPqSealedFieldsSchema);
 
 export const batchResetPasswordBodySchema = z.object({
   ids: z.array(z.number().int().positive()).min(1)

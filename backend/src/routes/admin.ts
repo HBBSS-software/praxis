@@ -3,7 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
 import { hashPassword } from '../auth/password';
-import { decryptEnvelope, EnvelopeDecryptError } from '../auth/password-key-manager';
+import { openPasswordFields, PasswordSealError } from '../auth/password-seal';
 import { createUserCredentialsCsv, parseUserImportCsvBuffer, type CsvUserImportEntry } from '../csv/user-import';
 import database from '../database';
 import {
@@ -271,11 +271,21 @@ export const adminRoutes = new Hono<AppBindings>()
   })
   .put('/users/:id', zValidator('param', z.object({ id: z.string().regex(/^[1-9]\d*$/) }), validationHook), zValidator('json', updateUserBodySchema, validationHook), async (c) => {
     const id = Number(c.req.valid('param').id);
-    const body = c.req.valid('json');
+    let body = c.req.valid('json');
     const user = database.findUserById(id);
 
     if (!user) {
       return apiError(c, 404, '用户不存在。');
+    }
+
+    try {
+      body = openPasswordFields(body, ['password'], { required: false });
+    } catch (error) {
+      if (error instanceof PasswordSealError) {
+        return apiError(c, 400, error.message);
+      }
+
+      throw error;
     }
 
     if (body.name !== undefined) {
@@ -302,17 +312,7 @@ export const adminRoutes = new Hono<AppBindings>()
     }
 
     if (body.password !== undefined && body.password !== '') {
-      let password: string;
-
-      try {
-        password = decryptEnvelope(body.password);
-      } catch (error) {
-        if (error instanceof EnvelopeDecryptError) {
-          return apiError(c, 400, error.message);
-        }
-
-        throw error;
-      }
+      const password = body.password;
 
       const error = validatePassword(password);
 

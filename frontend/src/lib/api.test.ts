@@ -1,12 +1,11 @@
 // @vitest-environment node
-import { createDecipheriv } from 'node:crypto';
-import { describe, expect, test } from 'vitest';
-import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
-import { ApiResponseError, encryptPasswordForApi, formatUploadImageMaxSize, unwrapResponse, validatePlainPassword } from './api';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import { createPQSealServer, type FieldSealedObject } from 'pqseal';
+import { ApiResponseError, formatUploadImageMaxSize, sealPasswordFieldsForApi, unwrapResponse, validatePlainPassword } from './api';
 
-function base64UrlToBuffer(value: string) {
-  return Buffer.from(value, 'base64url');
-}
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 test('ApiResponseError stores status and message', () => {
   const error = new ApiResponseError(404, '未找到');
@@ -38,27 +37,23 @@ describe('formatUploadImageMaxSize', () => {
 });
 
 describe('password helpers', () => {
-  test('encrypts a password into a decryptable ML-KEM + AES-GCM envelope', async () => {
-    const { publicKey, secretKey } = ml_kem768.keygen();
-    const envelope = await encryptPasswordForApi('correct horse battery', {
-      keyId: 'test-key',
-      publicKey,
-      expiresAtMs: Date.now() + 60_000
-    });
+  test('seals non-empty password fields with PQSeal', async () => {
+    const server = createPQSealServer();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(server.issueChallenge()), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    }));
 
-    const [keyId, kemCipherTextB64, ivB64, aesB64] = envelope.split('.');
-    expect(keyId).toBe('test-key');
-    expect(envelope.split('.')).toHaveLength(4);
+    const sealed = await sealPasswordFieldsForApi({
+      uid: '1',
+      password: 'correct horse battery',
+      optional_password: ''
+    }, ['password', 'optional_password']) as FieldSealedObject & { optional_password: string };
 
-    const sharedSecret = ml_kem768.decapsulate(base64UrlToBuffer(kemCipherTextB64), secretKey);
-    const aesPayload = base64UrlToBuffer(aesB64);
-    const cipherText = aesPayload.subarray(0, aesPayload.length - 16);
-    const authTag = aesPayload.subarray(aesPayload.length - 16);
-    const decipher = createDecipheriv('aes-256-gcm', Buffer.from(sharedSecret), base64UrlToBuffer(ivB64));
-    decipher.setAuthTag(authTag);
-    const plaintext = Buffer.concat([decipher.update(cipherText), decipher.final()]).toString('utf8');
-
-    expect(plaintext).toBe('correct horse battery');
+    expect(sealed.password).toBeUndefined();
+    expect(sealed.optional_password).toBe('');
+    expect(sealed.__pqsealFields).toEqual(['password']);
+    expect(server.openFields(sealed).password).toBe('correct horse battery');
   });
 
   test('validates plain password policy only in production', () => {

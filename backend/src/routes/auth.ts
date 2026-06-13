@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { clearLoginFailures, getRemainingLockoutMs, recordLoginFailure } from '../auth/login-attempts';
 import { trustProxy } from '../auth/config';
 import { hashPassword, isLowCostPasswordHash, verifyPassword } from '../auth/password';
-import { decryptEnvelope, EnvelopeDecryptError, getPublicKey } from '../auth/password-key-manager';
+import { issuePasswordSealChallenge, openPasswordFields, PasswordSealError } from '../auth/password-seal';
 import database from '../database';
 import {
   apiError,
@@ -67,12 +67,17 @@ function buildLoginAttemptKey(kind: string, identifier: string, clientAddress: s
   return `${kind}:${identifier}@${clientAddress}`;
 }
 
-function decryptLoginPassword(envelope: string) {
+function openRequiredPasswordBody<T extends Record<string, unknown>, K extends string>(
+  c: Context<AppBindings>,
+  body: T,
+  fields: readonly K[]
+) {
   try {
-    return decryptEnvelope(envelope);
+    return openPasswordFields(body, fields, { required: true });
   } catch (error) {
-    if (error instanceof EnvelopeDecryptError) {
-      throw error;
+    if (error instanceof PasswordSealError) {
+      c.header('cache-control', 'no-store');
+      return apiError(c, 400, error.message);
     }
 
     throw error;
@@ -125,19 +130,14 @@ function cleanupLoginChallenges() {
   }
 }
 
-async function resolveLogin(c: Context<AppBindings>, kind: string, identifier: string, candidates: User[], passwordEnvelope: string) {
-  let password: string;
+async function resolveLogin(c: Context<AppBindings>, kind: string, identifier: string, candidates: User[], body: Record<string, unknown>) {
+  const openedBody = openRequiredPasswordBody(c, body, ['password']);
 
-  try {
-    password = decryptLoginPassword(passwordEnvelope);
-  } catch (error) {
-    if (error instanceof EnvelopeDecryptError) {
-      c.header('cache-control', 'no-store');
-      return apiError(c, 400, error.message);
-    }
-
-    throw error;
+  if (openedBody instanceof Response) {
+    return openedBody;
   }
+
+  const password = openedBody.password;
 
   if (!password) {
     return apiError(c, 400, '密码不能为空。');
@@ -188,9 +188,9 @@ async function resolveLogin(c: Context<AppBindings>, kind: string, identifier: s
 
 export const authRoutes = new Hono<AppBindings>()
   .use('*', authMiddleware)
-  .get('/public-key', (c) => {
+  .get('/pqseal-challenge', (c) => {
     c.header('cache-control', 'no-store');
-    return c.json(getPublicKey());
+    return c.json(issuePasswordSealChallenge());
   })
   .get('/classes/search', zValidator('query', classSearchQuerySchema, validationHook), (c) => {
     const query = c.req.valid('query');
@@ -199,7 +199,7 @@ export const authRoutes = new Hono<AppBindings>()
   .post('/login/student-uid', zValidator('json', studentUidLoginBodySchema, validationHook), async (c) => {
     const body = c.req.valid('json');
     const user = database.findStudentByUid(body.uid);
-    return await resolveLogin(c, 'student-uid', String(body.uid), user ? [user] : [], body.password);
+    return await resolveLogin(c, 'student-uid', String(body.uid), user ? [user] : [], body);
   })
   .post('/login/student-name', zValidator('json', studentNameLoginBodySchema, validationHook), async (c) => {
     const body = c.req.valid('json');
@@ -214,12 +214,12 @@ export const authRoutes = new Hono<AppBindings>()
       'student-name',
       `${body.class_id}:${body.name.trim()}`,
       database.findStudentsByClassAndName(body.class_id, body.name.trim()),
-      body.password
+      body
     );
   })
   .post('/login/staff', zValidator('json', staffLoginBodySchema, validationHook), async (c) => {
     const body = c.req.valid('json');
-    return await resolveLogin(c, 'staff', body.identifier.trim(), database.findStaffByIdentifier(body.identifier), body.password);
+    return await resolveLogin(c, 'staff', body.identifier.trim(), database.findStaffByIdentifier(body.identifier), body);
   })
   .post('/login/select', zValidator('json', loginSelectionBodySchema, validationHook), async (c) => {
     cleanupLoginChallenges();
@@ -248,18 +248,13 @@ export const authRoutes = new Hono<AppBindings>()
     const uidAttemptKey = buildUidAttemptKey(String(uid), clientAddress);
     const networkAttemptKey = buildNetworkAttemptKey(clientAddress);
 
-    let password: string;
+    const openedBody = openRequiredPasswordBody(c, body, ['password']);
 
-    try {
-      password = decryptEnvelope(body.password);
-    } catch (error) {
-      if (error instanceof EnvelopeDecryptError) {
-        c.header('cache-control', 'no-store');
-        return apiError(c, 400, error.message);
-      }
-
-      throw error;
+    if (openedBody instanceof Response) {
+      return openedBody;
     }
+
+    const password = openedBody.password;
 
     if (!Number.isInteger(uid) || uid <= 0 || !password) {
       return apiError(c, 400, 'UID 和密码不能为空。');
@@ -341,19 +336,14 @@ export const authRoutes = new Hono<AppBindings>()
       return apiError(c, 404, '用户不存在。');
     }
 
-    let currentPassword: string;
-    let newPassword: string;
+    const openedBody = openRequiredPasswordBody(c, body, ['current_password', 'new_password']);
 
-    try {
-      currentPassword = decryptEnvelope(body.current_password);
-      newPassword = decryptEnvelope(body.new_password);
-    } catch (error) {
-      if (error instanceof EnvelopeDecryptError) {
-        return apiError(c, 400, error.message);
-      }
-
-      throw error;
+    if (openedBody instanceof Response) {
+      return openedBody;
     }
+
+    const currentPassword = openedBody.current_password;
+    const newPassword = openedBody.new_password;
 
     const passwordError = validatePassword(newPassword);
 
@@ -407,17 +397,13 @@ export const authRoutes = new Hono<AppBindings>()
       return apiError(c, 404, '用户不存在。');
     }
 
-    let currentPassword: string;
+    const openedBody = openRequiredPasswordBody(c, body, ['current_password']);
 
-    try {
-      currentPassword = decryptEnvelope(body.current_password);
-    } catch (error) {
-      if (error instanceof EnvelopeDecryptError) {
-        return apiError(c, 400, error.message);
-      }
-
-      throw error;
+    if (openedBody instanceof Response) {
+      return openedBody;
     }
+
+    const currentPassword = openedBody.current_password;
 
     const matched = await verifyPassword(currentPassword, userRecord.password);
 
