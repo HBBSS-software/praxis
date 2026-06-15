@@ -2,10 +2,10 @@ import { Hono, type Context } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
-import { hashPassword } from '../auth/password';
-import { openPasswordFields, PasswordSealError } from '../auth/password-seal';
-import { createUserCredentialsCsv, parseUserImportCsvBuffer, type CsvUserImportEntry } from '../csv/user-import';
-import database from '../database';
+import { hashPassword } from '../auth/password.js';
+import { openPasswordFields, PasswordSealError } from '../auth/password-seal.js';
+import { createUserCredentialsCsv, parseUserImportCsvBuffer, type CsvUserImportEntry } from '../csv/user-import.js';
+import database from '../database.js';
 import {
   apiError,
   batchDeleteUsersBodySchema,
@@ -20,8 +20,8 @@ import {
   validateName,
   validatePassword,
   validationHook
-} from '../http';
-import { authMiddleware, type AppBindings } from '../plugins/auth';
+} from '../http.js';
+import { authMiddleware, type AppBindings } from '../plugins/auth.js';
 
 const createUserBodySchema = z.object({
   name: z.string(),

@@ -1,9 +1,9 @@
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
-import type { ClassAssignments, ClassSummary, StudentWithClassSummary, UserRole } from '../../models';
-import { db } from '../client';
-import { nowIso, normalizeSearchQuery, toClassSummary, toStudentSummary, userSearchCondition } from '../helpers';
-import { classes, classStudents, classTeachers, practiceTaskClasses, users } from '../schema';
+import type { ClassAssignments, ClassSummary, StudentWithClassSummary, UserRole } from '../../models.js';
+import { db } from '../client.js';
+import { nowIso, normalizeSearchQuery, toClassSummary, toStudentSummary, userSearchCondition } from '../helpers.js';
+import { classes, classStudents, classTeachers, practiceTaskClasses, users } from '../schema.js';
 
 export function createClass(name: string) {
   const createdAt = nowIso();

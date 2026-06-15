@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
-import database from '../database';
+import database from '../database.js';
 import {
   apiError,
   createRecordBodySchema,
@@ -17,10 +17,10 @@ import {
   validateTitle,
   parseDuration,
   validationHook
-} from '../http';
-import { authMiddleware, type AppBindings } from '../plugins/auth';
-import type { UpdateRecordInput } from '../models';
-import { MAX_RECORD_IMAGES } from '../models';
+} from '../http.js';
+import { authMiddleware, type AppBindings } from '../plugins/auth.js';
+import type { UpdateRecordInput } from '../models.js';
+import { MAX_RECORD_IMAGES } from '../models.js';
 
 const recordIdParamSchema = z.object({
   id: z.string().regex(/^[1-9]\d*$/)

@@ -2,11 +2,11 @@ import { createMiddleware } from 'hono/factory';
 import { setCookie, getCookie } from 'hono/cookie';
 import { SignJWT, jwtVerify } from 'jose';
 
-import { jwtIssuer, jwtSecret, tokenLifetimeSeconds } from '../auth/config';
-import { isLowCostPasswordHash } from '../auth/password';
-import database from '../database';
-import type { AuthTokenPayload, PublicUser, UserRole } from '../models';
-import { appConfig } from '../config';
+import { jwtIssuer, jwtSecret, tokenLifetimeSeconds } from '../auth/config.js';
+import { isLowCostPasswordHash } from '../auth/password.js';
+import database from '../database.js';
+import type { AuthTokenPayload, PublicUser, UserRole } from '../models.js';
+import { appConfig } from '../config.js';
 
 export interface AppBindings {
   Variables: {

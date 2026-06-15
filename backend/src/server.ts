@@ -1,8 +1,8 @@
 import { serve } from '@hono/node-server';
 
-import { app } from './app';
-import { appConfig } from './config';
-import database from './database';
+import { app } from './app.js';
+import { appConfig } from './config.js';
+import database from './database.js';
 
 const port = appConfig.port;
 const hostname = appConfig.backend_host;

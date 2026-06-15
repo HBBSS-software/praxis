@@ -1,4 +1,4 @@
-import { appConfig, ensurePersistedJwtSecret } from '../config';
+import { appConfig, ensurePersistedJwtSecret } from '../config.js';
 
 ensurePersistedJwtSecret();
 

@@ -7,10 +7,10 @@ import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import sharp from 'sharp';
 
-import { appConfig } from '../config';
-import database from '../database';
-import { apiError, requireAuthenticatedUser } from '../http';
-import { authMiddleware, type AppBindings } from '../plugins/auth';
+import { appConfig } from '../config.js';
+import database from '../database.js';
+import { apiError, requireAuthenticatedUser } from '../http.js';
+import { authMiddleware, type AppBindings } from '../plugins/auth.js';
 
 const tmpUploadDir = path.resolve(process.cwd(), 'backend/data/tmp-uploads');
 

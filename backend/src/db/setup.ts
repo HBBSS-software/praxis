@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { sql } from 'drizzle-orm';
 
-import { db, sqlite } from './client';
+import { db, sqlite } from './client.js';
 
 let initialized = false;
 

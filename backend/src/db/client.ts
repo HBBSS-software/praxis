@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { drizzle } from 'drizzle-orm/node-sqlite';
 
-import * as schema from './schema';
+import * as schema from './schema.js';
 
 declare global {
   var __praxisDatabaseFile: string | undefined;

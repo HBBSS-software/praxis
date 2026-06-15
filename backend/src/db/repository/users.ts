@@ -1,13 +1,13 @@
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
-import { hashPassword, hashPasswordSync, hashPasswords } from '../../auth/password';
-import { appConfig } from '../../config';
-import type { CreateUserResult, UserRole, UserSummary } from '../../models';
-import { userRoles } from '../../models';
-import { getPinyinInitials } from '../../pinyin';
-import { db } from '../client';
-import { activeUserById, activeUserByUid, generatePlainPassword, nowIso, toUser, toUserSummary, userSearchCondition, toStudentSummary } from '../helpers';
-import { classStudents, classTeachers, practiceRecords, users } from '../schema';
+import { hashPassword, hashPasswordSync, hashPasswords } from '../../auth/password.js';
+import { appConfig } from '../../config.js';
+import type { CreateUserResult, UserRole, UserSummary } from '../../models.js';
+import { userRoles } from '../../models.js';
+import { getPinyinInitials } from '../../pinyin.js';
+import { db } from '../client.js';
+import { activeUserById, activeUserByUid, generatePlainPassword, nowIso, toUser, toUserSummary, userSearchCondition, toStudentSummary } from '../helpers.js';
+import { classStudents, classTeachers, practiceRecords, users } from '../schema.js';
 
 export function findUserById(id: number) {
   const row = db.select().from(users).where(activeUserById(id)).get();

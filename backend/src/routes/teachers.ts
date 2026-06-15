@@ -2,11 +2,11 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
-import { hashPassword } from '../auth/password';
-import { openPasswordFields, PasswordSealError } from '../auth/password-seal';
-import { createUserCredentialsCsv } from '../csv/user-import';
-import { formatCsv } from '../csv/export';
-import database from '../database';
+import { hashPassword } from '../auth/password.js';
+import { openPasswordFields, PasswordSealError } from '../auth/password-seal.js';
+import { createUserCredentialsCsv } from '../csv/user-import.js';
+import { formatCsv } from '../csv/export.js';
+import database from '../database.js';
 import {
   apiError,
   batchResetPasswordBodySchema,
@@ -41,11 +41,11 @@ import {
   validateTaskDescription,
   validateTaskTitle,
   validationHook
-} from '../http';
-import { authMiddleware, type AppBindings } from '../plugins/auth';
-import type { RecordFilters, UpdateRecordInput, UserRole } from '../models';
-import { MAX_RECORD_IMAGES } from '../models';
-import { formatUtcDateTimeMinute, startOfUtcTodayIso } from '../time';
+} from '../http.js';
+import { authMiddleware, type AppBindings } from '../plugins/auth.js';
+import type { RecordFilters, UpdateRecordInput, UserRole } from '../models.js';
+import { MAX_RECORD_IMAGES } from '../models.js';
+import { formatUtcDateTimeMinute, startOfUtcTodayIso } from '../time.js';
 
 const recordIdParamSchema = z.object({
   id: z.string().regex(/^[1-9]\d*$/)

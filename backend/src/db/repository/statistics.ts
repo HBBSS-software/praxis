@@ -1,13 +1,13 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
-import type { ClassOverview, OverviewData, RecordStatistics, StudentOverview, TeacherStatistics } from '../../models';
-import { appConfig } from '../../config';
-import { db } from '../client';
-import { buildRecordWhere, toFiniteNumber, nowIso } from '../helpers';
-import { classes, classStudents, classTeachers, practiceRecords, practiceTaskClasses, practiceTasks, users } from '../schema';
-import { getClasses } from './classes';
-import { getTeacherStudentIds } from './classes';
-import { recentUtcMonths, utcMonthRangeIso } from '../../time';
+import type { ClassOverview, OverviewData, RecordStatistics, StudentOverview, TeacherStatistics } from '../../models.js';
+import { appConfig } from '../../config.js';
+import { db } from '../client.js';
+import { buildRecordWhere, toFiniteNumber, nowIso } from '../helpers.js';
+import { classes, classStudents, classTeachers, practiceRecords, practiceTaskClasses, practiceTasks, users } from '../schema.js';
+import { getClasses } from './classes.js';
+import { getTeacherStudentIds } from './classes.js';
+import { recentUtcMonths, utcMonthRangeIso } from '../../time.js';
 
 type ClassOverviewRow = {
   class_id: number;

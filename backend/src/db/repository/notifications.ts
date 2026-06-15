@@ -1,9 +1,9 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 
-import type { NotificationType } from '../../models';
-import { db } from '../client';
-import { nowIso, toNotification } from '../helpers';
-import { notifications } from '../schema';
+import type { NotificationType } from '../../models.js';
+import { db } from '../client.js';
+import { nowIso, toNotification } from '../helpers.js';
+import { notifications } from '../schema.js';
 
 export function createNotification(studentId: number, type: NotificationType, message: string) {
   const createdAt = nowIso();

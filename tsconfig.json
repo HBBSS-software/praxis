@@ -1,46 +1,37 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "jsx": "react-jsx",
-    "paths": {
-      "@/*": [
-        "./frontend/src/*"
-      ]
-    },
-    "lib": [
-      "ES2022",
-      "DOM"
-    ],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+
+    "rootDir": "./backend/src",
+    "outDir": "./backend/dist",
+
+    "lib": ["ES2022"],
+    "types": ["node"],
+
     "strict": true,
-    "noEmit": true,
     "skipLibCheck": true,
+
+    "sourceMap": true,
+    "declaration": false,
+
+    "resolveJsonModule": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
-    "resolveJsonModule": true,
-    "types": [
-      "node",
-      "vite/client"
-    ],
-    "isolatedModules": true,
+
     "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+
+    "noEmit": false
   },
   "include": [
     "backend/src/**/*.ts",
-    "backend/src/**/*.d.ts",
-    "backend/scripts/**/*.ts",
-    "backend/tests/**/*.ts",
-    "drizzle.config.ts",
-    "frontend/src/**/*.ts",
-    "frontend/src/**/*.tsx",
-    "vite.config.ts",
-    "tests/**/*.ts"
+    "backend/src/**/*.d.ts"
   ],
   "exclude": [
-    "frontend/dist",
-    "frontend-legacy",
-    "node_modules"
+    "node_modules",
+    "backend/dist",
+    "backend/tests/**/*.ts"
   ]
 }

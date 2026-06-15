@@ -1,8 +1,8 @@
 import { eq, lt, isNull, and, sql } from 'drizzle-orm';
 
-import { loginLockoutMs, loginMaxAttempts } from './config';
-import { db } from '../db/client';
-import { loginAttempts } from '../db/schema';
+import { loginLockoutMs, loginMaxAttempts } from './config.js';
+import { db } from '../db/client.js';
+import { loginAttempts } from '../db/schema.js';
 
 export function getRemainingLockoutMs(key: string, now = Date.now()) {
   prune(now);

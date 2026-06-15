@@ -4,15 +4,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import { appConfig } from './config';
-import database from './database';
-import { apiError, requireAuthenticatedUser } from './http';
-import { authMiddleware, type AppBindings } from './plugins/auth';
-import { adminRoutes } from './routes/admin';
-import { authRoutes } from './routes/auth';
-import { studentRoutes } from './routes/students';
-import { teacherRoutes } from './routes/teachers';
-import { uploadRoutes } from './routes/upload';
+import { appConfig } from './config.js';
+import database from './database.js';
+import { apiError, requireAuthenticatedUser } from './http.js';
+import { authMiddleware, type AppBindings } from './plugins/auth.js';
+import { adminRoutes } from './routes/admin.js';
+import { authRoutes } from './routes/auth.js';
+import { studentRoutes } from './routes/students.js';
+import { teacherRoutes } from './routes/teachers.js';
+import { uploadRoutes } from './routes/upload.js';
 
 const frontendDir = path.resolve(process.cwd(), 'frontend/dist');
 const frontendIndexPath = path.join(frontendDir, 'index.html');

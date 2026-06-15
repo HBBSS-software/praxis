@@ -3,11 +3,11 @@ import { zValidator } from '@hono/zod-validator';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { randomBytes } from 'node:crypto';
 
-import { clearLoginFailures, getRemainingLockoutMs, recordLoginFailure } from '../auth/login-attempts';
-import { trustProxy } from '../auth/config';
-import { hashPassword, isLowCostPasswordHash, verifyPassword } from '../auth/password';
-import { issuePasswordSealChallenge, openPasswordFields, PasswordSealError } from '../auth/password-seal';
-import database from '../database';
+import { clearLoginFailures, getRemainingLockoutMs, recordLoginFailure } from '../auth/login-attempts.js';
+import { trustProxy } from '../auth/config.js';
+import { hashPassword, isLowCostPasswordHash, verifyPassword } from '../auth/password.js';
+import { issuePasswordSealChallenge, openPasswordFields, PasswordSealError } from '../auth/password-seal.js';
+import database from '../database.js';
 import {
   apiError,
   classSearchQuerySchema,
@@ -23,9 +23,9 @@ import {
   validateName,
   validatePassword,
   validationHook
-} from '../http';
-import type { User } from '../models';
-import { authMiddleware, signAccessToken, setAuthCookie, clearAuthCookie, type AppBindings } from '../plugins/auth';
+} from '../http.js';
+import type { User } from '../models.js';
+import { authMiddleware, signAccessToken, setAuthCookie, clearAuthCookie, type AppBindings } from '../plugins/auth.js';
 
 const dummyPasswordHash = await hashPassword('not-the-real-password');
 const loginChallenges = new Map<string, { userIds: Set<number>; expiresAt: number }>();

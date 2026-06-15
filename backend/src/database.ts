@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { appConfig } from './config';
-import { ensureDatabaseSchema } from './db/setup';
-import * as repo from './db/repository';
-import { seedDefaultAdmin } from './db/repository/users';
+import { appConfig } from './config.js';
+import { ensureDatabaseSchema } from './db/setup.js';
+import * as repo from './db/repository/index.js';
+import { seedDefaultAdmin } from './db/repository/users.js';
 
 const uploadDir = path.resolve(process.cwd(), 'backend/data/uploads');
 const tmpUploadDir = path.resolve(process.cwd(), 'backend/data/tmp-uploads');

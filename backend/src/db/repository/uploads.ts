@@ -4,10 +4,10 @@ import path from 'node:path';
 
 import { eq } from 'drizzle-orm';
 
-import { appConfig } from '../../config';
-import { db } from '../client';
-import { nowIso, tmpUploadPathPattern, uploadPathPattern } from '../helpers';
-import { tempUploadDeletions } from '../schema';
+import { appConfig } from '../../config.js';
+import { db } from '../client.js';
+import { nowIso, tmpUploadPathPattern, uploadPathPattern } from '../helpers.js';
+import { tempUploadDeletions } from '../schema.js';
 
 const uploadDir = path.resolve(process.cwd(), 'backend/data/uploads');
 const tmpUploadDir = path.resolve(process.cwd(), 'backend/data/tmp-uploads');

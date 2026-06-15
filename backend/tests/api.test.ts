@@ -36,12 +36,12 @@ fs.writeFileSync(testConfigPath, [
   'cors_origins = []'
 ].join('\n'));
 
-type DatabaseModule = typeof import('../src/database');
-type LoginAttemptsModule = typeof import('../src/auth/login-attempts');
-type CsvImportModule = typeof import('../src/csv/user-import');
-type AppModule = typeof import('../src/app');
-type PasswordModule = typeof import('../src/auth/password');
-type ConfigModule = typeof import('../src/config');
+type DatabaseModule = typeof import('../src/database.js');
+type LoginAttemptsModule = typeof import('../src/auth/login-attempts.js');
+type CsvImportModule = typeof import('../src/csv/user-import.js');
+type AppModule = typeof import('../src/app.js');
+type PasswordModule = typeof import('../src/auth/password.js');
+type ConfigModule = typeof import('../src/config.js');
 
 let database: DatabaseModule['default'];
 let app: AppModule['app'];
@@ -57,12 +57,12 @@ let appConfig: ConfigModule['appConfig'];
 
 beforeAll(async () => {
   const [databaseModule, loginAttemptsModule, csvImportModule, appModule, passwordModule, configModule] = await Promise.all([
-    import('../src/database'),
-    import('../src/auth/login-attempts'),
-    import('../src/csv/user-import'),
-    import('../src/app'),
-    import('../src/auth/password'),
-    import('../src/config')
+    import('../src/database.js'),
+    import('../src/auth/login-attempts.js'),
+    import('../src/csv/user-import.js'),
+    import('../src/app.js'),
+    import('../src/auth/password.js'),
+    import('../src/config.js')
   ]);
 
   database = databaseModule.default;

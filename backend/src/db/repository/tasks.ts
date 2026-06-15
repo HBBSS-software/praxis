@@ -1,13 +1,13 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
-import type { CreatePracticeTaskInput, PracticeTaskDetail, PracticeTaskSummary, UpdatePracticeTaskInput } from '../../models';
-import { db } from '../client';
-import { nowIso, toFiniteNumber, toPracticeTask, practiceTaskColumns, uniquePositiveIds } from '../helpers';
-import { classStudents, practiceRecords, practiceTaskClasses, practiceTasks } from '../schema';
-import { getClassesForTask, getStudentClassId } from './classes';
-import { calculateRecordStatistics } from './statistics';
-import { countStudentTaskRecords } from './records';
-import { removeUploadFile } from './uploads';
+import type { CreatePracticeTaskInput, PracticeTaskDetail, PracticeTaskSummary, UpdatePracticeTaskInput } from '../../models.js';
+import { db } from '../client.js';
+import { nowIso, toFiniteNumber, toPracticeTask, practiceTaskColumns, uniquePositiveIds } from '../helpers.js';
+import { classStudents, practiceRecords, practiceTaskClasses, practiceTasks } from '../schema.js';
+import { getClassesForTask, getStudentClassId } from './classes.js';
+import { calculateRecordStatistics } from './statistics.js';
+import { countStudentTaskRecords } from './records.js';
+import { removeUploadFile } from './uploads.js';
 
 export function getClassIdsForTask(taskId: number) {
   return db

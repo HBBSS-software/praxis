@@ -2,18 +2,18 @@ import fs from 'node:fs';
 
 import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
-import type { CreateRecordInput, RecordFilters, RecordSort, StudentRecord, TeacherRecord, TeacherRecordExport, TeacherRecordSummary, UpdateRecordInput } from '../../models';
-import { MAX_RECORD_IMAGES } from '../../models';
-import { startOfUtcTodayIso } from '../../time';
-import { db } from '../client';
+import type { CreateRecordInput, RecordFilters, RecordSort, StudentRecord, TeacherRecord, TeacherRecordExport, TeacherRecordSummary, UpdateRecordInput } from '../../models.js';
+import { MAX_RECORD_IMAGES } from '../../models.js';
+import { startOfUtcTodayIso } from '../../time.js';
+import { db } from '../client.js';
 import {
   nowIso, toPracticeRecord, practiceRecordColumns, serializeImagePaths,
   recordHasImagePathCondition, recordIdentitySelect, buildRecordWhere,
   normalizeRecordImagePaths, normalizeIncomingRecordImagePaths, toFiniteNumber,
   deletedUserName, uploadPathPattern, tmpUploadPathPattern
-} from '../helpers';
-import { classes, classStudents, users, practiceRecords, tempUploadDeletions } from '../schema';
-import { createUploadPathFromSource, removeUploadFile, resolveTmpUploadFilePath, resolveUploadFilePath } from './uploads';
+} from '../helpers.js';
+import { classes, classStudents, users, practiceRecords, tempUploadDeletions } from '../schema.js';
+import { createUploadPathFromSource, removeUploadFile, resolveTmpUploadFilePath, resolveUploadFilePath } from './uploads.js';
 
 export function createRecord(input: CreateRecordInput) {
   const student = db.select({ id: users.id }).from(users).where(eq(users.id, input.student_id)).get();

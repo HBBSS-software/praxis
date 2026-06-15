@@ -1,6 +1,6 @@
 import { parseString, writeToString } from 'fast-csv';
 
-import type { CreateUserResult, UserRole } from '../models';
+import type { CreateUserResult, UserRole } from '../models.js';
 
 export type CsvEncoding = 'utf-8' | 'utf-16' | 'gbk';
 

@@ -1,9 +1,9 @@
 import { eq } from 'drizzle-orm';
 
-import { hashPassword } from '../src/auth/password';
-import database from '../src/database';
-import { db, sqlite } from '../src/db/client';
-import { practiceRecords } from '../src/db/schema';
+import { hashPassword } from '../src/auth/password.js';
+import database from '../src/database.js';
+import { db, sqlite } from '../src/db/client.js';
+import { practiceRecords } from '../src/db/schema.js';
 
 const teacherPassword = 'teacher-pass-01';
 const studentPassword = 'student-pass-01';

@@ -1,11 +1,11 @@
 import type { Context } from 'hono';
 import { z } from 'zod';
 
-import { appConfig } from './config';
-import type { PublicUser, RecordFilters, RecordSort, RecordStatus, UserRole } from './models';
-import { MAX_RECORD_IMAGES, notificationTypes, recordStatuses, userRoles } from './models';
-import type { AppBindings } from './plugins/auth';
-import { getUtcDateString } from './time';
+import { appConfig } from './config.js';
+import type { PublicUser, RecordFilters, RecordSort, RecordStatus, UserRole } from './models.js';
+import { MAX_RECORD_IMAGES, notificationTypes, recordStatuses, userRoles } from './models.js';
+import type { AppBindings } from './plugins/auth.js';
+import { getUtcDateString } from './time.js';
 
 const positiveIdPattern = /^[1-9]\d*$/;
 const uploadPathPattern = /^\/uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -33,14 +33,12 @@ const pqSealEnvelopeSchema = z.object({
   ciphertext: pqSealTextSchema,
   data: pqSealTextSchema
 }, {
-  required_error: '密码格式无效。',
-  invalid_type_error: '密码格式无效。'
+  error: '密码格式无效。'
 }).strict();
 const pqSealedFieldsSchema = z.object({
   __pqseal: pqSealEnvelopeSchema,
   __pqsealFields: z.array(z.string().min(1).max(64), {
-    required_error: '密码格式无效。',
-    invalid_type_error: '密码格式无效。'
+    error: '密码格式无效。'
   }).min(1).max(8)
 });
 const optionalPqSealedFieldsSchema = z.object({

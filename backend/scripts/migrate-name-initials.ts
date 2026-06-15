@@ -1,6 +1,6 @@
-import { sqlite } from '../src/db/client';
-import { ensureDatabaseSchema } from '../src/db/setup';
-import { getPinyinInitials } from '../src/pinyin';
+import { sqlite } from '../src/db/client.js';
+import { ensureDatabaseSchema } from '../src/db/setup.js';
+import { getPinyinInitials } from '../src/pinyin.js';
 
 ensureDatabaseSchema();
 

@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from 'vitest';
 import { createPQSealClient } from 'pqseal';
 
-type PasswordSealModule = typeof import('../src/auth/password-seal');
+type PasswordSealModule = typeof import('../src/auth/password-seal.js');
 
 const client = createPQSealClient();
 
@@ -10,7 +10,7 @@ let openPasswordFields: PasswordSealModule['openPasswordFields'];
 let PasswordSealError: PasswordSealModule['PasswordSealError'];
 
 beforeAll(async () => {
-  const module = await import('../src/auth/password-seal');
+  const module = await import('../src/auth/password-seal.js');
   issuePasswordSealChallenge = module.issuePasswordSealChallenge;
   openPasswordFields = module.openPasswordFields;
   PasswordSealError = module.PasswordSealError;

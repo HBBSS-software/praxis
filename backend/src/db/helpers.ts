@@ -2,11 +2,11 @@ import crypto from 'node:crypto';
 
 import { and, eq, getTableColumns, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 
-import { appConfig } from '../config';
-import type { PracticeRecord, PracticeTask, RecordFilters, User, UserSummary } from '../models';
-import { MAX_RECORD_IMAGES } from '../models';
-import { db } from './client';
-import { classes, classStudents, notifications, practiceRecords, practiceTasks, users, tempUploadDeletions } from './schema';
+import { appConfig } from '../config.js';
+import type { PracticeRecord, PracticeTask, RecordFilters, User, UserSummary } from '../models.js';
+import { MAX_RECORD_IMAGES } from '../models.js';
+import { db } from './client.js';
+import { classes, classStudents, notifications, practiceRecords, practiceTasks, users, tempUploadDeletions } from './schema.js';
 
 export const deletedUserName = '已删除用户';
 export const uploadPathPattern = /^\/uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
