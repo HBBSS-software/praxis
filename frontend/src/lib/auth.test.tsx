@@ -4,7 +4,11 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { StoredUser } from './types';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  sessionStorage.clear();
+  vi.clearAllMocks();
+});
 
 const mockUser: StoredUser = {
   id: 1,
@@ -13,6 +17,11 @@ const mockUser: StoredUser = {
   name: '管理员',
   english_name: null,
   password_setup_required: false
+};
+
+const passwordSetupUser: StoredUser = {
+  ...mockUser,
+  password_setup_required: true
 };
 
 function createMockApi(overrides?: { meStatus?: number; meData?: unknown }) {
@@ -48,6 +57,8 @@ function TestConsumer() {
       <div data-testid="loading">{String(session.loading)}</div>
       <div data-testid="user-name">{session.user?.name ?? 'null'}</div>
       <div data-testid="user-role">{session.user?.role ?? 'null'}</div>
+      <div data-testid="password-setup-current-password">{session.passwordSetupCurrentPassword ?? 'null'}</div>
+      <button data-testid="sign-in-password-setup" onClick={() => session.signIn(passwordSetupUser, 'initial-pass')}>登录</button>
       <button data-testid="sign-out" onClick={() => session.signOut()}>退出</button>
     </div>
   );
@@ -101,6 +112,28 @@ describe('SessionProvider', () => {
     await waitFor(() => {
       expect(screen.getByTestId('user-name').textContent).toBe('null');
     });
+  });
+
+  test('signOut clears password setup current password', async () => {
+    currentMockApi = createMockApi();
+    render(
+      <SessionProvider>
+        <TestConsumer />
+      </SessionProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('user-name').textContent).toBe('管理员');
+    });
+
+    await userEvent.click(screen.getByTestId('sign-in-password-setup'));
+    expect(screen.getByTestId('password-setup-current-password').textContent).toBe('initial-pass');
+
+    await userEvent.click(screen.getByTestId('sign-out'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('user-name').textContent).toBe('null');
+    });
+    expect(screen.getByTestId('password-setup-current-password').textContent).toBe('null');
   });
 
   test('throws error when useSession is used outside provider', () => {

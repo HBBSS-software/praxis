@@ -23,6 +23,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [passwordSetupCurrentPassword, setPasswordSetupCurrentPasswordState] = useState<string | null>(() => getPasswordSetupCurrentPassword());
   const [notificationCount, setNotificationCount] = useState(0);
 
+  const clearSession = useCallback(() => {
+    clearPasswordSetupCurrentPassword();
+    setUser(null);
+    setPasswordSetupCurrentPasswordState(null);
+    setNotificationCount(0);
+  }, []);
+
   useEffect(() => {
     const api = createApiClient();
     api.auth.me.get()
@@ -48,14 +55,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    clearSession();
     try {
       await createApiClient().auth.logout.post();
     } catch {}
-    clearPasswordSetupCurrentPassword();
-    setUser(null);
-    setPasswordSetupCurrentPasswordState(null);
-    setNotificationCount(0);
-  }, []);
+  }, [clearSession]);
 
   const updateUser = useCallback((nextUser: StoredUser) => {
     setUser(nextUser);
