@@ -22,7 +22,7 @@ export function SiteFooter({ className }: { className?: string }) {
         </a>
       ) : null}
       <p>
-        本项目基于{' '}
+        本系统基于{' '}
         <a
           href="https://github.com/HBBSS-software/praxis"
           target="_blank"
