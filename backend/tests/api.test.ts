@@ -633,6 +633,9 @@ describe('route behavior', () => {
     expect(payload.upload_image_max_size_bytes).toBe(5 * 1024 * 1024);
     expect(payload.record_title_max_length).toBe(25);
     expect(payload.task_title_max_length).toBe(50);
+    expect(payload.content_max_length).toBe(5000);
+    expect(payload.comment_max_length).toBe(1000);
+    expect(payload.location_max_length).toBe(50);
     expect(payload.is_production).toBe(false);
     expect(payload.timezone).toBeUndefined();
     expect(typeof payload.server_timestamp).toBe('number');
@@ -944,6 +947,89 @@ describe('route behavior', () => {
 
     expect(response.status).toBe(400);
     expect((await readJson(response)).error).toBe('任务名称不能超过 50 字。');
+  });
+
+  test('rejects record content longer than configured limit', async () => {
+    await setNormalPassword('3', 'student-pass-01');
+    const student = database.findUserByUid(3)!;
+    const task = createOpenTaskForStudent(student.id);
+    const token = await loginAs('3', 'student-pass-01');
+
+    const response = await jsonRequest('/api/students/me/records', {
+      title: '内容校验',
+      task_id: task.id,
+      content: '内'.repeat(5001),
+      practice_date: '2026-01-10',
+      location: '教室',
+      duration: '1.0',
+      image_paths: [],
+      cover_image_path: null
+    }, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+
+    expect(response.status).toBe(400);
+    expect((await readJson(response)).error).toBe('实践内容不能超过 5000 字。');
+  });
+
+  test('rejects record locations longer than configured limit', async () => {
+    await setNormalPassword('3', 'student-pass-01');
+    const student = database.findUserByUid(3)!;
+    const task = createOpenTaskForStudent(student.id);
+    const token = await loginAs('3', 'student-pass-01');
+
+    const response = await jsonRequest('/api/students/me/records', {
+      title: '地点校验',
+      task_id: task.id,
+      content: '地点过长',
+      practice_date: '2026-01-10',
+      location: '地'.repeat(51),
+      duration: '1.0',
+      image_paths: [],
+      cover_image_path: null
+    }, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+
+    expect(response.status).toBe(400);
+    expect((await readJson(response)).error).toBe('地点不能超过 50 字。');
+  });
+
+  test('rejects review comments longer than configured limit', async () => {
+    await setNormalPassword('1', 'admin-pass-01');
+    const student = database.findUserByUid(3)!;
+    const task = createOpenTaskForStudent(student.id);
+    const token = await loginAs('1', 'admin-pass-01');
+    const record = database.createRecord({
+      student_id: student.id,
+      task_id: task.id,
+      title: '评语校验',
+      content: '测试评语长度',
+      practice_date: '2026-01-10',
+      location: '教室',
+      duration: 1,
+      image_paths: [],
+      cover_image_path: null
+    });
+
+    const response = await jsonRequest(`/api/teacher/records/${record.id}/review`, {
+      status: 'rejected',
+      comment: '评'.repeat(1001)
+    }, {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+
+    expect(response.status).toBe(400);
+    expect((await readJson(response)).error).toBe('评语不能超过 1000 字。');
   });
 
   test('rejects invalid practice dates', async () => {

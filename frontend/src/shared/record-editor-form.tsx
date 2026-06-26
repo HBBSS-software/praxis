@@ -84,7 +84,11 @@ export function RecordEditorForm({
   onUnauthorized?: () => void;
   onSubmit: (payload: RecordEditorSubmitPayload) => Promise<void>;
 }) {
-  const { record_title_max_length: recordTitleMaxLength } = useRuntimeConfig();
+  const {
+    content_max_length: contentMaxLength,
+    location_max_length: locationMaxLength,
+    record_title_max_length: recordTitleMaxLength
+  } = useRuntimeConfig();
   const [form, setForm] = useState(initialForm);
   const [images, setImages] = useState(initialImages);
   const [coverImageId, setCoverImageId] = useState(initialCoverImageId);
@@ -166,7 +170,7 @@ export function RecordEditorForm({
           <Input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: limitTextLength(event.target.value, recordTitleMaxLength) }))} required />
         </RecordEditorField>
         <RecordEditorField label="实践内容">
-          <Textarea value={form.content} onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))} required />
+          <Textarea value={form.content} onChange={(event) => setForm((current) => ({ ...current, content: limitTextLength(event.target.value, contentMaxLength) }))} required />
         </RecordEditorField>
         <div className="grid gap-4 md:grid-cols-2">
           <RecordEditorField label="实践日期">
@@ -177,7 +181,7 @@ export function RecordEditorForm({
           </RecordEditorField>
         </div>
         <RecordEditorField label="地点">
-          <Input value={form.location} onChange={(event) => setForm((current) => ({ ...current, location: event.target.value }))} />
+          <Input value={form.location} onChange={(event) => setForm((current) => ({ ...current, location: limitTextLength(event.target.value, locationMaxLength) }))} />
         </RecordEditorField>
         <div className="flex flex-wrap gap-3">
           <Button disabled={submitting} type="submit">

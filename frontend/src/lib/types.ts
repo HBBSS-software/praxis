@@ -84,6 +84,9 @@ export interface AppRuntimeConfig {
   upload_image_max_size_bytes: number;
   record_title_max_length: number;
   task_title_max_length: number;
+  content_max_length: number;
+  comment_max_length: number;
+  location_max_length: number;
   is_production: boolean;
   server_timestamp: number;
   client_time_offset_ms: number;

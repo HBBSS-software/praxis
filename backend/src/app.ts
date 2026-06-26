@@ -97,6 +97,9 @@ export const api = new Hono<AppBindings>()
     upload_image_max_size_bytes: appConfig.upload_image_max_size_bytes,
     record_title_max_length: appConfig.record_title_max_length,
     task_title_max_length: appConfig.task_title_max_length,
+    content_max_length: appConfig.content_max_length,
+    comment_max_length: appConfig.comment_max_length,
+    location_max_length: appConfig.location_max_length,
     is_production: appConfig.is_production,
     server_timestamp: Date.now()
   }))

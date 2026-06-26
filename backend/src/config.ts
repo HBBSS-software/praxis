@@ -115,8 +115,8 @@ function createDefaultConfig(): AppConfig {
     record_title_max_length: 25,
     task_title_max_length: 50,
     content_max_length: 5000,
-    comment_max_length: 500,
-    location_max_length: 120,
+    comment_max_length: 1000,
+    location_max_length: 50,
     max_record_duration: 24,
   };
 }

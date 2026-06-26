@@ -97,7 +97,10 @@ export function TaskFormDialog({
   onRemoveClassRequest?: (targetClasses: ClassSummary[]) => void;
   onSubmit: () => Promise<void>;
 }) {
-  const { task_title_max_length: taskTitleMaxLength } = useRuntimeConfig();
+  const {
+    content_max_length: contentMaxLength,
+    task_title_max_length: taskTitleMaxLength
+  } = useRuntimeConfig();
   const [submitting, setSubmitting] = useState(false);
   const selectedClassOptions = useMemo(() => classes
     .filter((item) => form.class_ids.includes(item.id))
@@ -125,7 +128,7 @@ export function TaskFormDialog({
           }
         }}>
           <Field label="任务名称"><Input value={form.title} onChange={(event) => onFormChange({ ...form, title: limitTextLength(event.target.value, taskTitleMaxLength) })} required /></Field>
-          <Field label="任务说明"><Textarea value={form.description} onChange={(event) => onFormChange({ ...form, description: event.target.value })} /></Field>
+          <Field label="任务说明"><Textarea value={form.description} onChange={(event) => onFormChange({ ...form, description: limitTextLength(event.target.value, contentMaxLength) })} /></Field>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="开始时间"><DateTimePickerField value={form.start_at} defaultDate={getServerUtcDateInputValue(clientOffsetMs)} onChange={(value) => onFormChange({ ...form, start_at: value })} required /></Field>
             <Field label="截止时间"><DateTimePickerField value={form.end_at} defaultDate={getServerUtcDateInputValue(clientOffsetMs)} onChange={(value) => onFormChange({ ...form, end_at: value })} required /></Field>

@@ -73,9 +73,9 @@ pnpm start
 | `user_name_max_length` | 用户姓名最大长度 | `40` |
 | `record_title_max_length` | 记录标题最大字数 | `25` |
 | `task_title_max_length` | 任务名称最大字数 | `50` |
-| `content_max_length` | 记录内容最大长度 | `5000` |
-| `comment_max_length` | 审核评语最大长度 | `500` |
-| `location_max_length` | 实践地点最大长度 | `120` |
+| `content_max_length` | 记录内容最大字数 | `5000` |
+| `comment_max_length` | 审核评语最大字数 | `1000` |
+| `location_max_length` | 实践地点最大字数 | `50` |
 | `max_record_duration` | 实践时长最大值（小时） | `24` |
 
 ## 默认账号

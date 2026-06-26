@@ -18,6 +18,7 @@ import { useSession } from '@/lib/auth';
 import { toastError, toastSuccess } from '@/lib/feedback';
 import { formatDate, formatDateTime, localDateBoundaryIso } from '@/lib/format';
 import { useRuntimeConfig } from '@/lib/runtime-config';
+import { limitTextLength } from '@/lib/text';
 import type { ClassSummary, PracticeTaskDetail, StudentWithClassSummary, TeacherRecord, TeacherRecordSummary } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { defaultFilters, Field, PageFrame, RecordPreview, SortButton, StatusBadge, StudentMultiCombobox, toStudentOption, UserMultiCombobox } from './shared';
@@ -27,7 +28,10 @@ export function TeacherTaskPage() {
   const { id } = useParams();
   const taskId = Number(id);
   const { signOut, user } = useSession();
-  const { client_time_offset_ms: clientOffsetMs } = useRuntimeConfig();
+  const {
+    client_time_offset_ms: clientOffsetMs,
+    comment_max_length: commentMaxLength
+  } = useRuntimeConfig();
   const navigate = useNavigate();
   const basePath = user?.role === 'admin' ? '/admin/tasks' : '/teacher/tasks';
   const [task, setTask] = useState<PracticeTaskDetail | null>(null);
@@ -466,7 +470,7 @@ export function TeacherTaskPage() {
               </DialogHeader>
               <div className="space-y-4">
                 <RecordPreview record={reviewRecord} />
-                <Field label="评语"><Textarea value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} /></Field>
+                <Field label="评语"><Textarea value={reviewComment} onChange={(event) => setReviewComment(limitTextLength(event.target.value, commentMaxLength))} /></Field>
                 {task?.score_enabled ? (
                   <Field label="分数"><Input type="number" min="0" max="100" step="1" value={reviewScore} onChange={(event) => setReviewScore(event.target.value)} /></Field>
                 ) : null}

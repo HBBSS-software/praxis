@@ -32,6 +32,18 @@ const recordTitleSchema = z.string().min(1, '标题不能为空。').refine((val
 const taskTitleSchema = z.string().min(1, '任务名称不能为空。').refine((value) => countTextLength(value.trim()) <= TASK_TITLE_MAX_LENGTH, {
   message: `任务名称不能超过 ${TASK_TITLE_MAX_LENGTH} 字。`
 });
+const recordContentSchema = z.string().min(1).refine((value) => countTextLength(value.trim()) <= CONTENT_MAX_LENGTH, {
+  message: `实践内容不能超过 ${CONTENT_MAX_LENGTH} 字。`
+});
+const optionalLocationSchema = z.string().nullable().optional().refine((value) => value == null || countTextLength(value.trim()) <= LOCATION_MAX_LENGTH, {
+  message: `地点不能超过 ${LOCATION_MAX_LENGTH} 字。`
+});
+const optionalCommentSchema = z.string().optional().refine((value) => value === undefined || countTextLength(value.trim()) <= COMMENT_MAX_LENGTH, {
+  message: `评语不能超过 ${COMMENT_MAX_LENGTH} 字。`
+});
+const optionalTaskDescriptionSchema = z.string().nullable().optional().refine((value) => value == null || countTextLength(value.trim()) <= CONTENT_MAX_LENGTH, {
+  message: `任务说明不能超过 ${CONTENT_MAX_LENGTH} 字。`
+});
 const pqSealTextSchema = z.string().min(1).max(4096).regex(/^[A-Za-z0-9_-]+$/, '密码格式无效。');
 const pqSealEnvelopeSchema = z.object({
   v: z.literal(1),
@@ -124,9 +136,9 @@ export const batchDeleteUsersBodySchema = z.object({
 export const createRecordBodySchema = z.object({
   task_id: z.number().int().positive().optional(),
   title: recordTitleSchema,
-  content: z.string().min(1).max(CONTENT_MAX_LENGTH),
+  content: recordContentSchema,
   practice_date: z.string().min(1).max(10),
-  location: z.string().max(LOCATION_MAX_LENGTH).nullable().optional(),
+  location: optionalLocationSchema,
   duration: z.union([z.string().min(1).max(16), z.number()]),
   image_paths: z.array(z.string()).max(MAX_RECORD_IMAGES).optional(),
   cover_image_path: z.string().nullable().optional()
@@ -134,9 +146,9 @@ export const createRecordBodySchema = z.object({
 
 export const updateRecordBodySchema = z.object({
   title: recordTitleSchema.optional(),
-  content: z.string().min(1).max(CONTENT_MAX_LENGTH).optional(),
+  content: recordContentSchema.optional(),
   practice_date: z.string().min(1).max(10).optional(),
-  location: z.string().max(LOCATION_MAX_LENGTH).nullable().optional(),
+  location: optionalLocationSchema,
   duration: z.union([z.string().min(1).max(16), z.number()]).optional(),
   image_paths: z.array(z.string()).max(MAX_RECORD_IMAGES).optional(),
   cover_image_path: z.string().nullable().optional()
@@ -144,7 +156,7 @@ export const updateRecordBodySchema = z.object({
 
 export const reviewRecordBodySchema = z.object({
   status: recordStatusSchema,
-  comment: z.string().max(COMMENT_MAX_LENGTH).optional(),
+  comment: optionalCommentSchema,
   score: z.number().int().min(0).max(100).optional()
 });
 
@@ -169,7 +181,7 @@ export const recordQuerySchema = z.object({
 
 export const createTaskBodySchema = z.object({
   title: taskTitleSchema,
-  description: z.string().max(CONTENT_MAX_LENGTH).nullable().optional(),
+  description: optionalTaskDescriptionSchema,
   start_at: z.string().min(1).max(40),
   end_at: z.string().min(1).max(40),
   min_words: z.number().int().min(0).max(CONTENT_MAX_LENGTH),
@@ -314,24 +326,24 @@ export function validateContent(content: string) {
     return '实践内容不能为空。';
   }
 
-  if (trimmed.length > CONTENT_MAX_LENGTH) {
-    return `实践内容不能超过 ${CONTENT_MAX_LENGTH} 个字符。`;
+  if (countTextLength(trimmed) > CONTENT_MAX_LENGTH) {
+    return `实践内容不能超过 ${CONTENT_MAX_LENGTH} 字。`;
   }
 
   return null;
 }
 
 export function validateLocation(location: string | null) {
-  if (location && location.length > LOCATION_MAX_LENGTH) {
-    return `地点不能超过 ${LOCATION_MAX_LENGTH} 个字符。`;
+  if (location && countTextLength(location) > LOCATION_MAX_LENGTH) {
+    return `地点不能超过 ${LOCATION_MAX_LENGTH} 字。`;
   }
 
   return null;
 }
 
 export function validateComment(comment: string | null) {
-  if (comment && comment.length > COMMENT_MAX_LENGTH) {
-    return `评语不能超过 ${COMMENT_MAX_LENGTH} 个字符。`;
+  if (comment && countTextLength(comment) > COMMENT_MAX_LENGTH) {
+    return `评语不能超过 ${COMMENT_MAX_LENGTH} 字。`;
   }
 
   return null;
@@ -440,8 +452,8 @@ export function validateTaskTitle(title: string) {
 }
 
 export function validateTaskDescription(description: string | null) {
-  if (description && description.length > CONTENT_MAX_LENGTH) {
-    return `任务说明不能超过 ${CONTENT_MAX_LENGTH} 个字符。`;
+  if (description && countTextLength(description) > CONTENT_MAX_LENGTH) {
+    return `任务说明不能超过 ${CONTENT_MAX_LENGTH} 字。`;
   }
 
   return null;

@@ -9,6 +9,9 @@ const defaultRuntimeConfig: AppRuntimeConfig = {
   upload_image_max_size_bytes: 5 * 1024 * 1024,
   record_title_max_length: 25,
   task_title_max_length: 50,
+  content_max_length: 5000,
+  comment_max_length: 1000,
+  location_max_length: 50,
   is_production: false,
   server_timestamp: Date.now(),
   client_time_offset_ms: 0
