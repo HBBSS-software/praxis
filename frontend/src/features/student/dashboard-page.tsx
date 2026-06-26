@@ -47,10 +47,10 @@ export function StudentDashboardPage() {
       ) : overview ? (
         <div className="space-y-5">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <StatCard title="任务数" value={String(overview.current_task_count)} hint="当前进行中任务" icon={FilePenLine} />
-            <StatCard title="记录总数" value={String(overview.total_records)} hint="自己的记录" icon={BarChart3} />
-            <StatCard title="总时长" value={`${formatDuration(overview.total_duration)} 小时`} hint="已通过记录" icon={Clock3} />
-            <StatCard title="班级排名" value={overview.class_rank ? String(overview.class_rank) : '-'} hint={overview.class_rank ? '按总时长和记录数' : '分配班级后显示'} icon={Trophy} />
+            <StatCard title="进行中的任务数" value={String(overview.current_task_count)} icon={FilePenLine} />
+            <StatCard title="记录总数" value={String(overview.total_records)} icon={BarChart3} />
+            <StatCard title="总时长" value={`${formatDuration(overview.total_duration)} 小时`} icon={Clock3} />
+            <StatCard title="班级排名" value={overview.class_rank ? String(overview.class_rank) : '-'} icon={Trophy} />
           </div>
 
           <Card>

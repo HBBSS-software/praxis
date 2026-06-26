@@ -10,7 +10,7 @@ export function StatCard({
 }: {
   title: string;
   value: string;
-  hint: string;
+  hint?: string;
   icon: LucideIcon;
 }) {
   return (
@@ -18,8 +18,8 @@ export function StatCard({
       <CardContent className="flex items-center justify-between gap-4">
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold tracking-tight">{value}</p>
-          <p className="text-xs text-muted-foreground">{hint}</p>
+          <p className="text-2xl font-bold tracking-tight">{value}</p>
+          {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
         </div>
         <div className="flex size-11 items-center justify-center rounded-2xl bg-secondary text-secondary-foreground">
           <Icon className="size-5" />

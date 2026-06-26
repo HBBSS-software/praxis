@@ -928,6 +928,66 @@ describe('route behavior', () => {
     }
   });
 
+  test('counts only currently active tasks in teacher overview', async () => {
+    const targetClass = database.createClass('教师当前任务概览班级');
+    await setNormalPassword('1', 'admin-pass-01');
+
+    vi.useFakeTimers();
+
+    try {
+      vi.setSystemTime(new Date('2026-05-15T12:00:00.000Z'));
+
+      database.createTask({
+        title: '教师概览进行中任务',
+        description: null,
+        start_at: '2026-05-01T00:00:00.000Z',
+        end_at: '2026-05-31T23:59:59.999Z',
+        min_words: 0,
+        min_images: 0,
+        max_records_per_student: 10,
+        score_enabled: false,
+        class_ids: [targetClass.id],
+        created_by_id: 1
+      });
+      database.createTask({
+        title: '教师概览未开始任务',
+        description: null,
+        start_at: '2026-06-01T00:00:00.000Z',
+        end_at: '2026-06-30T23:59:59.999Z',
+        min_words: 0,
+        min_images: 0,
+        max_records_per_student: 10,
+        score_enabled: false,
+        class_ids: [targetClass.id],
+        created_by_id: 1
+      });
+      database.createTask({
+        title: '教师概览已结束任务',
+        description: null,
+        start_at: '2026-04-01T00:00:00.000Z',
+        end_at: '2026-04-30T23:59:59.999Z',
+        min_words: 0,
+        min_images: 0,
+        max_records_per_student: 10,
+        score_enabled: false,
+        class_ids: [targetClass.id],
+        created_by_id: 1
+      });
+
+      const token = await loginAs('1', 'admin-pass-01');
+      const response = await apiRequest(`/api/teacher/overview?class_id=${targetClass.id}`, {
+        headers: { authorization: `Bearer ${token}` }
+      });
+      const payload = await readJson(response);
+      const overview = payload.overview as { classes: Array<Record<string, unknown>> };
+
+      expect(response.status).toBe(200);
+      expect(overview.classes[0]?.task_count).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('returns student dashboard overview with class rank and personal trend', async () => {
     const [student, higherStudent, sameDurationMoreRecordsStudent, sameDurationSameRecordsStudent] = await database.createUsers([
       { name: '概览学生', role: 'student' },

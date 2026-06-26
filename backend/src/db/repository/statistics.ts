@@ -125,12 +125,13 @@ export function getOverview(visibleClassIds?: Set<number>, selectedClassId: numb
   const classIds = visibleClassIds ? [...visibleClassIds] : getClasses().map((item) => item.id);
   const scopedClassIds = selectedClassId ? classIds.filter((classId) => classId === selectedClassId) : classIds;
   const visibleCondition = scopedClassIds.length > 0 ? inArray(classes.id, scopedClassIds) : sql`1 = 0`;
+  const now = nowIso();
   const totalDurationExpression = sql<number>`coalesce(sum(case when ${practiceRecords.status} = 'approved' then ${practiceRecords.duration} else 0 end), 0)`;
   const totalRecordsExpression = sql<number>`count(distinct ${practiceRecords.id})`;
   const classOverviewSelection = {
     class_id: classes.id, class_name: classes.name,
     student_count: sql<number>`count(distinct ${classStudents.studentId})`,
-    task_count: sql<number>`count(distinct ${practiceTaskClasses.taskId})`,
+    task_count: sql<number>`count(distinct case when ${practiceTasks.startAt} <= ${now} and ${practiceTasks.endAt} >= ${now} then ${practiceTaskClasses.taskId} end)`,
     total_records: sql<number>`count(distinct ${practiceRecords.id})`,
     pending_count: sql<number>`count(distinct case when ${practiceRecords.status} = 'pending' then ${practiceRecords.id} end)`,
     approved_count: sql<number>`count(distinct case when ${practiceRecords.status} = 'approved' then ${practiceRecords.id} end)`,
@@ -165,6 +166,7 @@ export function getOverview(visibleClassIds?: Set<number>, selectedClassId: numb
     .from(classes)
     .leftJoin(classStudents, eq(classStudents.classId, classes.id))
     .leftJoin(practiceTaskClasses, eq(practiceTaskClasses.classId, classes.id))
+    .leftJoin(practiceTasks, eq(practiceTasks.id, practiceTaskClasses.taskId))
     .leftJoin(practiceRecords, and(eq(practiceRecords.taskId, practiceTaskClasses.taskId), eq(practiceRecords.studentId, classStudents.studentId)))
     .where(visibleCondition)
     .groupBy(classes.id)
@@ -176,6 +178,7 @@ export function getOverview(visibleClassIds?: Set<number>, selectedClassId: numb
     .from(classes)
     .leftJoin(classStudents, eq(classStudents.classId, classes.id))
     .leftJoin(practiceTaskClasses, eq(practiceTaskClasses.classId, classes.id))
+    .leftJoin(practiceTasks, eq(practiceTasks.id, practiceTaskClasses.taskId))
     .leftJoin(practiceRecords, and(eq(practiceRecords.taskId, practiceTaskClasses.taskId), eq(practiceRecords.studentId, classStudents.studentId)))
     .where(visibleCondition)
     .groupBy(classes.id)

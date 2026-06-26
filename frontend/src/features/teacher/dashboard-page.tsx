@@ -1,4 +1,4 @@
-import { BarChart3, Clock3, FilePenLine, Users } from 'lucide-react';
+import { BarChart3, Clock3, FilePenLine, Timer, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { DataTable } from '@/components/data-table';
@@ -78,7 +78,7 @@ export function TeacherDashboardPage() {
       )
     },
     { accessorKey: 'student_count', header: '学生数' },
-    { accessorKey: 'task_count', header: '任务数' },
+    { accessorKey: 'task_count', header: '进行中的任务数' },
     { accessorKey: 'total_records', header: '记录总数' },
     { accessorKey: 'pending_count', header: '待审核' },
     { accessorKey: 'approved_count', header: '已通过' },
@@ -153,11 +153,12 @@ export function TeacherDashboardPage() {
         />
       ) : overview && totals ? (
         <div className="space-y-5">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <StatCard title="任务数" value={String(totals.task_count)} hint="当前范围内任务" icon={FilePenLine} />
-            <StatCard title="记录总数" value={String(totals.total_records)} hint="当前范围内记录" icon={BarChart3} />
-            <StatCard title="待审核" value={String(totals.pending_count)} hint="需要处理" icon={Clock3} />
-            <StatCard title="学生人数" value={String(totals.student_count)} hint="当前范围内学生" icon={Users} />
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <StatCard title="进行中的任务数" value={String(totals.task_count)} icon={FilePenLine} />
+            <StatCard title="记录总数" value={String(totals.total_records)} icon={BarChart3} />
+            <StatCard title="总时长" value={`${formatDuration(totals.total_duration)} 小时`} icon={Timer} />
+            <StatCard title="待审核" value={String(totals.pending_count)} icon={Clock3} />
+            <StatCard title="学生人数" value={String(totals.student_count)} icon={Users} />
           </div>
 
           <Card>
