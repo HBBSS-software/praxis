@@ -258,6 +258,40 @@ describe('frontend routing fallback', () => {
   });
 });
 
+describe('student search', () => {
+  test('searches students by Chinese name, English name, class and UID', async () => {
+    const className = `后端搜索班级 ${Date.now()}`;
+    const targetClass = database.createClass(className);
+    const [matchedStudent, otherStudent] = await database.createUsers([
+      { name: '字段搜索学生甲', englishName: 'Field Search Alpha', role: 'student', classId: targetClass.id },
+      { name: '字段搜索学生乙', englishName: 'Field Search Beta', role: 'student' }
+    ]);
+    await setNormalPassword('1', 'admin-pass-01');
+    const token = await loginAs('1', 'admin-pass-01');
+    const headers = { authorization: `Bearer ${token}` };
+
+    async function search(query: string, field: 'name' | 'english_name' | 'class' | 'uid') {
+      const response = await apiRequest(`/api/teacher/students/search?q=${encodeURIComponent(query)}&field=${field}`, { headers });
+      const payload = await readJson(response);
+      expect(response.status).toBe(200);
+      return payload.students as Array<{ id: number }>;
+    }
+
+    const nameMatches = await search('字段搜索学生甲', 'name');
+    const englishNameMatches = await search('Alpha', 'english_name');
+    const classMatches = await search(className, 'class');
+    const uidMatches = await search(String(matchedStudent!.uid), 'uid');
+    const partialUidMatches = await search(String(matchedStudent!.uid).slice(0, -1) || '0', 'uid');
+
+    for (const matches of [nameMatches, englishNameMatches, classMatches, uidMatches]) {
+      expect(matches.some((student) => student.id === matchedStudent!.id)).toBe(true);
+    }
+
+    expect(englishNameMatches.some((student) => student.id === otherStudent!.id)).toBe(false);
+    expect(partialUidMatches.some((student) => student.id === matchedStudent!.id)).toBe(false);
+  });
+});
+
 describe('database bootstrap and users', () => {
   test('creates users and filters by role', async () => {
     const targetClass = database.createClass('批量班级');

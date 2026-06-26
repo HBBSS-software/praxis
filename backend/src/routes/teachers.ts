@@ -655,7 +655,7 @@ export const teacherRoutes = new Hono<AppBindings>()
     const classIds = parseIdList(query.class_ids);
 
     return c.json({
-      students: database.searchStudents(query.q?.trim() ?? '', getVisibleStudentIds(user.id, user.role), classIds)
+      students: database.searchStudents(query.q?.trim() ?? '', getVisibleStudentIds(user.id, user.role), classIds, query.field)
     });
   })
   .get('/teacher/students/:id/records', zValidator('param', recordIdParamSchema, validationHook), (c) => {

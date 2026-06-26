@@ -40,16 +40,25 @@ import { useShiftMultiSelect } from '@/lib/shift-selection';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { ClassSummary, CreatedUser, CreatedUsersPayload, StudentSummary, StudentWithClassSummary, TeacherRecord, TeacherRecordSummary, TeacherStatistics, UserSummary } from '@/lib/types';
 import { UserCredentialsResult } from '@/shared/user-credentials-result';
-import { includesSearch, ListSearchBar, type ListSearchState } from '@/shared/list-search-bar';
+import { ListSearchBar, type ListSearchState } from '@/shared/list-search-bar';
 import { PasswordRequirements } from '@/shared/password-requirements';
 import { compareStudentClass, Field, FilterSelect, formatStudentClass, PageFrame, SelectClass, SortButton, type CredentialsResult } from './shared';
 
-type StudentSearchField = 'name' | 'uid';
+type StudentSearchField = 'name' | 'english_name' | 'uid' | 'class';
 const studentSearchOptions = [
-  { label: '姓名', value: 'name' },
-  { label: 'UID', value: 'uid' }
+  { label: '中文名', value: 'name' },
+  { label: '英文名', value: 'english_name' },
+  { label: '班级', value: 'class' },
+  { label: 'uid', value: 'uid' }
 ] satisfies Array<{ label: string; value: StudentSearchField }>;
 const defaultStudentSearch: ListSearchState<StudentSearchField> = { field: 'name', query: '' };
+
+function getStudentSearchPlaceholder(field: StudentSearchField) {
+  if (field === 'uid') return '搜索 UID（仅展示 UID 完全匹配的学生）';
+  if (field === 'english_name') return '搜索英文名';
+  if (field === 'class') return '搜索班级';
+  return '搜索姓名';
+}
 
 export function TeacherStudentsPage() {
   const { signOut } = useSession();
@@ -70,11 +79,14 @@ export function TeacherStudentsPage() {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetResult, setResetResult] = useState<CredentialsResult | null>(null);
 
-  async function loadData() {
+  async function loadData(nextSearch = search) {
     try {
       const api = createApiClient();
+      const query = nextSearch.query.trim();
       const [studentsData, statisticsData, classesData] = await Promise.all([
-        unwrapResponse<{ students: StudentWithClassSummary[] }>(api.teacher.students.get()),
+        unwrapResponse<{ students: StudentWithClassSummary[] }>(query
+          ? api.teacher.students.search({ query: { q: query, field: nextSearch.field } })
+          : api.teacher.students.get()),
         unwrapResponse<{ statistics: TeacherStatistics }>(api.teacher.statistics.get()),
         unwrapResponse<{ classes: ClassSummary[] }>(api.admin.classes.get())
           .catch(() => ({ classes: [] }))
@@ -101,15 +113,8 @@ export function TeacherStudentsPage() {
     void loadData();
   }, []);
 
-  const searchedStudents = useMemo(() => {
-    const query = search.query.trim();
-    if (!query) return students;
-
-    return students.filter((student) => includesSearch(search.field === 'uid' ? String(student.uid) : student.name, query));
-  }, [search, students]);
-
   const sortedStudents = useMemo(() => {
-    return [...searchedStudents].sort((left, right) => {
+    return [...students].sort((left, right) => {
       const leftDuration = durations[left.id] ?? 0;
       const rightDuration = durations[right.id] ?? 0;
       if (sortBy === 'duration-desc') return rightDuration - leftDuration || left.name.localeCompare(right.name);
@@ -121,7 +126,7 @@ export function TeacherStudentsPage() {
       if (sortBy === 'name-desc') return right.name.localeCompare(left.name);
       return left.name.localeCompare(right.name);
     });
-  }, [durations, searchedStudents, sortBy]);
+  }, [durations, students, sortBy]);
   const sortedStudentIds = useMemo(() => sortedStudents.map((student) => student.id), [sortedStudents]);
   const selectedStudentIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -254,12 +259,12 @@ export function TeacherStudentsPage() {
           <ListSearchBar
             value={searchDraft}
             options={studentSearchOptions}
-            placeholder={searchDraft.field === 'uid' ? '搜索 UID' : '搜索姓名'}
+            placeholder={getStudentSearchPlaceholder(searchDraft.field)}
             onChange={setSearchDraft}
             onSearch={() => {
-              setSearch({ field: searchDraft.field, query: searchDraft.query.trim() });
-              setSelectedIds([]);
-              resetSelectionAnchor();
+              const nextSearch = { field: searchDraft.field, query: searchDraft.query.trim() };
+              setSearch(nextSearch);
+              void loadData(nextSearch);
             }}
           />
         </div>

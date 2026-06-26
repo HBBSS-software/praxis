@@ -5,6 +5,8 @@ import { db } from '../client.js';
 import { nowIso, normalizeSearchQuery, toClassSummary, toStudentSummary, userSearchCondition } from '../helpers.js';
 import { classes, classStudents, classTeachers, practiceTaskClasses, users } from '../schema.js';
 
+type StudentSearchField = 'name' | 'english_name' | 'class' | 'uid';
+
 export function createClass(name: string) {
   const createdAt = nowIso();
   const result = db.insert(classes).values({ name, createdAt }).run();
@@ -143,9 +145,21 @@ export function getTeacherStudents(teacherId: number) {
     .map(toStudentSummary);
 }
 
-export function searchStudents(query: string, visibleStudentIds?: Set<number>, classIds?: number[]): StudentWithClassSummary[] {
+function studentSearchCondition(query: string, field?: StudentSearchField) {
+  const normalized = normalizeSearchQuery(query);
+  if (!normalized) return undefined;
+  const pattern = `%${normalized}%`;
+
+  if (field === 'uid') return /^[1-9]\d*$/.test(normalized) ? eq(users.id, Number(normalized)) : sql`1 = 0`;
+  if (field === 'name') return sql`(${users.name} like ${pattern} escape '\\' or ${users.nameInitials} like ${pattern} escape '\\')`;
+  if (field === 'english_name') return sql`coalesce(${users.englishName}, '') like ${pattern} escape '\\'`;
+  if (field === 'class') return sql`coalesce(${classes.name}, '') like ${pattern} escape '\\'`;
+  return sql`(${users.id} like ${pattern} escape '\\' or ${users.name} like ${pattern} escape '\\' or coalesce(${users.englishName}, '') like ${pattern} escape '\\' or ${users.nameInitials} like ${pattern} escape '\\' or coalesce(${classes.name}, '') like ${pattern} escape '\\')`;
+}
+
+export function searchStudents(query: string, visibleStudentIds?: Set<number>, classIds?: number[], field?: StudentSearchField): StudentWithClassSummary[] {
   const conditions = [eq(users.role, 'student'), isNull(users.deletedAt)];
-  const searchCondition = userSearchCondition(query);
+  const searchCondition = studentSearchCondition(query, field);
   if (searchCondition) conditions.push(searchCondition);
   if (visibleStudentIds) {
     const ids = [...visibleStudentIds];

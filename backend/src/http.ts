@@ -57,6 +57,7 @@ export const roleQuerySchema = z.object({
 
 export const userSearchQuerySchema = z.object({
   q: z.string().max(64).optional(),
+  field: z.enum(['name', 'english_name', 'class', 'uid']).optional(),
   class_ids: z.string().regex(/^([1-9]\d*)(,[1-9]\d*)*$/).optional(),
   class_id: z.string().regex(positiveIdPattern).optional()
 });

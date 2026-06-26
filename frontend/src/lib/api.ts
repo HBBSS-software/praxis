@@ -615,10 +615,11 @@ export function createApiClient() {
       }),
       students: Object.assign(teacherStudentRoute, {
         get: () => wrapRpcResponse(client.teacher.students.$get()),
-        search: ({ query }: { query?: { q?: string; class_ids?: string } } = {}) =>
+        search: ({ query }: { query?: { q?: string; field?: 'name' | 'english_name' | 'class' | 'uid'; class_ids?: string } } = {}) =>
           wrapRpcResponse(client.teacher.students.search.$get({
             query: {
               q: query?.q,
+              field: query?.field,
               class_ids: query?.class_ids
             }
           })),
