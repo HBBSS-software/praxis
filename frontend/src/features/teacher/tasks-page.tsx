@@ -1,4 +1,4 @@
-import { Edit, PlusCircle, RefreshCw, Trash2 } from 'lucide-react';
+import { ChevronRight, Edit, PlusCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -258,6 +258,9 @@ function TaskList({
                   </Button>
                   <Button size="icon" variant="ghost" aria-label="删除任务" onClick={() => onDelete(task)}>
                     <Trash2 className="size-4" />
+                  </Button>
+                  <Button size="icon" variant="ghost" aria-label="进入任务" onClick={() => onOpen(task)}>
+                    <ChevronRight className="size-4" />
                   </Button>
                 </div>
               </CardContent>
