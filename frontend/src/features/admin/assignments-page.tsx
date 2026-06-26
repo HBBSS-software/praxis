@@ -356,12 +356,14 @@ function ClassEditorCard({
       <DialogHeader>
         <DialogTitle>{mode === 'create' ? '添加班级' : `编辑 ${classItem?.name ?? ''}`}</DialogTitle>
       </DialogHeader>
-      <div className="grid gap-4 lg:grid-cols-[minmax(180px,260px)_minmax(240px,1fr)_minmax(240px,1fr)]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <Field label="班级名称">
           <Input value={name} onChange={(event) => setName(event.target.value)} />
         </Field>
         <TeacherMultiSelect teachers={teachers} value={selectedTeacherIds} onChange={setSelectedTeacherIds} />
-        <ClassStudentMultiSelect classId={classItem?.id ?? null} signOut={signOut} initialStudents={students} value={selectedStudentIds} onChange={setSelectedStudentIds} />
+        <div className="lg:col-span-2">
+          <ClassStudentMultiSelect classId={classItem?.id ?? null} signOut={signOut} initialStudents={students} value={selectedStudentIds} onChange={setSelectedStudentIds} />
+        </div>
       </div>
       <div className="flex flex-wrap gap-2">
         <Button disabled={saving} onClick={() => void save()}>
