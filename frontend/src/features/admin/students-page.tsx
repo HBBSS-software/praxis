@@ -170,7 +170,12 @@ function AdminStudentListPage() {
           onClick={() => setSortBy((current) => current === 'name-asc' ? 'name-desc' : 'name-asc')}
         />
       ),
-      cell: ({ row }) => row.original.name
+      cell: ({ row }) => (
+        <div>
+          <p className="font-medium">{row.original.name}</p>
+          <p className="text-xs text-muted-foreground">{row.original.english_name || '-'}</p>
+        </div>
+      )
     },
     {
       id: 'class',
