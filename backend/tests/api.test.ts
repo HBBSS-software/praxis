@@ -928,6 +928,200 @@ describe('route behavior', () => {
     }
   });
 
+  test('returns student dashboard overview with class rank and personal trend', async () => {
+    const [student, higherStudent, sameDurationMoreRecordsStudent, sameDurationSameRecordsStudent] = await database.createUsers([
+      { name: '概览学生', role: 'student' },
+      { name: '概览高时长学生', role: 'student' },
+      { name: '概览同分多记录学生', role: 'student' },
+      { name: '概览同分同记录学生', role: 'student' }
+    ]);
+    const targetClass = database.createClass('学生概览班级');
+
+    expect(student).toBeTruthy();
+    expect(higherStudent).toBeTruthy();
+    expect(sameDurationMoreRecordsStudent).toBeTruthy();
+    expect(sameDurationSameRecordsStudent).toBeTruthy();
+
+    database.assignStudentsToClass(targetClass.id, [
+      student!.id,
+      higherStudent!.id,
+      sameDurationMoreRecordsStudent!.id,
+      sameDurationSameRecordsStudent!.id
+    ]);
+    await setNormalPassword(student!.uid, 'student-overview-pass-01');
+
+    vi.useFakeTimers();
+
+    try {
+      vi.setSystemTime(new Date('2026-05-15T12:00:00.000Z'));
+
+      const activeTask = database.createTask({
+        title: '学生概览进行中任务',
+        description: null,
+        start_at: '2026-05-01T00:00:00.000Z',
+        end_at: '2026-05-31T23:59:59.999Z',
+        min_words: 0,
+        min_images: 0,
+        max_records_per_student: 10,
+        score_enabled: false,
+        class_ids: [targetClass.id],
+        created_by_id: 1
+      });
+      database.createTask({
+        title: '学生概览未开始任务',
+        description: null,
+        start_at: '2026-06-01T00:00:00.000Z',
+        end_at: '2026-06-30T23:59:59.999Z',
+        min_words: 0,
+        min_images: 0,
+        max_records_per_student: 10,
+        score_enabled: false,
+        class_ids: [targetClass.id],
+        created_by_id: 1
+      });
+
+      const approvedRecord = database.createRecord({
+        task_id: activeTask.id,
+        student_id: student!.id,
+        title: '概览已通过记录',
+        content: '已通过',
+        practice_date: '2026-05-15',
+        location: '教室',
+        duration: 3,
+        image_paths: [],
+        cover_image_path: null
+      });
+      database.updateRecord(approvedRecord.id, { status: 'approved' });
+      database.createRecord({
+        task_id: activeTask.id,
+        student_id: student!.id,
+        title: '概览待审核记录',
+        content: '待审核',
+        practice_date: '2026-05-15',
+        location: '教室',
+        duration: 5,
+        image_paths: [],
+        cover_image_path: null
+      });
+
+      const higherRecord = database.createRecord({
+        task_id: activeTask.id,
+        student_id: higherStudent!.id,
+        title: '概览高时长记录',
+        content: '高时长',
+        practice_date: '2026-05-15',
+        location: '教室',
+        duration: 4,
+        image_paths: [],
+        cover_image_path: null
+      });
+      database.updateRecord(higherRecord.id, { status: 'approved' });
+
+      const sameDurationRecord = database.createRecord({
+        task_id: activeTask.id,
+        student_id: sameDurationMoreRecordsStudent!.id,
+        title: '概览同分记录',
+        content: '同分',
+        practice_date: '2026-05-15',
+        location: '教室',
+        duration: 3,
+        image_paths: [],
+        cover_image_path: null
+      });
+      database.updateRecord(sameDurationRecord.id, { status: 'approved' });
+      database.createRecord({
+        task_id: activeTask.id,
+        student_id: sameDurationMoreRecordsStudent!.id,
+        title: '概览同分多记录一',
+        content: '同分多记录',
+        practice_date: '2026-05-15',
+        location: '教室',
+        duration: 1,
+        image_paths: [],
+        cover_image_path: null
+      });
+      database.createRecord({
+        task_id: activeTask.id,
+        student_id: sameDurationMoreRecordsStudent!.id,
+        title: '概览同分多记录二',
+        content: '同分多记录',
+        practice_date: '2026-05-15',
+        location: '教室',
+        duration: 1,
+        image_paths: [],
+        cover_image_path: null
+      });
+
+      const sameRankRecord = database.createRecord({
+        task_id: activeTask.id,
+        student_id: sameDurationSameRecordsStudent!.id,
+        title: '概览同分同记录',
+        content: '同分同记录',
+        practice_date: '2026-05-15',
+        location: '教室',
+        duration: 3,
+        image_paths: [],
+        cover_image_path: null
+      });
+      database.updateRecord(sameRankRecord.id, { status: 'approved' });
+      database.createRecord({
+        task_id: activeTask.id,
+        student_id: sameDurationSameRecordsStudent!.id,
+        title: '概览同分同记录待审核',
+        content: '同分同记录',
+        practice_date: '2026-05-15',
+        location: '教室',
+        duration: 1,
+        image_paths: [],
+        cover_image_path: null
+      });
+
+      const token = await loginAs(student!.uid, 'student-overview-pass-01');
+      const response = await apiRequest('/api/students/me/overview', {
+        headers: { authorization: `Bearer ${token}` }
+      });
+      const payload = await readJson(response);
+      const overview = payload.overview as Record<string, unknown>;
+      const mayTrend = (overview.trend as Array<Record<string, unknown>>).find((item) => item.month === '2026-05');
+
+      expect(response.status).toBe(200);
+      expect(overview.current_task_count).toBe(1);
+      expect(overview.total_records).toBe(2);
+      expect(overview.pending_count).toBe(1);
+      expect(overview.approved_count).toBe(1);
+      expect(overview.total_duration).toBe(3);
+      expect(overview.class_rank).toBe(3);
+      expect(mayTrend).toMatchObject({ active_task_count: 1, submitted_record_count: 2 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('returns empty class rank for unassigned student overview', async () => {
+    const student = await database.createUser('未分班概览学生', 'student');
+    await setNormalPassword(student.uid, 'student-overview-pass-02');
+    const token = await loginAs(student.uid, 'student-overview-pass-02');
+    const response = await apiRequest('/api/students/me/overview', {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const payload = await readJson(response);
+    const overview = payload.overview as Record<string, unknown>;
+
+    expect(response.status).toBe(200);
+    expect(overview.current_task_count).toBe(0);
+    expect(overview.class_rank).toBeNull();
+  });
+
+  test('rejects non-student access to student overview', async () => {
+    await setNormalPassword('2', 'teacher-pass-01');
+    const token = await loginAs('2', 'teacher-pass-01');
+    const response = await apiRequest('/api/students/me/overview', {
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(response.status).toBe(403);
+  });
+
   test('rejects datetime values for practice date filters', async () => {
     await setNormalPassword('1', 'admin-pass-01');
     const token = await loginAs('1', 'admin-pass-01');

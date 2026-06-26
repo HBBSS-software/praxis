@@ -217,6 +217,12 @@ export interface TeacherStatistics extends RecordStatistics {
   }>;
 }
 
+export interface StudentDashboardOverview extends RecordStatistics {
+  current_task_count: number;
+  class_rank: number | null;
+  trend: OverviewTrendPoint[];
+}
+
 export interface ClassOverview {
   class_id: number;
   class_name: string;

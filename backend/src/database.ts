@@ -95,6 +95,7 @@ class SQLiteDatabase {
   startTempUploadCleanupWorker = repo.startTempUploadCleanupWorker;
 
   getStudentStatistics = repo.getStudentStatistics;
+  getStudentDashboardOverview = repo.getStudentDashboardOverview;
   getStatistics = repo.getStatistics;
   getOverview = repo.getOverview;
 }

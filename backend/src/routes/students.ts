@@ -112,6 +112,13 @@ export const studentRoutes = new Hono<AppBindings>()
       tasks: database.getStudentTasks(user.id)
     });
   })
+  .get('/students/me/overview', (c) => {
+    const user = c.get('user')!;
+
+    return c.json({
+      overview: database.getStudentDashboardOverview(user.id)
+    });
+  })
   .get('/students/me/tasks/:id', zValidator('param', recordIdParamSchema, validationHook), (c) => {
     const id = Number(c.req.valid('param').id);
     const user = c.get('user')!;

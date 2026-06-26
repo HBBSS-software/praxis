@@ -1,10 +1,5 @@
-import { BarChart3, CheckCircle2, Clock3, FilePenLine, Users } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import * as echarts from 'echarts/core';
-import { BarChart, LineChart } from 'echarts/charts';
-import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components';
-import { CanvasRenderer } from 'echarts/renderers';
-import type { ECharts, EChartsCoreOption } from 'echarts/core';
+import { BarChart3, Clock3, FilePenLine, Users } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { DataTable } from '@/components/data-table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,10 +11,9 @@ import { useSession } from '@/lib/auth';
 import { formatDuration } from '@/lib/format';
 import type { ClassSummary, OverviewData } from '@/lib/types';
 import { EmptyState } from '@/shared/empty-state';
+import { OverviewChart } from '@/shared/overview-chart';
 import { ErrorCard, LoadingCard, PageFrame } from './shared';
 import type { ColumnDef } from '@tanstack/react-table';
-
-echarts.use([BarChart, LineChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
 
 export function TeacherDashboardPage() {
   const { signOut, user } = useSession();
@@ -171,7 +165,7 @@ export function TeacherDashboardPage() {
               <CardTitle>月度趋势</CardTitle>
             </CardHeader>
             <CardContent>
-              <OverviewChart overview={overview} />
+              <OverviewChart trend={overview.trend} />
             </CardContent>
           </Card>
 
@@ -209,107 +203,4 @@ export function TeacherDashboardPage() {
       ) : null}
     </PageFrame>
   );
-}
-
-function OverviewChart({ overview }: { overview: OverviewData }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<ECharts | null>(null);
-  const data = useMemo(() => {
-    return overview.trend.map((item) => ({
-      month: item.month,
-      activeTaskCount: item.active_task_count,
-      submittedRecordCount: item.submitted_record_count
-    }));
-  }, [overview]);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    chartRef.current?.dispose();
-    const chart = echarts.init(container, null, { renderer: 'canvas' });
-    chartRef.current = chart;
-
-    const option: EChartsCoreOption = {
-      color: ['#60a5fa', '#16a34a'],
-      animationDuration: 300,
-      grid: {
-        top: 36,
-        right: 16,
-        bottom: 28,
-        left: 36,
-        containLabel: true
-      },
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: {
-          type: 'cross',
-          crossStyle: {
-            color: '#94a3b8'
-          }
-        },
-        valueFormatter: (value: unknown) => String(value ?? 0)
-      },
-      legend: {
-        top: 0,
-        left: 0,
-        itemWidth: 10,
-        itemHeight: 10,
-        textStyle: {
-          color: '#64748b',
-          fontSize: 12
-        }
-      },
-      xAxis: {
-        type: 'category',
-        data: data.map((item) => item.month.slice(5)),
-        axisTick: { show: false },
-        axisLine: { lineStyle: { color: '#cbd5e1' } },
-        axisLabel: { color: '#64748b' }
-      },
-      yAxis: {
-        type: 'value',
-        minInterval: 1,
-        axisLabel: { color: '#64748b' },
-        splitLine: { lineStyle: { color: '#e5e7eb' } }
-      },
-      series: [
-        {
-          name: '进行中的实践数',
-          type: 'bar',
-          barMaxWidth: 30,
-          data: data.map((item) => item.activeTaskCount),
-          itemStyle: {
-            borderRadius: [4, 4, 0, 0]
-          }
-        },
-        {
-          name: '提交记录数',
-          type: 'line',
-          smooth: false,
-          symbol: 'circle',
-          symbolSize: 7,
-          data: data.map((item) => item.submittedRecordCount),
-          lineStyle: {
-            width: 2
-          }
-        }
-      ]
-    };
-
-    chart.setOption(option);
-
-    const observer = new ResizeObserver(() => {
-      chart.resize();
-    });
-    observer.observe(container);
-
-    return () => {
-      observer.disconnect();
-      chart.dispose();
-      chartRef.current = null;
-    };
-  }, [data]);
-
-  return <div ref={containerRef} className="h-[320px] w-full overflow-hidden rounded-md" />;
 }

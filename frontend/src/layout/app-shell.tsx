@@ -11,7 +11,8 @@ import { cn } from '@/lib/utils';
 
 const navMap: Record<UserRole, Array<{ to: string; label: string }>> = {
   student: [
-    { to: '/student/dashboard', label: '任务列表' },
+    { to: '/student/dashboard', label: '数据概览' },
+    { to: '/student/tasks', label: '任务列表' },
     { to: '/student/notifications', label: '消息通知' },
     { to: '/student/account', label: '账号设置' }
   ],

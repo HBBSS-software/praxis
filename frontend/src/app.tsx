@@ -27,6 +27,7 @@ const StudentLoginPage = lazyPage(() => import('@/features/auth-page'), 'Student
 const StaffLoginPage = lazyPage(() => import('@/features/auth-page'), 'StaffLoginPage');
 const SetupPasswordPage = lazyPage(() => import('@/features/setup-password-page'), 'SetupPasswordPage');
 const StudentDashboardPage = lazyPage(() => import('@/features/student'), 'StudentDashboardPage');
+const StudentTasksPage = lazyPage(() => import('@/features/student'), 'StudentTasksPage');
 const StudentUploadPage = lazyPage(() => import('@/features/student'), 'StudentUploadPage');
 const StudentTaskPage = lazyPage(() => import('@/features/student'), 'StudentTaskPage');
 const StudentNotificationsPage = lazyPage(() => import('@/features/student'), 'StudentNotificationsPage');
@@ -116,6 +117,7 @@ export function App() {
 
             <Route path="/student" element={<RoleLayout role="student" />}>
               <Route path="dashboard" element={<DeferredRoute><StudentDashboardPage /></DeferredRoute>} />
+              <Route path="tasks" element={<DeferredRoute><StudentTasksPage /></DeferredRoute>} />
               <Route path="tasks/:id" element={<DeferredRoute><StudentTaskPage /></DeferredRoute>} />
               <Route path="tasks/:taskId/upload" element={<DeferredRoute><StudentUploadPage /></DeferredRoute>} />
               <Route path="notifications" element={<DeferredRoute><StudentNotificationsPage /></DeferredRoute>} />

@@ -1,12 +1,12 @@
-import { and, asc, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm';
 
-import type { ClassOverview, OverviewData, RecordStatistics, StudentOverview, TeacherStatistics } from '../../models.js';
+import type { ClassOverview, OverviewData, RecordStatistics, StudentDashboardOverview, StudentOverview, TeacherStatistics } from '../../models.js';
 import { appConfig } from '../../config.js';
 import { db } from '../client.js';
 import { buildRecordWhere, toFiniteNumber, nowIso } from '../helpers.js';
 import { classes, classStudents, classTeachers, practiceRecords, practiceTaskClasses, practiceTasks, users } from '../schema.js';
 import { getClasses } from './classes.js';
-import { getTeacherStudentIds } from './classes.js';
+import { getStudentClassId } from './classes.js';
 import { recentUtcMonths, utcMonthRangeIso } from '../../time.js';
 
 type ClassOverviewRow = {
@@ -57,6 +57,40 @@ export function calculateRecordStatistics(where?: ReturnType<typeof buildRecordW
 
 export function getStudentStatistics(studentId: number) {
   return calculateRecordStatistics(eq(practiceRecords.studentId, studentId));
+}
+
+export function getStudentDashboardOverview(studentId: number): StudentDashboardOverview {
+  const classId = getStudentClassId(studentId);
+  const statistics = getStudentStatistics(studentId);
+  const now = nowIso();
+  const activeTaskRow = classId
+    ? db
+      .select({ count: sql<number>`count(distinct ${practiceTasks.id})` })
+      .from(practiceTasks)
+      .innerJoin(practiceTaskClasses, eq(practiceTaskClasses.taskId, practiceTasks.id))
+      .where(and(eq(practiceTaskClasses.classId, classId), lte(practiceTasks.startAt, now), gte(practiceTasks.endAt, now)))
+      .get()
+    : null;
+  const classRankRow = classId
+    ? db
+      .select({
+        count: sql<number>`count(*)`
+      })
+      .from(classStudents)
+      .innerJoin(users, eq(users.id, classStudents.studentId))
+      .leftJoin(practiceRecords, eq(practiceRecords.studentId, users.id))
+      .where(and(eq(classStudents.classId, classId), eq(users.role, 'student'), isNull(users.deletedAt)))
+      .groupBy(users.id)
+      .having(sql`coalesce(sum(case when ${practiceRecords.status} = 'approved' then ${practiceRecords.duration} else 0 end), 0) > ${statistics.total_duration} or (coalesce(sum(case when ${practiceRecords.status} = 'approved' then ${practiceRecords.duration} else 0 end), 0) = ${statistics.total_duration} and count(${practiceRecords.id}) > ${statistics.total_records})`)
+      .all()
+    : [];
+
+  return {
+    ...statistics,
+    current_task_count: toFiniteNumber(activeTaskRow?.count),
+    class_rank: classId ? classRankRow.length + 1 : null,
+    trend: getStudentOverviewTrend(studentId, classId)
+  };
 }
 
 export function getStatistics(visibleStudentIds?: Set<number>): TeacherStatistics {
@@ -170,6 +204,35 @@ export function getOverview(visibleClassIds?: Set<number>, selectedClassId: numb
     trend: getOverviewTrend(scopedClassIds),
     selected_class_id: selectedClassId
   };
+}
+
+function getStudentOverviewTrend(studentId: number, classId: number | null) {
+  const months = recentUtcMonths(12);
+  return months.map((month) => {
+    const range = utcMonthRangeIso(month);
+    const activeTaskRow = classId
+      ? db
+        .select({ count: sql<number>`count(distinct ${practiceTasks.id})` })
+        .from(practiceTasks)
+        .innerJoin(practiceTaskClasses, eq(practiceTaskClasses.taskId, practiceTasks.id))
+        .where(and(eq(practiceTaskClasses.classId, classId), lt(practiceTasks.startAt, range.end), gte(practiceTasks.endAt, range.start)))
+        .get()
+      : null;
+    const recordRow = db
+      .select({ count: sql<number>`count(distinct ${practiceRecords.id})` })
+      .from(practiceRecords)
+      .where(and(
+        eq(practiceRecords.studentId, studentId),
+        gte(practiceRecords.createdAt, range.start),
+        lt(practiceRecords.createdAt, range.end)
+      ))
+      .get();
+    return {
+      month,
+      active_task_count: toFiniteNumber(activeTaskRow?.count),
+      submitted_record_count: toFiniteNumber(recordRow?.count)
+    };
+  });
 }
 
 function getOverviewTrend(classIds: number[]) {

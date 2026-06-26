@@ -122,7 +122,7 @@ export function StudentUploadPage() {
           {loading ? (
             <LoadingCard label="正在加载记录内容..." />
           ) : error ? (
-            <ErrorCard message={error} onRetry={() => navigate('/student/dashboard', { replace: true })} />
+            <ErrorCard message={error} onRetry={() => navigate('/student/tasks', { replace: true })} />
           ) : (
             <form
               className="grid gap-4 sm:gap-5 lg:grid-cols-[1.1fr_0.9fr]"
@@ -223,7 +223,7 @@ export function StudentUploadPage() {
                     {submitting ? '提交中...' : editId ? '保存修改' : '提交记录'}
                   </Button>
                   <Button variant="ghost" asChild>
-                    <Link to={task ? `/student/tasks/${task.id}` : '/student/dashboard'}>返回任务</Link>
+                    <Link to={task ? `/student/tasks/${task.id}` : '/student/tasks'}>返回任务</Link>
                   </Button>
                 </div>
               </div>

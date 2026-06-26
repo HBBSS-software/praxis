@@ -576,6 +576,9 @@ export function createApiClient() {
       })
     },
     student: {
+      overview: {
+        get: () => wrapRpcResponse(client.students.me.overview.$get())
+      },
       tasks: Object.assign(studentTaskRoute, {
         get: () => wrapRpcResponse(client.students.me.tasks.$get())
       }),

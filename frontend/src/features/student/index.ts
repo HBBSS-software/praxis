@@ -1,4 +1,5 @@
 export * from './dashboard-page';
+export * from './tasks-page';
 export * from './task-page';
 export * from './upload-page';
 export * from './notifications-page';
