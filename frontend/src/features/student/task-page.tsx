@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ConfirmActionDialog } from '@/components/confirm-action-dialog';
 import { AuthenticatedImage } from '@/shared/authenticated-image';
 import { EmptyState } from '@/shared/empty-state';
+import { PhotoSwipeImageGallery } from '@/shared/photoswipe-image-gallery';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -95,7 +96,21 @@ export function StudentTaskPage() {
                   <CardContent className="grid p-0 md:grid-cols-[160px_minmax(0,1fr)]">
                     <div className="relative min-h-36 bg-muted">
                       {record.cover_image_path ? (
-                        <AuthenticatedImage className="h-full w-full object-cover" placeholderClassName="flex h-full w-full items-center justify-center bg-muted/40" src={record.cover_image_path} alt={record.title} />
+                        <PhotoSwipeImageGallery
+                          className="h-full"
+                          images={[
+                            { src: record.cover_image_path, alt: record.title },
+                            ...record.image_paths
+                              .filter((imagePath) => imagePath !== record.cover_image_path)
+                              .map((imagePath) => ({ src: imagePath, alt: record.title }))
+                          ]}
+                        >
+                          {({ image, index, previewProps }) => index === 0 ? (
+                            <a key={image.src} className="block h-full cursor-zoom-in" {...previewProps}>
+                              <AuthenticatedImage className="h-full w-full object-cover" placeholderClassName="flex h-full w-full items-center justify-center bg-muted/40" src={image.src} alt={record.title} />
+                            </a>
+                          ) : null}
+                        </PhotoSwipeImageGallery>
                       ) : (
                         <div className="flex h-full items-center justify-center text-muted-foreground">
                           <ImagePlus className="size-10" />

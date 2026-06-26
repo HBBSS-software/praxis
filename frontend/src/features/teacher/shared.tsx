@@ -6,6 +6,7 @@ import { useSession } from '@/lib/auth';
 import { DatePickerField } from '@/shared/date-picker-field';
 import { EmptyState } from '@/shared/empty-state';
 import { AuthenticatedImage } from '@/shared/authenticated-image';
+import { PhotoSwipeImageGallery } from '@/shared/photoswipe-image-gallery';
 import { StatCard } from '@/shared/stat-card';
 import { ConfirmActionDialog } from '@/components/confirm-action-dialog';
 import { DataTable } from '@/components/data-table';
@@ -510,17 +511,21 @@ export function RecordPreview({ record }: { record: TeacherRecord }) {
         {record.content}
       </div>
       {record.image_paths.length > 0 ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {record.image_paths.map((imagePath) => (
-            <AuthenticatedImage
-              key={imagePath}
-              className="max-h-72 w-full rounded-2xl object-cover"
-              placeholderClassName="flex min-h-52 w-full items-center justify-center rounded-2xl bg-muted/40"
-              src={imagePath}
-              alt={record.title}
-            />
-          ))}
-        </div>
+        <PhotoSwipeImageGallery
+          className="grid gap-3 sm:grid-cols-2"
+          images={record.image_paths.map((imagePath) => ({ src: imagePath, alt: record.title }))}
+        >
+          {({ image, index, previewProps }) => (
+            <a key={`${image.src}-${index}`} className="block cursor-zoom-in" {...previewProps}>
+              <AuthenticatedImage
+                className="max-h-72 w-full rounded-2xl object-cover"
+                placeholderClassName="flex min-h-52 w-full items-center justify-center rounded-2xl bg-muted/40"
+                src={image.src}
+                alt={image.alt ?? record.title}
+              />
+            </a>
+          )}
+        </PhotoSwipeImageGallery>
       ) : null}
     </div>
   );

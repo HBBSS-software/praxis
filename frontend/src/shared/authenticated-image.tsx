@@ -18,6 +18,11 @@ function normalizeProtectedUploadPath(src: string) {
   return null;
 }
 
+export function resolveAuthenticatedImageSrc(src: string) {
+  const protectedPath = normalizeProtectedUploadPath(src);
+  return protectedPath ? `${getApiOrigin()}${protectedPath}` : src;
+}
+
 export function AuthenticatedImage({
   src,
   alt,
@@ -29,8 +34,7 @@ export function AuthenticatedImage({
   className?: string;
   placeholderClassName?: string;
 }) {
-  const protectedPath = normalizeProtectedUploadPath(src);
-  const resolvedSrc = protectedPath ? `${getApiOrigin()}${protectedPath}` : src;
+  const resolvedSrc = resolveAuthenticatedImageSrc(src);
   const [failed, setFailed] = useState(false);
 
   if (failed) {

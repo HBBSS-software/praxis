@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useSession } from '@/lib/auth';
 import { AuthenticatedImage } from '@/shared/authenticated-image';
 import { DatePickerField } from '@/shared/date-picker-field';
+import { PhotoSwipeImageGallery } from '@/shared/photoswipe-image-gallery';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -278,48 +279,61 @@ export function StudentUploadPage() {
                   </label>
                 </Field>
                 {images.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {images.map((image) => (
-                      <div key={image.id} className="space-y-2 rounded-2xl bg-muted p-2">
-                        <AuthenticatedImage
-                          className="aspect-square w-full rounded-md object-cover"
-                          placeholderClassName="flex aspect-square w-full items-center justify-center rounded-md bg-muted/40"
-                          src={image.preview}
-                          alt="实践图片"
-                        />
-                        <div className="grid grid-cols-2 gap-2">
-                          <Button
-                            size="sm"
-                            type="button"
-                            variant={coverImageId === image.id ? 'default' : 'outline'}
-                            onClick={() => setCoverImageId(image.id)}
-                          >
-                            封面
-                          </Button>
-                          <Button
-                            size="sm"
-                            type="button"
-                            variant="ghost"
-                            onClick={() => {
-                              if (image.file) {
-                                URL.revokeObjectURL(image.preview);
-                                localPreviewUrls.current.delete(image.preview);
-                              }
-                              setImages((current) => {
-                                const nextImages = current.filter((item) => item.id !== image.id);
-                                if (coverImageId === image.id) {
-                                  setCoverImageId(nextImages[0]?.id ?? '');
+                  <PhotoSwipeImageGallery
+                    className="grid grid-cols-2 gap-3 sm:grid-cols-3"
+                    images={images.map((image) => ({
+                      src: image.preview,
+                      alt: '实践图片',
+                      downloadName: image.file?.name
+                    }))}
+                  >
+                    {({ image: previewImage, index, previewProps }) => {
+                      const uploadImage = images[index];
+
+                      return (
+                        <div key={uploadImage.id} className="space-y-2 rounded-2xl bg-muted p-2">
+                          <a className="block cursor-zoom-in" {...previewProps}>
+                            <AuthenticatedImage
+                              className="aspect-square w-full rounded-md object-cover"
+                              placeholderClassName="flex aspect-square w-full items-center justify-center rounded-md bg-muted/40"
+                              src={previewImage.src}
+                              alt={previewImage.alt ?? '实践图片'}
+                            />
+                          </a>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button
+                              size="sm"
+                              type="button"
+                              variant={coverImageId === uploadImage.id ? 'default' : 'outline'}
+                              onClick={() => setCoverImageId(uploadImage.id)}
+                            >
+                              封面
+                            </Button>
+                            <Button
+                              size="sm"
+                              type="button"
+                              variant="ghost"
+                              onClick={() => {
+                                if (uploadImage.file) {
+                                  URL.revokeObjectURL(uploadImage.preview);
+                                  localPreviewUrls.current.delete(uploadImage.preview);
                                 }
-                                return nextImages;
-                              });
-                            }}
-                          >
-                            移除
-                          </Button>
+                                setImages((current) => {
+                                  const nextImages = current.filter((item) => item.id !== uploadImage.id);
+                                  if (coverImageId === uploadImage.id) {
+                                    setCoverImageId(nextImages[0]?.id ?? '');
+                                  }
+                                  return nextImages;
+                                });
+                              }}
+                            >
+                              移除
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      );
+                    }}
+                  </PhotoSwipeImageGallery>
                 ) : null}
               </div>
             </form>
