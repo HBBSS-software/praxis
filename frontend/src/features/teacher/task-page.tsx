@@ -44,6 +44,7 @@ export function TeacherTaskPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<TaskFormState | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteRecord, setDeleteRecord] = useState<TeacherRecordSummary | null>(null);
   const [removeClassTargets, setRemoveClassTargets] = useState<ClassSummary[]>([]);
   const [removeClassRecordCount, setRemoveClassRecordCount] = useState(0);
   const [exportOpen, setExportOpen] = useState(false);
@@ -134,20 +135,60 @@ export function TeacherTaskPage() {
 
   const columns = useMemo<Array<ColumnDef<TeacherRecordSummary>>>(() => {
     const baseColumns: Array<ColumnDef<TeacherRecordSummary>> = [
-      { accessorKey: 'student_name', header: '学生' },
-      { accessorKey: 'student_uid', header: 'UID' },
-      { accessorKey: 'title', header: '标题' },
+      {
+        accessorKey: 'student_name',
+        header: '学生',
+        meta: {
+          headClassName: 'px-4',
+          cellClassName: 'px-4'
+        },
+        cell: ({ row }) => (
+          <div>
+            <p className="font-medium">{row.original.student_name}</p>
+            <p className="text-xs text-muted-foreground">{row.original.student_english_name || '-'}</p>
+          </div>
+        )
+      },
+      {
+        accessorKey: 'title',
+        header: '标题',
+        meta: {
+          headClassName: 'min-w-0 px-4',
+          cellClassName: 'min-w-0 px-4'
+        },
+        cell: ({ row }) => (
+          <div className="w-full truncate" title={row.original.title}>
+            {row.original.title}
+          </div>
+        )
+      },
       {
         accessorKey: 'practice_date',
         header: '实践日期',
+        meta: {
+          headClassName: 'px-4',
+          cellClassName: 'px-4'
+        },
         cell: ({ row }) => formatDate(row.original.practice_date)
       },
-      { accessorKey: 'status', header: '状态', cell: ({ row }) => <StatusBadge status={row.original.status} /> }
+      {
+        accessorKey: 'status',
+        header: '状态',
+        meta: {
+          headClassName: 'px-4',
+          cellClassName: 'px-4'
+        },
+        cell: ({ row }) => <StatusBadge status={row.original.status} />
+      }
     ];
 
     if (task?.score_enabled) {
       baseColumns.push({
         accessorKey: 'score',
+        meta: {
+          headClassName: 'px-4',
+          cellClassName: 'px-4'
+        },
         header: () => (
           <SortButton
             active={sortBy === 'score_desc' || sortBy === 'score_asc'}
@@ -163,6 +204,10 @@ export function TeacherTaskPage() {
     baseColumns.push(
       {
         accessorKey: 'created_at',
+        meta: {
+          headClassName: 'px-4',
+          cellClassName: 'px-4'
+        },
         header: () => (
           <SortButton
             active={sortBy === 'created_at_desc'}
@@ -176,19 +221,31 @@ export function TeacherTaskPage() {
       {
         id: 'actions',
         header: '操作',
+        meta: {
+          headClassName: 'px-4',
+          cellClassName: 'px-4'
+        },
         cell: ({ row }) => (
-          <Button size="sm" onClick={async () => {
-            const data = await unwrapResponse<{ record: TeacherRecord }>(createApiClient().teacher.records({ id: row.original.id }).get());
-            setReviewRecord(data.record);
-            setReviewComment(data.record.teacher_comment ?? '');
-            setReviewScore(data.record.score === null ? '' : String(data.record.score));
-          }}>处理</Button>
+          <div className="inline-flex gap-2">
+            <Button size="sm" onClick={async () => {
+              const data = await unwrapResponse<{ record: TeacherRecord }>(createApiClient().teacher.records({ id: row.original.id }).get());
+              setReviewRecord(data.record);
+              setReviewComment(data.record.teacher_comment ?? '');
+              setReviewScore(data.record.score === null ? '' : String(data.record.score));
+            }}>审批</Button>
+            <Button size="sm" variant="outline" onClick={() => navigate(`${basePath}/${taskId}/records/${row.original.id}/edit`)}>
+              修改
+            </Button>
+            <Button size="sm" variant="destructive" onClick={() => setDeleteRecord(row.original)}>
+              删除
+            </Button>
+          </div>
         )
       }
     );
 
     return baseColumns;
-  }, [sortBy, task?.score_enabled, clientOffsetMs]);
+  }, [sortBy, task?.score_enabled, clientOffsetMs, navigate, basePath, taskId]);
 
   return (
     <PageFrame
@@ -361,6 +418,21 @@ export function TeacherTaskPage() {
       />
 
       <ConfirmActionDialog
+        open={Boolean(deleteRecord)}
+        onOpenChange={(open) => !open && setDeleteRecord(null)}
+        title="确认删除记录"
+        description={deleteRecord ? `记录 "${deleteRecord.title}" 会被永久删除。` : ''}
+        confirmLabel="删除"
+        variant="destructive"
+        onConfirm={async () => {
+          if (!deleteRecord) return;
+          await unwrapResponse(createApiClient().teacher.records({ id: deleteRecord.id }).delete());
+          setDeleteRecord(null);
+          await loadRecords();
+        }}
+      />
+
+      <ConfirmActionDialog
         open={removeClassTargets.length > 0}
         onOpenChange={(open) => !open && setRemoveClassTargets([])}
         title="确认移除班级"
@@ -390,7 +462,7 @@ export function TeacherTaskPage() {
             <>
               <DialogHeader>
                 <DialogTitle>{reviewRecord.title}</DialogTitle>
-                <DialogDescription>学生：{reviewRecord.student_name}（{reviewRecord.student_uid}）</DialogDescription>
+                <DialogDescription>学生：{reviewRecord.student_name}（{reviewRecord.student_english_name || '-'}）</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <RecordPreview record={reviewRecord} />
@@ -399,12 +471,6 @@ export function TeacherTaskPage() {
                   <Field label="分数"><Input type="number" min="0" max="100" step="1" value={reviewScore} onChange={(event) => setReviewScore(event.target.value)} /></Field>
                 ) : null}
                 <div className="flex flex-wrap justify-end gap-2">
-                  <Button variant="destructive" onClick={async () => {
-                    if (!reviewRecord) return;
-                    await unwrapResponse(createApiClient().teacher.records({ id: reviewRecord.id }).delete());
-                    setReviewRecord(null);
-                    await loadRecords();
-                  }}>删除</Button>
                   <Button variant="outline" onClick={async () => {
                     if (!reviewRecord) return;
                     await unwrapResponse(createApiClient().teacher.records({ id: reviewRecord.id }).review.put({ status: 'rejected', comment: reviewComment }));

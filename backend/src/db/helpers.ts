@@ -233,6 +233,7 @@ export function buildRecordWhere(filters: RecordFilters = {}, visibleStudentIds?
 export function recordIdentitySelect() {
   return {
     student_name: sql<string>`case when ${users.id} is null or ${users.deletedAt} is not null then ${deletedUserName} else ${users.name} end`,
-    student_uid: sql<number>`case when ${users.id} is null then coalesce(${practiceRecords.studentUidSnapshot}, 0) else ${users.id} end`
+    student_uid: sql<number>`case when ${users.id} is null then coalesce(${practiceRecords.studentUidSnapshot}, 0) else ${users.id} end`,
+    student_english_name: sql<string | null>`case when ${users.id} is null or ${users.deletedAt} is not null then null else ${users.englishName} end`
   };
 }

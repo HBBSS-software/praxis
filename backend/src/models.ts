@@ -79,6 +79,7 @@ export interface StudentRecord extends PracticeRecord {
 
 export interface TeacherRecord extends StudentRecord {
   student_uid: number;
+  student_english_name: string | null;
 }
 
 export interface TeacherRecordSummary {
@@ -92,6 +93,7 @@ export interface TeacherRecordSummary {
   created_at: string;
   student_name: string;
   student_uid: number;
+  student_english_name: string | null;
 }
 
 export interface TeacherRecordExport {

@@ -35,6 +35,7 @@ const StudentAccountPage = lazyPage(() => import('@/features/student'), 'Student
 const TeacherDashboardPage = lazyPage(() => import('@/features/teacher'), 'TeacherDashboardPage');
 const TeacherTasksPage = lazyPage(() => import('@/features/teacher'), 'TeacherTasksPage');
 const TeacherTaskPage = lazyPage(() => import('@/features/teacher'), 'TeacherTaskPage');
+const TeacherRecordEditPage = lazyPage(() => import('@/features/teacher'), 'TeacherRecordEditPage');
 const TeacherStudentsPage = lazyPage(() => import('@/features/teacher'), 'TeacherStudentsPage');
 const AccountSettingsPage = lazyPage(() => import('@/features/teacher'), 'AccountSettingsPage');
 const AdminAssignmentsPage = lazyPage(() => import('@/features/admin'), 'AdminAssignmentsPage');
@@ -128,6 +129,7 @@ export function App() {
               <Route path="dashboard" element={<DeferredRoute><TeacherDashboardPage /></DeferredRoute>} />
               <Route path="tasks" element={<DeferredRoute><TeacherTasksPage /></DeferredRoute>} />
               <Route path="tasks/:id" element={<DeferredRoute><TeacherTaskPage /></DeferredRoute>} />
+              <Route path="tasks/:id/records/:recordId/edit" element={<DeferredRoute><TeacherRecordEditPage /></DeferredRoute>} />
               <Route path="students" element={<DeferredRoute><TeacherStudentsPage /></DeferredRoute>} />
               <Route path="account" element={<DeferredRoute><AccountSettingsPage allowNameChange /></DeferredRoute>} />
             </Route>
@@ -136,6 +138,7 @@ export function App() {
               <Route path="dashboard" element={<DeferredRoute><TeacherDashboardPage /></DeferredRoute>} />
               <Route path="tasks" element={<DeferredRoute><TeacherTasksPage /></DeferredRoute>} />
               <Route path="tasks/:id" element={<DeferredRoute><TeacherTaskPage /></DeferredRoute>} />
+              <Route path="tasks/:id/records/:recordId/edit" element={<DeferredRoute><TeacherRecordEditPage /></DeferredRoute>} />
               <Route path="users" element={<DeferredRoute><AdminUsersPage /></DeferredRoute>} />
               <Route path="assign" element={<DeferredRoute><AdminAssignmentsPage /></DeferredRoute>} />
               <Route path="students" element={<DeferredRoute><AdminStudentsPage /></DeferredRoute>} />

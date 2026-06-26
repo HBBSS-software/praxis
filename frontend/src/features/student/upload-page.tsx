@@ -1,23 +1,20 @@
-import { ImagePlus } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
-import { useSession } from '@/lib/auth';
-import { AuthenticatedImage } from '@/shared/authenticated-image';
-import { DatePickerField } from '@/shared/date-picker-field';
-import { PhotoSwipeImageGallery } from '@/shared/photoswipe-image-gallery';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
-import { Textarea } from '@/components/ui/textarea';
-import { ApiResponseError, createApiClient, formatUploadImageMaxSize, unwrapResponse, uploadImage, validateUploadImageFiles } from '@/lib/api';
+import { ApiResponseError, createApiClient, formatUploadImageMaxSize, unwrapResponse } from '@/lib/api';
+import { useSession } from '@/lib/auth';
 import { toastError, toastSuccess } from '@/lib/feedback';
 import { getServerUtcDateInputValue, normalizeDateInputValue } from '@/lib/format';
 import { useRuntimeConfig } from '@/lib/runtime-config';
-import { MAX_RECORD_IMAGES, type PracticeTaskSummary, type StudentRecord } from '@/lib/types';
-import { createLocalImageItem, type UploadImageItem } from './upload-types';
-import { ErrorCard, Field, LoadingCard, StudentPageFrame } from './shared';
+import type { PracticeTaskSummary, StudentRecord } from '@/lib/types';
+import {
+  createExistingRecordImageItem,
+  RecordEditorForm,
+  type RecordEditorFormValues,
+  type RecordEditorImageItem
+} from '@/shared/record-editor-form';
+import { ErrorCard, LoadingCard, StudentPageFrame } from './shared';
 
 export function StudentUploadPage() {
   const { signOut } = useSession();
@@ -30,43 +27,22 @@ export function StudentUploadPage() {
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('id');
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [task, setTask] = useState<PracticeTaskSummary | null>(null);
-  const [images, setImages] = useState<UploadImageItem[]>([]);
-  const [coverImageId, setCoverImageId] = useState('');
-  const localPreviewUrls = useRef(new Set<string>());
-  const defaultPracticeDateRef = useRef(defaultPracticeDate);
-  const [form, setForm] = useState({
-    title: '',
-    content: '',
-    practice_date: defaultPracticeDate,
-    location: '',
-    duration: ''
-  });
-
-  useEffect(() => {
-    if (editId) {
-      defaultPracticeDateRef.current = defaultPracticeDate;
-      return;
-    }
-
-    setForm((current) => {
-      if (current.practice_date !== defaultPracticeDateRef.current) {
-        return current;
-      }
-
-      return { ...current, practice_date: defaultPracticeDate };
-    });
-    defaultPracticeDateRef.current = defaultPracticeDate;
-  }, [defaultPracticeDate, editId]);
+  const [initialForm, setInitialForm] = useState<RecordEditorFormValues | null>(null);
+  const [initialImages, setInitialImages] = useState<RecordEditorImageItem[]>([]);
+  const [initialCoverImageId, setInitialCoverImageId] = useState('');
 
   useEffect(() => {
     if (!Number.isInteger(taskId) || taskId <= 0) return;
- 
+
+    setLoading(true);
+    setError('');
+
     unwrapResponse<{ task: PracticeTaskSummary; records: StudentRecord[] }>(createApiClient().student.tasks({ id: taskId }).get())
       .then((data) => {
         setTask(data.task);
+
         if (editId) {
           const record = data.records.find((item) => String(item.id) === editId);
           if (!record || (record.status !== 'pending' && record.status !== 'rejected')) {
@@ -74,21 +50,29 @@ export function StudentUploadPage() {
             navigate(`/student/tasks/${taskId}`, { replace: true });
             return;
           }
-          setForm({
+
+          setInitialForm({
             title: record.title,
             content: record.content,
             practice_date: normalizeDateInputValue(record.practice_date),
             location: record.location ?? '',
             duration: String(record.duration)
           });
-          const recordImages = record.image_paths.map((imagePath) => ({
-            id: imagePath,
-            path: imagePath,
-            preview: imagePath
-          }));
-          setImages(recordImages);
-          setCoverImageId(record.cover_image_path ?? recordImages[0]?.id ?? '');
+          const recordImages = record.image_paths.map(createExistingRecordImageItem);
+          setInitialImages(recordImages);
+          setInitialCoverImageId(record.cover_image_path ?? recordImages[0]?.id ?? '');
+          return;
         }
+
+        setInitialForm({
+          title: '',
+          content: '',
+          practice_date: defaultPracticeDate,
+          location: '',
+          duration: ''
+        });
+        setInitialImages([]);
+        setInitialCoverImageId('');
       })
       .catch((nextError) => {
         if (nextError instanceof ApiResponseError && nextError.status === 401) {
@@ -98,16 +82,7 @@ export function StudentUploadPage() {
         setError(nextError instanceof Error ? nextError.message : '加载任务失败。');
       })
       .finally(() => setLoading(false));
-  }, [editId, navigate, signOut, taskId]);
-
-  useEffect(() => () => {
-    for (const previewUrl of localPreviewUrls.current) {
-      URL.revokeObjectURL(previewUrl);
-    }
-    localPreviewUrls.current.clear();
-  }, []);
-
-  const remainingImageSlots = MAX_RECORD_IMAGES - images.length;
+  }, [defaultPracticeDate, editId, navigate, signOut, taskId]);
 
   return (
     <StudentPageFrame
@@ -124,220 +99,35 @@ export function StudentUploadPage() {
             <LoadingCard label="正在加载记录内容..." />
           ) : error ? (
             <ErrorCard message={error} onRetry={() => navigate('/student/tasks', { replace: true })} />
-          ) : (
-            <form
-              className="grid gap-4 sm:gap-5 lg:grid-cols-[1.1fr_0.9fr]"
-              onSubmit={async (event) => {
-                event.preventDefault();
-                setError('');
-                setSubmitting(true);
+          ) : task && initialForm ? (
+            <RecordEditorForm
+              key={editId ?? `new-${defaultPracticeDate}`}
+              task={task}
+              uploadImageMaxSizeBytes={uploadImageMaxSizeBytes}
+              initialForm={initialForm}
+              initialImages={initialImages}
+              initialCoverImageId={initialCoverImageId}
+              submitLabel={editId ? '保存修改' : '提交记录'}
+              backTo={`/student/tasks/${task.id}`}
+              backLabel="返回任务"
+              onUnauthorized={signOut}
+              onSubmit={async (payload) => {
+                const api = createApiClient();
 
-                try {
-                  if (images.length > MAX_RECORD_IMAGES) {
-                    throw new Error(`每条记录最多上传 ${MAX_RECORD_IMAGES} 张图片。`);
-                  }
-                  if (!task) {
-                    throw new Error('任务不存在。');
-                  }
-                  if (form.content.trim().length < task.min_words) {
-                    throw new Error(`实践内容不能少于 ${task.min_words} 字。`);
-                  }
-                  if (images.length < task.min_images) {
-                    throw new Error(`至少需要上传 ${task.min_images} 张图片。`);
-                  }
-
-                  const uploadedImages = await Promise.all(images.map(async (image) => {
-                    if (image.path) {
-                      return {
-                        id: image.id,
-                        path: image.path
-                      };
-                    }
-
-                    const uploadResult = await uploadImage(image.file!, uploadImageMaxSizeBytes);
-                    return {
-                      id: image.id,
-                      path: uploadResult.imageUrl
-                    };
+                if (editId) {
+                  await unwrapResponse(api.student.records({ id: Number(editId) }).put(payload));
+                } else {
+                  await unwrapResponse(api.student.records.post({
+                    ...payload,
+                    task_id: task.id
                   }));
-                  const imagePaths = uploadedImages.map((image) => image.path);
-                  const coverImagePath = uploadedImages.find((image) => image.id === coverImageId)?.path ?? imagePaths[0] ?? null;
-
-                  const api = createApiClient();
-                  const payload = {
-                    ...form,
-                    task_id: task.id,
-                    title: form.title.trim(),
-                    content: form.content.trim(),
-                    location: form.location.trim() || null,
-                    duration: form.duration.trim()
-                  };
-
-                  if (editId) {
-                    await unwrapResponse(api.student.records({ id: Number(editId) }).put({
-                      ...payload,
-                      image_paths: imagePaths,
-                      cover_image_path: coverImagePath
-                    }));
-                  } else {
-                    await unwrapResponse(api.student.records.post({
-                      ...payload,
-                      image_paths: imagePaths,
-                      cover_image_path: coverImagePath
-                    }));
-                  }
-
-                  toastSuccess(editId ? '记录更新成功。' : '记录提交成功。');
-                  navigate(`/student/tasks/${task.id}`, { replace: true });
-                } catch (nextError) {
-                  if (nextError instanceof ApiResponseError && nextError.status === 401) {
-                    signOut();
-                    return;
-                  }
-                  toastError(nextError, '提交失败。');
-                } finally {
-                  setSubmitting(false);
                 }
+
+                toastSuccess(editId ? '记录更新成功。' : '记录提交成功。');
+                navigate(`/student/tasks/${task.id}`, { replace: true });
               }}
-            >
-              <div className="space-y-4 sm:space-y-5">
-                <Field label="标题">
-                  <Input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} required />
-                </Field>
-                <Field label="实践内容">
-                  <Textarea value={form.content} onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))} required />
-                </Field>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="实践日期">
-                  <DatePickerField value={form.practice_date} onChange={(value) => setForm((current) => ({ ...current, practice_date: value }))} placeholder="选择实践日期" />
-                </Field>
-                  <Field label="时长（小时）">
-                    <Input type="number" min="0.1" step="0.1" value={form.duration} onChange={(event) => setForm((current) => ({ ...current, duration: event.target.value }))} required />
-                  </Field>
-                </div>
-                <Field label="地点">
-                  <Input value={form.location} onChange={(event) => setForm((current) => ({ ...current, location: event.target.value }))} />
-                </Field>
-                <div className="flex flex-wrap gap-3">
-                  <Button disabled={submitting} type="submit">
-                    {submitting ? <Spinner className="size-4 text-current" /> : null}
-                    {submitting ? '提交中...' : editId ? '保存修改' : '提交记录'}
-                  </Button>
-                  <Button variant="ghost" asChild>
-                    <Link to={task ? `/student/tasks/${task.id}` : '/student/tasks'}>返回任务</Link>
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <Field label="实践图片">
-                  <label className="group flex min-h-28 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed bg-muted/20 p-4 text-center transition hover:bg-muted/40 has-disabled:pointer-events-none has-disabled:opacity-60">
-                    <div className="flex size-10 items-center justify-center rounded-2xl bg-secondary text-secondary-foreground">
-                      <ImagePlus className="size-5" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">选择图片</p>
-                      <p className="mt-1 text-xs text-muted-foreground">最多 {MAX_RECORD_IMAGES} 张，单张最大 {formatUploadImageMaxSize(uploadImageMaxSizeBytes)}</p>
-                    </div>
-                    <input
-                      className="hidden"
-                      type="file"
-                      accept="image/jpeg,image/png,image/gif"
-                      disabled={remainingImageSlots <= 0}
-                      multiple
-                      onChange={(event) => {
-                        const files = Array.from(event.target.files ?? []);
-                        if (files.length === 0) {
-                          return;
-                        }
-
-                        try {
-                          if (files.length > remainingImageSlots) {
-                            throw new Error(`还能选择 ${remainingImageSlots} 张图片。`);
-                          }
-                          validateUploadImageFiles(files, uploadImageMaxSizeBytes);
-                        } catch (nextError) {
-                          event.target.value = '';
-                          toastError(nextError);
-                          return;
-                        }
-
-                        const nextImages = files.map(createLocalImageItem);
-                        for (const image of nextImages) {
-                          localPreviewUrls.current.add(image.preview);
-                        }
-                        setImages((current) => {
-                          const merged = [...current, ...nextImages];
-                          if (!coverImageId && merged[0]) {
-                            setCoverImageId(merged[0].id);
-                          }
-                          return merged;
-                        });
-                        event.target.value = '';
-                      }}
-                    />
-                  </label>
-                </Field>
-                {images.length > 0 ? (
-                  <PhotoSwipeImageGallery
-                    className="grid grid-cols-2 gap-3 sm:grid-cols-3"
-                    images={images.map((image) => ({
-                      src: image.preview,
-                      alt: '实践图片',
-                      downloadName: image.file?.name
-                    }))}
-                  >
-                    {({ image: previewImage, index, previewProps }) => {
-                      const uploadImage = images[index];
-
-                      return (
-                        <div key={uploadImage.id} className="space-y-2 rounded-2xl bg-muted p-2">
-                          <a className="block cursor-zoom-in" {...previewProps}>
-                            <AuthenticatedImage
-                              className="aspect-square w-full rounded-md object-cover"
-                              placeholderClassName="flex aspect-square w-full items-center justify-center rounded-md bg-muted/40"
-                              src={previewImage.src}
-                              alt={previewImage.alt ?? '实践图片'}
-                            />
-                          </a>
-                          <div className="grid grid-cols-2 gap-2">
-                            <Button
-                              size="sm"
-                              type="button"
-                              variant={coverImageId === uploadImage.id ? 'default' : 'outline'}
-                              onClick={() => setCoverImageId(uploadImage.id)}
-                            >
-                              封面
-                            </Button>
-                            <Button
-                              size="sm"
-                              type="button"
-                              variant="ghost"
-                              onClick={() => {
-                                if (uploadImage.file) {
-                                  URL.revokeObjectURL(uploadImage.preview);
-                                  localPreviewUrls.current.delete(uploadImage.preview);
-                                }
-                                setImages((current) => {
-                                  const nextImages = current.filter((item) => item.id !== uploadImage.id);
-                                  if (coverImageId === uploadImage.id) {
-                                    setCoverImageId(nextImages[0]?.id ?? '');
-                                  }
-                                  return nextImages;
-                                });
-                              }}
-                            >
-                              移除
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    }}
-                  </PhotoSwipeImageGallery>
-                ) : null}
-              </div>
-            </form>
-          )}
+            />
+          ) : null}
         </CardContent>
       </Card>
     </StudentPageFrame>

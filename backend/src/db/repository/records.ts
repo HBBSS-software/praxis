@@ -107,7 +107,8 @@ export function getTeacherRecordById(id: number, visibleStudentIds?: Set<number>
   return {
     ...toPracticeRecord(record.record),
     student_name: String(record.student_name),
-    student_uid: record.student_uid
+    student_uid: record.student_uid,
+    student_english_name: record.student_english_name
   } satisfies TeacherRecord;
 }
 
@@ -162,7 +163,8 @@ export function getAllRecords(filters: RecordFilters = {}, visibleStudentIds?: S
       title: row.title, practice_date: row.practice_date,
       status: row.status as TeacherRecordSummary['status'],
       score: row.score,
-      created_at: row.created_at, student_name: row.student_name, student_uid: row.student_uid
+      created_at: row.created_at, student_name: row.student_name, student_uid: row.student_uid,
+      student_english_name: row.student_english_name
     }));
 }
 
