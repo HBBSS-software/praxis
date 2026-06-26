@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ChevronDown, FileUp, Pencil, Plus, Trash2, UserPlus, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, FileUp, Pencil, Plus, Trash2, UserPlus, X } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 
@@ -295,14 +295,14 @@ function CompactNameList({ items, emptyText }: { items: string[]; emptyText: str
           {item}
         </span>
       ))}
-      {!expanded && items.length > 12 ? (
+      {items.length > 12 ? (
         <button
           type="button"
           className="inline-flex h-6 items-center rounded-md bg-muted px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-          onClick={() => setExpanded(true)}
-          aria-label="展开全部"
+          onClick={() => setExpanded((current) => !current)}
+          aria-label={expanded ? '收起' : '展开全部'}
         >
-          <ChevronDown className="size-3.5" />
+          {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
         </button>
       ) : null}
     </div>
