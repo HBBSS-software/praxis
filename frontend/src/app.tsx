@@ -1,7 +1,8 @@
 import { Suspense, lazy, useEffect, type ComponentType, type ReactNode } from 'react';
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 
 import { AppShell } from '@/layout/app-shell';
+import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { ApiResponseError, createApiClient, unwrapResponse } from '@/lib/api';
 import { SessionProvider, useSession } from '@/lib/auth';
@@ -55,13 +56,26 @@ function DeferredRoute({ children }: { children: ReactNode }) {
   return <Suspense fallback={<RouteFallback />}>{children}</Suspense>;
 }
 
+function NotFoundPage() {
+  return (
+    <main className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 text-center">
+      <h1 className="text-5xl font-semibold">404</h1>
+      <p className="text-muted-foreground">页面不存在。</p>
+      <Button asChild>
+        <Link to="/">返回主页</Link>
+      </Button>
+    </main>
+  );
+}
+
 function RootRedirect() {
-  const { user } = useSession();
+  const { user, loading } = useSession();
+  if (loading) return <RouteFallback />;
   return <Navigate to={user ? getDefaultPathByRole(user.role, user.password_setup_required) : '/login'} replace />;
 }
 
 function RoleLayout({ role }: { role: UserRole }) {
-  const { user, signOut, setNotificationCount, notificationCount } = useSession();
+  const { user, loading, signOut, setNotificationCount, notificationCount } = useSession();
   const location = useLocation();
 
   useEffect(() => {
@@ -76,6 +90,7 @@ function RoleLayout({ role }: { role: UserRole }) {
       });
   }, [location.pathname, setNotificationCount, signOut, user]);
 
+  if (loading) return <RouteFallback />;
   if (!user) return <Navigate to="/login" replace />;
 
   const allowed = user.role === role || (role === 'teacher' && user.role === 'admin');
@@ -89,17 +104,20 @@ function RoleLayout({ role }: { role: UserRole }) {
 }
 
 function LoginGuard() {
-  const { user } = useSession();
+  const { user, loading } = useSession();
+  if (loading) return <RouteFallback />;
   return user ? <Navigate to={getDefaultPathByRole(user.role, user.password_setup_required)} replace /> : <DeferredRoute><LoginPage /></DeferredRoute>;
 }
 
 function StudentLoginGuard() {
-  const { user } = useSession();
+  const { user, loading } = useSession();
+  if (loading) return <RouteFallback />;
   return user ? <Navigate to={getDefaultPathByRole(user.role, user.password_setup_required)} replace /> : <DeferredRoute><StudentLoginPage /></DeferredRoute>;
 }
 
 function StaffLoginGuard() {
-  const { user } = useSession();
+  const { user, loading } = useSession();
+  if (loading) return <RouteFallback />;
   return user ? <Navigate to={getDefaultPathByRole(user.role, user.password_setup_required)} replace /> : <DeferredRoute><StaffLoginPage /></DeferredRoute>;
 }
 
@@ -123,6 +141,7 @@ export function App() {
               <Route path="tasks/:taskId/upload" element={<DeferredRoute><StudentUploadPage /></DeferredRoute>} />
               <Route path="notifications" element={<DeferredRoute><StudentNotificationsPage /></DeferredRoute>} />
               <Route path="account" element={<DeferredRoute><StudentAccountPage /></DeferredRoute>} />
+              <Route path="*" element={<NotFoundPage />} />
             </Route>
 
             <Route path="/teacher" element={<RoleLayout role="teacher" />}>
@@ -132,6 +151,7 @@ export function App() {
               <Route path="tasks/:id/records/:recordId/edit" element={<DeferredRoute><TeacherRecordEditPage /></DeferredRoute>} />
               <Route path="students" element={<DeferredRoute><TeacherStudentsPage /></DeferredRoute>} />
               <Route path="account" element={<DeferredRoute><AccountSettingsPage allowNameChange /></DeferredRoute>} />
+              <Route path="*" element={<NotFoundPage />} />
             </Route>
 
             <Route path="/admin" element={<RoleLayout role="admin" />}>
@@ -144,9 +164,10 @@ export function App() {
               <Route path="students" element={<DeferredRoute><AdminStudentsPage /></DeferredRoute>} />
               <Route path="teachers" element={<DeferredRoute><AdminTeachersPage /></DeferredRoute>} />
               <Route path="account" element={<DeferredRoute><AccountSettingsPage allowNameChange /></DeferredRoute>} />
+              <Route path="*" element={<NotFoundPage />} />
             </Route>
 
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </BrowserRouter>
       </RuntimeConfigProvider>

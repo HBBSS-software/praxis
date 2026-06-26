@@ -9,10 +9,14 @@ const testDbPath = `/tmp/praxis-test-db-${Date.now()}.db`;
 const testConfigPath = `/tmp/praxis-test-config-${Date.now()}.toml`;
 const testUploadDir = fileURLToPath(new URL('../data/uploads', import.meta.url));
 const testTmpUploadDir = fileURLToPath(new URL('../data/tmp-uploads', import.meta.url));
+const testFrontendDist = path.resolve(process.cwd(), 'frontend/dist');
+const testFrontendIndex = path.join(testFrontendDist, 'index.html');
 const cleanupUploadFiles = new Set<string>();
 const testJwtSecret = 'test-jwt-secret-12345678901234567890';
 const testJwtIssuer = 'praxis';
 const pqseal = createPQSealClient();
+const hadFrontendDist = fs.existsSync(testFrontendDist);
+const hadFrontendIndex = fs.existsSync(testFrontendIndex);
 
 globalThis.__praxisConfigFile = testConfigPath;
 globalThis.__praxisDatabaseFile = testDbPath;
@@ -56,6 +60,11 @@ let isLowCostPasswordHash: PasswordModule['isLowCostPasswordHash'];
 let appConfig: ConfigModule['appConfig'];
 
 beforeAll(async () => {
+  fs.mkdirSync(testFrontendDist, { recursive: true });
+  if (!hadFrontendIndex) {
+    fs.writeFileSync(testFrontendIndex, '<!doctype html><html><body>Praxis</body></html>');
+  }
+
   const [databaseModule, loginAttemptsModule, csvImportModule, appModule, passwordModule, configModule] = await Promise.all([
     import('../src/database.js'),
     import('../src/auth/login-attempts.js'),
@@ -98,6 +107,20 @@ afterAll(() => {
   for (const filePath of cleanupUploadFiles) {
     try {
       fs.unlinkSync(filePath);
+    } catch {
+    }
+  }
+
+  if (!hadFrontendIndex) {
+    try {
+      fs.unlinkSync(testFrontendIndex);
+    } catch {
+    }
+  }
+
+  if (!hadFrontendDist) {
+    try {
+      fs.rmdirSync(testFrontendDist);
     } catch {
     }
   }
@@ -218,6 +241,22 @@ function createOpenTaskForStudent(studentId: number, scoreEnabled = false) {
     created_by_id: 1
   });
 }
+
+describe('frontend routing fallback', () => {
+  test('serves known frontend routes with 200', async () => {
+    const response = await apiRequest('/teacher/tasks/1');
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/html');
+  });
+
+  test('serves unknown frontend routes with 404', async () => {
+    const response = await apiRequest('/missing-page');
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get('content-type')).toContain('text/html');
+  });
+});
 
 describe('database bootstrap and users', () => {
   test('creates users and filters by role', async () => {

@@ -53,16 +53,31 @@ function resolveSafeFile(baseDir: string, requestPath: string) {
   return filePath;
 }
 
-function fileResponse(filePath: string) {
+const frontendRoutePatterns = [
+  /^\/$/,
+  /^\/login(?:\/(?:student|staff))?\/?$/,
+  /^\/setup-password\/?$/,
+  /^\/student\/(?:dashboard|tasks(?:\/[^/]+(?:\/upload)?)?|notifications|account)\/?$/,
+  /^\/teacher\/(?:dashboard|tasks(?:\/[^/]+(?:\/records\/[^/]+\/edit)?)?|students|account)\/?$/,
+  /^\/admin\/(?:dashboard|tasks(?:\/[^/]+(?:\/records\/[^/]+\/edit)?)?|users|assign|students|teachers|account)\/?$/
+];
+
+function fileResponse(filePath: string, init?: ResponseInit) {
+  const headers = new Headers(init?.headers);
+  headers.set('content-type', mimeByExtension[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream');
+
   return new Response(Readable.toWeb(fs.createReadStream(filePath)) as ReadableStream, {
-    headers: {
-      'content-type': mimeByExtension[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream'
-    }
+    ...init,
+    headers
   });
 }
 
 function resolveFrontendIndex() {
   return fs.existsSync(frontendIndexPath) ? frontendIndexPath : null;
+}
+
+function isKnownFrontendRoute(requestPath: string) {
+  return frontendRoutePatterns.some((pattern) => pattern.test(requestPath));
 }
 
 export const api = new Hono<AppBindings>()
@@ -152,7 +167,7 @@ export const app = new Hono<AppBindings>()
       return new Response('前端尚未构建，请先运行 pnpm build:frontend。', { status: 404 });
     }
 
-    return fileResponse(indexPath);
+    return fileResponse(indexPath, { status: isKnownFrontendRoute(c.req.path) ? 200 : 404 });
   });
 
 export type App = typeof app;
