@@ -21,6 +21,7 @@ export function ListSearchBar<T extends string>({
   value,
   options,
   placeholder = '搜索',
+  showFieldSelect = true,
   className,
   onChange,
   onSearch
@@ -28,6 +29,7 @@ export function ListSearchBar<T extends string>({
   value: ListSearchState<T>;
   options: Array<ListSearchOption<T>>;
   placeholder?: string;
+  showFieldSelect?: boolean;
   className?: string;
   onChange: (value: ListSearchState<T>) => void;
   onSearch: () => void;
@@ -40,20 +42,22 @@ export function ListSearchBar<T extends string>({
         onSearch();
       }}
     >
-      <Select value={value.field} onValueChange={(field) => onChange({ ...value, field: field as T })}>
-        <SelectTrigger className="h-9 w-full sm:w-28">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {showFieldSelect ? (
+        <Select value={value.field} onValueChange={(field) => onChange({ ...value, field: field as T })}>
+          <SelectTrigger className="h-9 w-full sm:w-28">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
       <Input
-        className="h-9 w-full sm:w-56"
+        className={cn('h-9 w-full sm:w-56', !showFieldSelect && 'col-span-2 sm:col-span-1')}
         value={value.query}
         placeholder={placeholder}
         onChange={(event) => onChange({ ...value, query: event.target.value })}

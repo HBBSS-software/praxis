@@ -136,7 +136,8 @@ export function AdminAssignmentsPage() {
         <ListSearchBar
           value={searchDraft}
           options={classSearchOptions}
-          placeholder="搜索名称"
+          placeholder="搜索班级名称"
+          showFieldSelect={false}
           onChange={setSearchDraft}
           onSearch={() => {
             setSearch({ field: searchDraft.field, query: searchDraft.query.trim() });
