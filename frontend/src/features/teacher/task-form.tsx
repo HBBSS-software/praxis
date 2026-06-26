@@ -7,6 +7,8 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { DateTimePickerField } from '@/shared/date-picker-field';
 import { dateTimeInputValueToIso, formatDateTimeInputValue, getServerUtcDateInputValue } from '@/lib/format';
+import { useRuntimeConfig } from '@/lib/runtime-config';
+import { limitTextLength } from '@/lib/text';
 import type { ClassSummary, PracticeTaskDetail } from '@/lib/types';
 import { Field, UserMultiCombobox } from './shared';
 
@@ -95,6 +97,7 @@ export function TaskFormDialog({
   onRemoveClassRequest?: (targetClasses: ClassSummary[]) => void;
   onSubmit: () => Promise<void>;
 }) {
+  const { task_title_max_length: taskTitleMaxLength } = useRuntimeConfig();
   const [submitting, setSubmitting] = useState(false);
   const selectedClassOptions = useMemo(() => classes
     .filter((item) => form.class_ids.includes(item.id))
@@ -121,7 +124,7 @@ export function TaskFormDialog({
             setSubmitting(false);
           }
         }}>
-          <Field label="任务名称"><Input value={form.title} onChange={(event) => onFormChange({ ...form, title: event.target.value })} required /></Field>
+          <Field label="任务名称"><Input value={form.title} onChange={(event) => onFormChange({ ...form, title: limitTextLength(event.target.value, taskTitleMaxLength) })} required /></Field>
           <Field label="任务说明"><Textarea value={form.description} onChange={(event) => onFormChange({ ...form, description: event.target.value })} /></Field>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="开始时间"><DateTimePickerField value={form.start_at} defaultDate={getServerUtcDateInputValue(clientOffsetMs)} onChange={(value) => onFormChange({ ...form, start_at: value })} required /></Field>

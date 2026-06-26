@@ -13,7 +13,8 @@ const tmpUploadPathPattern = /^\/tmp-uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
 
 export const USER_NAME_MAX_LENGTH = appConfig.user_name_max_length;
-export const TITLE_MAX_LENGTH = appConfig.title_max_length;
+export const RECORD_TITLE_MAX_LENGTH = appConfig.record_title_max_length;
+export const TASK_TITLE_MAX_LENGTH = appConfig.task_title_max_length;
 export const LOCATION_MAX_LENGTH = appConfig.location_max_length;
 export const CONTENT_MAX_LENGTH = appConfig.content_max_length;
 export const COMMENT_MAX_LENGTH = appConfig.comment_max_length;
@@ -25,6 +26,12 @@ export const userRoleSchema = z.enum(userRoles);
 export const recordStatusSchema = z.enum(recordStatuses);
 export const recordSortSchema = z.enum(['created_at_desc', 'created_at_asc', 'score_desc', 'score_asc'] satisfies [RecordSort, RecordSort, RecordSort, RecordSort]);
 export const notificationTypeSchema = z.enum(notificationTypes);
+const recordTitleSchema = z.string().min(1, '标题不能为空。').refine((value) => countTextLength(value.trim()) <= RECORD_TITLE_MAX_LENGTH, {
+  message: `记录标题不能超过 ${RECORD_TITLE_MAX_LENGTH} 字。`
+});
+const taskTitleSchema = z.string().min(1, '任务名称不能为空。').refine((value) => countTextLength(value.trim()) <= TASK_TITLE_MAX_LENGTH, {
+  message: `任务名称不能超过 ${TASK_TITLE_MAX_LENGTH} 字。`
+});
 const pqSealTextSchema = z.string().min(1).max(4096).regex(/^[A-Za-z0-9_-]+$/, '密码格式无效。');
 const pqSealEnvelopeSchema = z.object({
   v: z.literal(1),
@@ -116,7 +123,7 @@ export const batchDeleteUsersBodySchema = z.object({
 
 export const createRecordBodySchema = z.object({
   task_id: z.number().int().positive().optional(),
-  title: z.string().min(1).max(TITLE_MAX_LENGTH),
+  title: recordTitleSchema,
   content: z.string().min(1).max(CONTENT_MAX_LENGTH),
   practice_date: z.string().min(1).max(10),
   location: z.string().max(LOCATION_MAX_LENGTH).nullable().optional(),
@@ -126,7 +133,7 @@ export const createRecordBodySchema = z.object({
 });
 
 export const updateRecordBodySchema = z.object({
-  title: z.string().min(1).max(TITLE_MAX_LENGTH).optional(),
+  title: recordTitleSchema.optional(),
   content: z.string().min(1).max(CONTENT_MAX_LENGTH).optional(),
   practice_date: z.string().min(1).max(10).optional(),
   location: z.string().max(LOCATION_MAX_LENGTH).nullable().optional(),
@@ -161,7 +168,7 @@ export const recordQuerySchema = z.object({
 });
 
 export const createTaskBodySchema = z.object({
-  title: z.string().min(1).max(TITLE_MAX_LENGTH),
+  title: taskTitleSchema,
   description: z.string().max(CONTENT_MAX_LENGTH).nullable().optional(),
   start_at: z.string().min(1).max(40),
   end_at: z.string().min(1).max(40),
@@ -224,6 +231,10 @@ export function normalizeOptionalString(value: unknown) {
 
   const trimmed = value.trim();
   return trimmed || null;
+}
+
+export function countTextLength(value: string) {
+  return Array.from(value).length;
 }
 
 export function validateName(name: string) {
@@ -289,8 +300,8 @@ export function validateTitle(title: string) {
     return '标题不能为空。';
   }
 
-  if (trimmed.length > TITLE_MAX_LENGTH) {
-    return `标题不能超过 ${TITLE_MAX_LENGTH} 个字符。`;
+  if (countTextLength(trimmed) > RECORD_TITLE_MAX_LENGTH) {
+    return `记录标题不能超过 ${RECORD_TITLE_MAX_LENGTH} 字。`;
   }
 
   return null;
@@ -415,7 +426,17 @@ export function parseDateTimeInput(value: string) {
 }
 
 export function validateTaskTitle(title: string) {
-  return validateTitle(title);
+  const trimmed = title.trim();
+
+  if (!trimmed) {
+    return '任务名称不能为空。';
+  }
+
+  if (countTextLength(trimmed) > TASK_TITLE_MAX_LENGTH) {
+    return `任务名称不能超过 ${TASK_TITLE_MAX_LENGTH} 字。`;
+  }
+
+  return null;
 }
 
 export function validateTaskDescription(description: string | null) {

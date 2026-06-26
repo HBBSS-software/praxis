@@ -49,7 +49,7 @@ pnpm start
 | `vite_port` | Vite 开发服务器端口（仅开发环境） | `5173` |
 | `backend_host` | 后端监听地址 | `"127.0.0.1"` |
 | `frontend_host` | 前端开发地址（仅开发环境） | `"127.0.0.1"` |
-| `jwt_secret` | JWT 签名密钥，至少 32 字符（如果泄漏，请立即更换） | 缺失时写入随机值 |
+| `jwt_secret` | JWT 签名密钥，至少 32 字符（**如果泄漏，请立即更换**） | 缺失时写入随机值 |
 | `jwt_issuer` | JWT 签发者 | `"praxis"` |
 | `jwt_expires_in` | JWT 有效期，支持 `s`/`m`/`h`/`d` 后缀 | `"8h"` |
 | `login_max_attempts` | 登录连续失败锁定阈值 | `5` |
@@ -71,7 +71,8 @@ pnpm start
 | `initial_admin_password` | 首次启动自动创建的默认管理员密码 | `"12345678"` |
 | `csv_import_max_size_bytes` | CSV 批量导入文件大小上限（字节） | `52428800`（50 MiB） |
 | `user_name_max_length` | 用户姓名最大长度 | `40` |
-| `title_max_length` | 记录/任务标题最大长度 | `120` |
+| `record_title_max_length` | 记录标题最大字数 | `25` |
+| `task_title_max_length` | 任务名称最大字数 | `50` |
 | `content_max_length` | 记录内容最大长度 | `5000` |
 | `comment_max_length` | 审核评语最大长度 | `500` |
 | `location_max_length` | 实践地点最大长度 | `120` |

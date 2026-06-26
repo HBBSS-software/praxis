@@ -12,6 +12,8 @@ import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { ApiResponseError, formatUploadImageMaxSize, uploadImage, validateUploadImageFiles } from '@/lib/api';
 import { toastError } from '@/lib/feedback';
+import { useRuntimeConfig } from '@/lib/runtime-config';
+import { limitTextLength } from '@/lib/text';
 import { MAX_RECORD_IMAGES } from '@/lib/types';
 
 export type RecordEditorFormValues = {
@@ -82,6 +84,7 @@ export function RecordEditorForm({
   onUnauthorized?: () => void;
   onSubmit: (payload: RecordEditorSubmitPayload) => Promise<void>;
 }) {
+  const { record_title_max_length: recordTitleMaxLength } = useRuntimeConfig();
   const [form, setForm] = useState(initialForm);
   const [images, setImages] = useState(initialImages);
   const [coverImageId, setCoverImageId] = useState(initialCoverImageId);
@@ -160,7 +163,7 @@ export function RecordEditorForm({
     >
       <div className="space-y-4 sm:space-y-5">
         <RecordEditorField label="标题">
-          <Input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} required />
+          <Input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: limitTextLength(event.target.value, recordTitleMaxLength) }))} required />
         </RecordEditorField>
         <RecordEditorField label="实践内容">
           <Textarea value={form.content} onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))} required />

@@ -33,7 +33,8 @@ export interface AppConfig {
   upload_webp_effort: number;
   csv_import_max_size_bytes: number;
   user_name_max_length: number;
-  title_max_length: number;
+  record_title_max_length: number;
+  task_title_max_length: number;
   content_max_length: number;
   comment_max_length: number;
   location_max_length: number;
@@ -111,7 +112,8 @@ function createDefaultConfig(): AppConfig {
     upload_webp_effort: 5,
     csv_import_max_size_bytes: 50 * 1024 * 1024,
     user_name_max_length: 40,
-    title_max_length: 120,
+    record_title_max_length: 25,
+    task_title_max_length: 50,
     content_max_length: 5000,
     comment_max_length: 500,
     location_max_length: 120,
@@ -280,10 +282,15 @@ function normalizeConfig(source: unknown): AppConfig {
       "user_name_max_length",
       fallback.user_name_max_length,
     ),
-    title_max_length: getPositiveInteger(
+    record_title_max_length: getPositiveInteger(
       config,
-      "title_max_length",
-      fallback.title_max_length,
+      "record_title_max_length",
+      fallback.record_title_max_length,
+    ),
+    task_title_max_length: getPositiveInteger(
+      config,
+      "task_title_max_length",
+      fallback.task_title_max_length,
     ),
     content_max_length: getPositiveInteger(
       config,

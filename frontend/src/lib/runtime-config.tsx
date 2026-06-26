@@ -7,6 +7,8 @@ const defaultRuntimeConfig: AppRuntimeConfig = {
   site_name: 'Praxis',
   icp_beian: '',
   upload_image_max_size_bytes: 5 * 1024 * 1024,
+  record_title_max_length: 25,
+  task_title_max_length: 50,
   is_production: false,
   server_timestamp: Date.now(),
   client_time_offset_ms: 0

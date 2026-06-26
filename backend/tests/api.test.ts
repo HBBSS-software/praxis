@@ -631,6 +631,8 @@ describe('route behavior', () => {
     expect(response.status).toBe(200);
     expect(payload.site_name).toBe('Test Praxis');
     expect(payload.upload_image_max_size_bytes).toBe(5 * 1024 * 1024);
+    expect(payload.record_title_max_length).toBe(25);
+    expect(payload.task_title_max_length).toBe(50);
     expect(payload.is_production).toBe(false);
     expect(payload.timezone).toBeUndefined();
     expect(typeof payload.server_timestamp).toBe('number');
@@ -890,6 +892,58 @@ describe('route behavior', () => {
 
     expect(response.status).toBe(400);
     expect((await readJson(response)).error).toBe('不能记录未来的活动。');
+  });
+
+  test('rejects record titles longer than configured limit', async () => {
+    await setNormalPassword('3', 'student-pass-01');
+    const student = database.findUserByUid(3)!;
+    const task = createOpenTaskForStudent(student.id);
+    const token = await loginAs('3', 'student-pass-01');
+
+    const response = await jsonRequest('/api/students/me/records', {
+      title: '记'.repeat(26),
+      task_id: task.id,
+      content: '记录标题过长',
+      practice_date: '2026-01-10',
+      location: '教室',
+      duration: '1.0',
+      image_paths: [],
+      cover_image_path: null
+    }, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+
+    expect(response.status).toBe(400);
+    expect((await readJson(response)).error).toBe('记录标题不能超过 25 字。');
+  });
+
+  test('rejects task titles longer than configured limit', async () => {
+    await setNormalPassword('1', 'admin-pass-01');
+    const token = await loginAs('1', 'admin-pass-01');
+    const targetClass = database.createClass('任务标题校验班级');
+
+    const response = await jsonRequest('/api/teacher/tasks', {
+      title: '任'.repeat(51),
+      description: null,
+      start_at: '2099-01-01T00:00:00.000Z',
+      end_at: '2099-01-02T00:00:00.000Z',
+      min_words: 0,
+      min_images: 0,
+      max_records_per_student: 1,
+      score_enabled: false,
+      class_ids: [targetClass.id]
+    }, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`
+      }
+    });
+
+    expect(response.status).toBe(400);
+    expect((await readJson(response)).error).toBe('任务名称不能超过 50 字。');
   });
 
   test('rejects invalid practice dates', async () => {
